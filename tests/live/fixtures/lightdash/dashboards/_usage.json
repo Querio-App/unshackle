@@ -1,0 +1,27 @@
+[
+  {
+    "description": "Dunder Mifflin sales, H1 2025.",
+    "firstViewedAt": null,
+    "name": "Sales overview",
+    "organizationUuid": "c6e8d893-6189-4512-b301-7ed14f96e14a",
+    "pinnedListOrder": null,
+    "pinnedListUuid": null,
+    "projectUuid": "c3db463b-44c0-4cd7-90e3-bf7ecf4390b2",
+    "slug": "sales-overview",
+    "spaceUuid": "fd4483ad-c9ef-4d00-8975-2e8847b8c451",
+    "tileTypes": [
+      "markdown",
+      "saved_chart"
+    ],
+    "updatedAt": "2026-10-22T10:28:41.712Z",
+    "updatedByUser": {
+      "firstName": "Live",
+      "lastName": "Test",
+      "userUuid": "e1422e94-a090-4f97-ad43-30dd1b3975ff"
+    },
+    "uuid": "a9213f67-ee35-414e-af5c-253608c22eec",
+    "validationErrors": [],
+    "verification": null,
+    "views": 0
+  }
+]

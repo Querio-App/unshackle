@@ -1,0 +1,14 @@
+{
+  "dashboards": {
+    "1": {
+      "modify": [
+        {
+          "email": "dwight@example.com",
+          "id": 2,
+          "name": "Dwight Schrute"
+        }
+      ]
+    }
+  },
+  "queries": {}
+}

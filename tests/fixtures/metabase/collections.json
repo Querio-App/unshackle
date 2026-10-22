@@ -1,0 +1,118 @@
+[
+  {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "can_write": true,
+    "children": [],
+    "created_at": "2026-10-22T10:21:31.171389Z",
+    "description": null,
+    "entity_id": "3ffu3iN841Y2BRMvkLP9T",
+    "id": 4,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/",
+    "name": "Ada Admin's Personal Collection",
+    "namespace": null,
+    "personal_owner_id": 1,
+    "slug": "ada_admin_s_personal_collection",
+    "type": null
+  },
+  {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "can_write": true,
+    "children": [],
+    "created_at": "2026-10-22T10:21:28.556657Z",
+    "description": "Some examples to get started with",
+    "entity_id": "HyB3nRtqb7pBPhFG26evI",
+    "here": [
+      "card",
+      "metric",
+      "dataset"
+    ],
+    "id": 2,
+    "is_remote_synced": false,
+    "is_sample": true,
+    "location": "/",
+    "name": "Examples",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "examples",
+    "type": null
+  },
+  {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "below": [
+      "metric"
+    ],
+    "can_write": true,
+    "children": [
+      {
+        "archive_operation_id": null,
+        "archived": false,
+        "archived_directly": null,
+        "authority_level": null,
+        "can_write": true,
+        "children": [],
+        "created_at": "2026-10-22T10:21:33.919449Z",
+        "description": null,
+        "entity_id": "UWErwdmovZj4_ssOkuvtd",
+        "here": [
+          "metric"
+        ],
+        "id": 6,
+        "is_remote_synced": false,
+        "is_sample": false,
+        "location": "/5/",
+        "name": "Finance",
+        "namespace": null,
+        "personal_owner_id": null,
+        "slug": "finance",
+        "type": null
+      }
+    ],
+    "created_at": "2026-10-22T10:21:33.851738Z",
+    "description": null,
+    "entity_id": "1_6ltq7WPzVJPPbI6Rbv3",
+    "here": [
+      "card",
+      "dataset"
+    ],
+    "id": 5,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/",
+    "name": "Sales",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "sales",
+    "type": null
+  },
+  {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "can_write": false,
+    "children": [],
+    "created_at": "2026-10-22T10:21:28.435274Z",
+    "description": null,
+    "entity_id": "trashtrashtrashtrasht",
+    "id": 1,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/",
+    "name": "Trash",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "trash",
+    "type": "trash"
+  }
+]

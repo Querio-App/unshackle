@@ -1,0 +1,38 @@
+/// Approved returns (DirectQuery, native SQL)
+table Returns
+	lineageTag: 5b0f3d94-2c6e-4a5b-9d8f-4e3a2b1c0d45
+
+	measure 'Total Refunds' = SUM(Returns[Refund Amount])
+		formatString: \$#,0.00
+		lineageTag: 6c1a4e05-3d7f-4b6c-8e9a-5f4b3c2d1e46
+
+	column ReturnDate
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 7d2b5f16-4e8a-4c7d-9f0b-6a5c4d3e2f47
+		summarizeBy: none
+		sourceColumn: return_date
+
+	column CustomerKey
+		dataType: int64
+		isHidden
+		lineageTag: 8e3c6a27-5f9b-4d8e-8a1c-7b6d5e4f3a48
+		summarizeBy: none
+		sourceColumn: customer_key
+
+	column 'Refund Amount'
+		dataType: decimal
+		lineageTag: 9f4d7b38-6a0c-4e9f-9b2d-8c7e6f5a4b49
+		summarizeBy: sum
+		sourceColumn: refund_amount
+
+	partition Returns = m
+		mode: directQuery
+		source =
+				let
+					Source = Sql.Database(Server, Database),
+					Query = Value.NativeQuery(Source, "select r.return_date, r.customer_key, r.refund_amount#(lf)from dbo.FactReturns r#(lf)where r.status = 'approved'", null, [EnableFolding=true])
+				in
+					Query
+
+	annotation PBI_ResultType = Table

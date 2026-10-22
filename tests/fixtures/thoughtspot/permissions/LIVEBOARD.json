@@ -1,0 +1,28 @@
+[
+  {
+    "metadata_permission_details": {
+      "c4d5e6f7-1111-4a2b-9c3d-4e5f6a7b3001": {
+        "metadata_id": "c4d5e6f7-1111-4a2b-9c3d-4e5f6a7b3001",
+        "metadata_name": "Sales Overview",
+        "metadata_type": "LIVEBOARD",
+        "metadata_owner": {"id": "u-rami", "name": "rami"},
+        "principal_permission_info": [
+          {
+            "principal_type": "USER_GROUP",
+            "principal_permissions": [
+              {"principal_id": "g-1", "principal_name": "Sales Leadership", "principal_type": "USER_GROUP", "permission": "READ_ONLY"},
+              {"principal_id": "g-2", "principal_name": "Finance", "principal_type": "USER_GROUP", "permission": "MODIFY"}
+            ]
+          },
+          {
+            "principal_type": "USER",
+            "principal_permissions": [
+              {"principal_id": "u-dana", "principal_name": "dana@acme.com", "principal_type": "USER", "permission": "READ_ONLY"},
+              {"principal_id": "u-old", "principal_name": "former.employee", "principal_type": "USER", "permission": "NO_ACCESS"}
+            ]
+          }
+        ]
+      }
+    }
+  }
+]

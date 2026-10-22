@@ -1,0 +1,155 @@
+{
+  "can_edit": true,
+  "created_at": "2026-10-22T11:02:36.726Z",
+  "data_source_id": 1,
+  "description": "",
+  "id": 4,
+  "is_archived": false,
+  "is_draft": false,
+  "is_favorite": false,
+  "is_safe": false,
+  "latest_query_data_id": 4,
+  "name": "Orders by paper type",
+  "options": {
+    "parameters": [
+      {
+        "global": false,
+        "locals": [],
+        "name": "status",
+        "parentQueryId": null,
+        "title": "Status",
+        "type": "text",
+        "value": "COMPLETED"
+      }
+    ]
+  },
+  "query": "SELECT p.paper_type,\n       COUNT(*) AS orders,\n       SUM(o.quantity) AS units\nFROM orders o\nJOIN products p ON p.id = o.product_id\nWHERE o.status = '{{ status }}'\nGROUP BY 1\nORDER BY 2 DESC",
+  "query_hash": "5c5eefd259e4ea9610e37717ff8cd0f2",
+  "schedule": null,
+  "tags": [
+    "sales"
+  ],
+  "updated_at": "2026-10-22T11:02:36.760Z",
+  "version": 1,
+  "visualizations": [
+    {
+      "created_at": "2026-10-22T11:02:36.726Z",
+      "description": "",
+      "id": 4,
+      "name": "Table",
+      "options": {
+        "columns": [
+          {
+            "alignContent": "left",
+            "allowSearch": false,
+            "displayAs": "string",
+            "name": "paper_type",
+            "order": 100000,
+            "title": "Paper type",
+            "type": "string",
+            "visible": true
+          },
+          {
+            "alignContent": "right",
+            "allowSearch": false,
+            "displayAs": "number",
+            "name": "orders",
+            "numberFormat": "0,0",
+            "order": 100001,
+            "title": "Orders",
+            "type": "integer",
+            "visible": true
+          },
+          {
+            "alignContent": "right",
+            "allowSearch": false,
+            "displayAs": "number",
+            "name": "units",
+            "numberFormat": "0,0",
+            "order": 100002,
+            "title": "Units",
+            "type": "integer",
+            "visible": true
+          }
+        ],
+        "itemsPerPage": 25
+      },
+      "type": "TABLE",
+      "updated_at": "2026-10-22T11:02:36.802Z"
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.760Z",
+      "description": "",
+      "id": 8,
+      "name": "Order share",
+      "options": {
+        "alignYAxesAtZero": false,
+        "coefficient": 1,
+        "color_scheme": "Redash",
+        "columnMapping": {
+          "orders": "y",
+          "paper_type": "x"
+        },
+        "dateTimeFormat": "DD/MM/YY HH:mm",
+        "direction": {
+          "type": "counterclockwise"
+        },
+        "enableLink": false,
+        "error_y": {
+          "type": "data",
+          "visible": true
+        },
+        "globalSeriesType": "pie",
+        "legend": {
+          "enabled": true,
+          "placement": "auto",
+          "traceorder": "normal"
+        },
+        "lineShape": "linear",
+        "linkFormat": "",
+        "linkOpenNewTab": true,
+        "missingValuesAsZero": true,
+        "numberFormat": "0,0[.]00000",
+        "percentFormat": "0[.]00%",
+        "piesort": true,
+        "series": {
+          "error_y": {
+            "type": "data",
+            "visible": true
+          },
+          "stacking": null
+        },
+        "seriesOptions": {
+          "orders": {
+            "index": 0,
+            "type": "pie",
+            "yAxis": 0,
+            "zIndex": 0
+          }
+        },
+        "showDataLabels": true,
+        "sizemode": "diameter",
+        "sortX": true,
+        "textFormat": "",
+        "valuesOptions": {},
+        "xAxis": {
+          "labels": {
+            "enabled": true
+          },
+          "type": "-"
+        },
+        "yAxis": [
+          {
+            "type": "linear"
+          },
+          {
+            "opposite": true,
+            "type": "linear"
+          }
+        ]
+      },
+      "type": "CHART",
+      "updated_at": "2026-10-22T11:02:36.796Z"
+    }
+  ]
+}

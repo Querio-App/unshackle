@@ -1,0 +1,41 @@
+name: Monthly revenue
+description: Total revenue by order month
+tableName: orders
+slug: monthly-revenue
+spaceSlug: sales
+version: 1
+updatedAt: "2026-08-12T09:14:02.112Z"
+metricQuery:
+  exploreName: orders
+  dimensions:
+    - orders_created_at_month
+  metrics:
+    - orders_total_revenue
+  filters: {}
+  sorts:
+    - fieldId: orders_created_at_month
+      descending: false
+  limit: 500
+  tableCalculations: []
+  additionalMetrics: []
+  customDimensions: []
+chartConfig:
+  type: cartesian
+  config:
+    layout:
+      xField: orders_created_at_month
+      yField:
+        - orders_total_revenue
+    eChartsConfig:
+      series:
+        - type: line
+          yAxisIndex: 0
+          encode:
+            xRef:
+              field: orders_created_at_month
+            yRef:
+              field: orders_total_revenue
+tableConfig:
+  columnOrder:
+    - orders_created_at_month
+    - orders_total_revenue

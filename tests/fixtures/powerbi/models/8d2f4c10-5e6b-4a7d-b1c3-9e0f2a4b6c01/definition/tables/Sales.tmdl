@@ -1,0 +1,155 @@
+/// One row per order line
+table Sales
+	lineageTag: 2a7e0c61-9b3d-4f2a-8c5e-1d0f9a8b7c01
+
+	/// Net sales amount in USD, after discounts
+	measure 'Total Sales' = SUM(Sales[Amount])
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		displayFolder: Sales
+		lineageTag: 3b8f1d72-0c4e-4a3b-9d6f-2e1a0b9c8d02
+
+	measure 'Total Cost' = SUM(Sales[Cost])
+		formatString: \$#,0
+		displayFolder: Sales
+		lineageTag: 4c9a2e83-1d5f-4b4c-8e7a-3f2b1c0d9e03
+
+	measure 'Order Count' = COUNTROWS(Sales)
+		formatString: #,0
+		lineageTag: 5d0b3f94-2e6a-4c5d-9f8b-4a3c2d1e0f04
+
+	measure 'Active Customers' = DISTINCTCOUNT(Sales[CustomerKey])
+		formatString: #,0
+		lineageTag: 6e1c4a05-3f7b-4d6e-8a9c-5b4d3e2f1a05
+
+	measure 'Avg Unit Price' = AVERAGE(Sales[Unit Price])
+		lineageTag: 7f2d5b16-4a8c-4e7f-9b0d-6c5e4f3a2b06
+
+	measure 'Avg Order Value' = DIVIDE([Total Sales], [Order Count])
+		formatString: \$#,0.00
+		lineageTag: 8a3e6c27-5b9d-4f8a-8c1e-7d6f5a4b3c07
+
+	measure 'Margin %' = DIVIDE([Total Sales] - [Total Cost], [Total Sales])
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 9b4f7d38-6c0e-4a9b-9d2f-8e7a6b5c4d08
+
+	/// Sales to customers in the EU region
+	measure 'EU Sales' = CALCULATE([Total Sales], Customer[Region] = "EU")
+		formatString: \$#,0
+		lineageTag: 0c5a8e49-7d1f-4b0c-8e3a-9f8b7c6d5e09
+
+	measure 'Online Sales' = CALCULATE([Total Sales], KEEPFILTERS(Sales[Channel] IN {"Online", "Mobile"}))
+		lineageTag: 1d6b9f50-8e2a-4c1d-9f4b-0a9c8d7e6f10
+
+	measure 'Extended Amount' = SUMX(Sales, Sales[Quantity] * Sales[Unit Price])
+		lineageTag: 2e7c0a61-9f3b-4d2e-8a5c-1b0d9e8f7a11
+
+	measure 'Sales All Regions' = CALCULATE([Total Sales], ALL(Customer[Region]))
+		lineageTag: 3f8d1b72-0a4c-4e3f-9b6d-2c1e0f9a8b12
+
+	measure 'Ship Date Sales' =
+			CALCULATE(
+				[Total Sales],
+				USERELATIONSHIP(Sales[ShipDate], 'Date'[Date])
+			)
+		lineageTag: 4a9e2c83-1b5d-4f4a-8c7e-3d2f1a0b9c13
+
+	measure 'Discount Rate' = ```
+			VAR Gross = SUMX(Sales, Sales[Quantity] * Sales[Unit Price])
+			RETURN
+				DIVIDE(Gross - [Total Sales], Gross)
+			```
+		formatString: 0.0%
+		lineageTag: 5b0f3d94-2c6e-4a5b-9d8f-4e3a2b1c0d14
+
+	column SalesKey
+		dataType: int64
+		isHidden
+		isKey
+		formatString: 0
+		lineageTag: 6c1a4e05-3d7f-4b6c-8e9a-5f4b3c2d1e15
+		summarizeBy: none
+		sourceColumn: SalesKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column OrderDate
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 7d2b5f16-4e8a-4c7d-9f0b-6a5c4d3e2f16
+		summarizeBy: none
+		sourceColumn: OrderDate
+
+		variation Variation
+			isDefault
+			relationship: 1f3e5d7c-9b2a-4c6e-8d0f-2a4c6e8b0d17
+			defaultHierarchy: LocalDateTable_1.'Date Hierarchy'
+
+	column ShipDate
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 8e3c6a27-5f9b-4d8e-8a1c-7b6d5e4f3a18
+		summarizeBy: none
+		sourceColumn: ShipDate
+
+	column CustomerKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 9f4d7b38-6a0c-4e9f-9b2d-8c7e6f5a4b19
+		summarizeBy: none
+		sourceColumn: CustomerKey
+
+	column Channel
+		dataType: string
+		lineageTag: 0a5e8c49-7b1d-4f0a-8c3e-9d8f7a6b5c20
+		summarizeBy: none
+		sourceColumn: Channel
+
+	column Amount
+		dataType: decimal
+		isHidden
+		formatString: \$#,0.00
+		lineageTag: 1b6f9d50-8c2e-4a1b-9d4f-0e9a8b7c6d21
+		summarizeBy: sum
+		sourceColumn: SalesAmount
+
+	column Cost
+		dataType: decimal
+		isHidden
+		lineageTag: 2c7a0e61-9d3f-4b2c-8e5a-1f0b9c8d7e22
+		summarizeBy: sum
+		sourceColumn: TotalCost
+
+	column Quantity
+		dataType: int64
+		lineageTag: 3d8b1f72-0e4a-4c3d-9f6b-2a1c0d9e8f23
+		summarizeBy: sum
+		sourceColumn: OrderQuantity
+
+	column 'Unit Price'
+		dataType: decimal
+		lineageTag: 4e9c2a83-1f5b-4d4e-8a7c-3b2d1e0f9a24
+		summarizeBy: none
+		sourceColumn: UnitPrice
+
+	column 'Line Margin' = Sales[Amount] - Sales[Cost]
+		dataType: decimal
+		lineageTag: 5f0d3b94-2a6c-4e5f-9b8d-4c3e2f1a0b25
+		summarizeBy: sum
+
+	column 'Customer Segment' = RELATED(Customer[Segment])
+		dataType: string
+		lineageTag: 6a1e4c05-3b7d-4f6a-8c9e-5d4f3a2b1c26
+		summarizeBy: none
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(Server, Database),
+					dbo_FactSales = Source{[Schema="dbo",Item="FactSales"]}[Data],
+					#"Changed Type" = Table.TransformColumnTypes(dbo_FactSales,{{"SalesAmount", Currency.Type}, {"TotalCost", Currency.Type}})
+				in
+					#"Changed Type"
+
+	annotation PBI_ResultType = Table

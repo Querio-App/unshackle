@@ -1,0 +1,8 @@
+[
+  {
+    "item": "model:8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c02",
+    "name": "Finance Model",
+    "workspace": "3f1e7a52-0c7d-4b8e-9a61-2d5f0b9c1a01",
+    "error": "POST https://api.fabric.microsoft.com/v1/workspaces/3f1e7a52-0c7d-4b8e-9a61-2d5f0b9c1a01/semanticModels/8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c02/getDefinition?format=TMDL -> 400: {\"errorCode\":\"ItemHasProtectedLabel\",\"message\":\"The item has a protected sensitivity label and its definition cannot be exported\"}"
+  }
+]

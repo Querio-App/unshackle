@@ -1,0 +1,164 @@
+{
+  "archived": false,
+  "archived_directly": false,
+  "average_query_time": null,
+  "cache_invalidated_at": null,
+  "cache_ttl": null,
+  "can_delete": false,
+  "can_manage_db": true,
+  "can_restore": false,
+  "can_write": true,
+  "card_schema": 24,
+  "collection": {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "created_at": "2026-10-22T10:21:33.919449Z",
+    "description": null,
+    "entity_id": "UWErwdmovZj4_ssOkuvtd",
+    "id": 6,
+    "is_personal": false,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/5/",
+    "name": "Finance",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "finance",
+    "type": null
+  },
+  "collection_id": 6,
+  "collection_position": null,
+  "collection_preview": true,
+  "created_at": "2026-10-22T10:21:35.064257Z",
+  "creator_id": 2,
+  "dashboard": null,
+  "dashboard_count": 0,
+  "dashboard_id": null,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "aggregation": [
+          [
+            "/",
+            {
+              "display-name": "Discount rate",
+              "lib/uuid": "d5453c8e-fe6d-4119-b058-0086ce3858c0",
+              "name": "discount_rate"
+            },
+            [
+              "-",
+              {
+                "lib/uuid": "a7e1027c-119b-4179-b572-69f7d729114e"
+              },
+              [
+                "sum",
+                {
+                  "lib/uuid": "da6082e6-6704-4df9-a144-54272e1274cd"
+                },
+                [
+                  "field",
+                  {
+                    "base-type": "type/Decimal",
+                    "effective-type": "type/Decimal",
+                    "lib/uuid": "b0ca04cb-1b04-4963-a3ad-c6baf920bfe8"
+                  },
+                  84
+                ]
+              ],
+              [
+                "sum",
+                {
+                  "lib/uuid": "47f0678a-3084-448b-a14d-e2b4d3e001e5"
+                },
+                [
+                  "field",
+                  {
+                    "base-type": "type/Decimal",
+                    "effective-type": "type/Decimal",
+                    "lib/uuid": "3b0db701-1b89-4d28-8d7f-ad5094c80859"
+                  },
+                  86
+                ]
+              ]
+            ],
+            [
+              "sum",
+              {
+                "lib/uuid": "46653f02-ddbb-43be-b99f-f7d8cfc26b04"
+              },
+              [
+                "field",
+                {
+                  "base-type": "type/Decimal",
+                  "effective-type": "type/Decimal",
+                  "lib/uuid": "c5665371-2602-4a95-a166-312bd31ad84a"
+                },
+                84
+              ]
+            ]
+          ]
+        ],
+        "lib/type": "mbql.stage/mbql",
+        "source-table": 10
+      }
+    ]
+  },
+  "description": "Share of list price given away as discount.",
+  "dimension_mappings": null,
+  "dimensions": null,
+  "display": "scalar",
+  "document_id": null,
+  "embedding_params": null,
+  "embedding_type": null,
+  "enable_embedding": false,
+  "entity_id": "sdLjKG_hmpQn2tQOiH9XI",
+  "id": 50,
+  "initially_published_at": null,
+  "is_remote_synced": false,
+  "last_query_start": null,
+  "last_used_at": "2026-10-22T10:21:35.064257Z",
+  "legacy_query": null,
+  "metabase_version": "v0.64.1 (7010f27)",
+  "metabot_chart_id": null,
+  "metabot_conversation_id": null,
+  "moderation_reviews": [],
+  "name": "Average discount rate",
+  "param_fields": {},
+  "parameter_mappings": [],
+  "parameter_usage_count": 0,
+  "parameters": [],
+  "public_uuid": null,
+  "public_uuid_prefix": null,
+  "query_description": "Orders, Discount rate",
+  "query_type": "query",
+  "result_metadata": [
+    {
+      "base_type": "type/Float",
+      "display_name": "Discount rate",
+      "effective_type": "type/Float",
+      "field_ref": [
+        "aggregation",
+        0
+      ],
+      "lib/deduplicated-name": "discount_rate",
+      "lib/desired-column-alias": "discount_rate",
+      "lib/original-name": "discount_rate",
+      "lib/source": "source/aggregations",
+      "lib/source-column-alias": "discount_rate",
+      "name": "discount_rate",
+      "semantic_type": "type/Discount",
+      "source": "aggregation"
+    }
+  ],
+  "source_card_id": null,
+  "table_id": 10,
+  "type": "metric",
+  "updated_at": "2026-10-22T10:21:35.064257Z",
+  "view_count": 0,
+  "visualization_settings": {}
+}

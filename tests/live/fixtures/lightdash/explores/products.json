@@ -1,0 +1,125 @@
+{
+  "baseTable": "products",
+  "dbtModelIdentity": {
+    "modelName": "products",
+    "packageName": "dunder_mifflin",
+    "sourceName": null,
+    "sourceUuid": null,
+    "uniqueId": "model.dunder_mifflin.products"
+  },
+  "joinedTables": [],
+  "label": "Products",
+  "name": "products",
+  "spotlight": {
+    "categories": [],
+    "visibility": "show"
+  },
+  "sqlPath": "products.sql",
+  "tables": {
+    "products": {
+      "database": "dunder_mifflin",
+      "dbtModelUniqueId": "model.dunder_mifflin.products",
+      "dbtPackageName": "dunder_mifflin",
+      "description": "Paper product catalog.",
+      "dimensions": {
+        "paper_type": {
+          "compiledSql": "\"products\".paper_type",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 2,
+          "isIntervalBase": false,
+          "label": "Paper type",
+          "name": "paper_type",
+          "sql": "${TABLE}.paper_type",
+          "table": "products",
+          "tableLabel": "Products",
+          "tablesReferences": [
+            "products"
+          ],
+          "type": "string"
+        },
+        "price": {
+          "compiledSql": "\"products\".price",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Price",
+          "name": "price",
+          "sql": "${TABLE}.price",
+          "table": "products",
+          "tableLabel": "Products",
+          "tablesReferences": [
+            "products"
+          ],
+          "type": "number"
+        },
+        "product_id": {
+          "compiledSql": "\"products\".product_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "isIntervalBase": false,
+          "label": "Product id",
+          "name": "product_id",
+          "sql": "${TABLE}.product_id",
+          "table": "products",
+          "tableLabel": "Products",
+          "tablesReferences": [
+            "products"
+          ],
+          "type": "number"
+        },
+        "product_name": {
+          "compiledSql": "\"products\".product_name",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 1,
+          "isIntervalBase": false,
+          "label": "Product name",
+          "name": "product_name",
+          "sql": "${TABLE}.product_name",
+          "table": "products",
+          "tableLabel": "Products",
+          "tablesReferences": [
+            "products"
+          ],
+          "type": "string"
+        }
+      },
+      "groupDetails": {},
+      "label": "Products",
+      "lineageGraph": {
+        "products": []
+      },
+      "metrics": {},
+      "name": "products",
+      "orderFieldsBy": "LABEL",
+      "primaryKey": [
+        "product_id"
+      ],
+      "requiredFilters": [],
+      "schema": "analytics",
+      "sqlPath": "products.sql",
+      "sqlTable": "\"dunder_mifflin\".\"analytics\".\"products\"",
+      "ymlPath": "models/schema.yml"
+    }
+  },
+  "tags": [],
+  "targetDatabase": "postgres",
+  "warehouseConnection": {
+    "startOfWeek": null,
+    "warehouseConnectionUuid": null,
+    "warehouseType": "postgres"
+  },
+  "warehouseConnectionUuid": null,
+  "ymlPath": "models/schema.yml"
+}

@@ -1,0 +1,11 @@
+{
+  "workbookId": "wb-exec",
+  "name": "Executive Sales",
+  "description": "Weekly exec view of revenue and orders.",
+  "path": "Shared/Finance",
+  "url": "https://app.sigmacomputing.com/acme/workbook/Executive-Sales-wb-exec",
+  "ownerId": "u-rami",
+  "updatedAt": "2026-09-20T08:00:00Z",
+  "workbookUrlId": "3hYt6Exec",
+  "documentVersion": 12
+}

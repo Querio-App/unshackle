@@ -1,0 +1,8 @@
+{
+  "version": "1.0",
+  "datasetReference": {
+    "byConnection": {
+      "connectionString": "semanticmodelid=8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c01"
+    }
+  }
+}

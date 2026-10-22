@@ -1,0 +1,70 @@
+# Redash 26.9.0 (getredash/setup's production compose, trimmed to one worker) plus a Postgres
+# warehouse with the synthetic Dunder Mifflin data. Host ports: Postgres 58432, Redash 5055.
+# docker-compose -p unshackle-rd up -d / down -v
+x-redash: &redash
+  image: redash/redash:26.9.0
+  depends_on:
+    metadata: {condition: service_healthy}
+    redis: {condition: service_started}
+  environment:
+    REDASH_DATABASE_URL: postgresql://redash:redash@metadata/redash
+    REDASH_REDIS_URL: redis://redis:6379/0
+    REDASH_COOKIE_SECRET: unshackle-live-cookie-secret
+    REDASH_SECRET_KEY: unshackle-live-secret-key
+    REDASH_LOG_LEVEL: WARNING
+services:
+  warehouse:
+    image: postgres:16-alpine
+    container_name: unshackle-rd-warehouse
+    environment:
+      POSTGRES_USER: dunder
+      POSTGRES_PASSWORD: dunder
+      POSTGRES_DB: dunder
+    ports: ["58432:5432"]
+    volumes: ["./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dunder", "-d", "dunder"]
+      interval: 2s
+      retries: 30
+  metadata:
+    image: postgres:16-alpine
+    container_name: unshackle-rd-metadata
+    environment:
+      POSTGRES_USER: redash
+      POSTGRES_PASSWORD: redash
+      POSTGRES_DB: redash
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "redash", "-d", "redash"]
+      interval: 2s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    container_name: unshackle-rd-redis
+  server:
+    <<: *redash
+    container_name: unshackle-rd-server
+    command: server
+    ports: ["5055:5000"]
+    environment:
+      REDASH_DATABASE_URL: postgresql://redash:redash@metadata/redash
+      REDASH_REDIS_URL: redis://redis:6379/0
+      REDASH_COOKIE_SECRET: unshackle-live-cookie-secret
+      REDASH_SECRET_KEY: unshackle-live-secret-key
+      REDASH_LOG_LEVEL: WARNING
+      REDASH_WEB_WORKERS: 2
+  scheduler:
+    <<: *redash
+    container_name: unshackle-rd-scheduler
+    command: scheduler
+  worker:
+    <<: *redash
+    container_name: unshackle-rd-worker
+    command: worker
+    environment:
+      REDASH_DATABASE_URL: postgresql://redash:redash@metadata/redash
+      REDASH_REDIS_URL: redis://redis:6379/0
+      REDASH_COOKIE_SECRET: unshackle-live-cookie-secret
+      REDASH_SECRET_KEY: unshackle-live-secret-key
+      REDASH_LOG_LEVEL: WARNING
+      QUEUES: "queries,scheduled_queries,schemas,periodic,emails,default"
+      WORKERS_COUNT: 2

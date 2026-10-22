@@ -1,0 +1,23 @@
+slice_name: Average order value
+description: null
+certified_by: null
+certification_details: null
+viz_type: big_number_total
+params:
+  datasource: 1__table
+  viz_type: big_number_total
+  metric: average_order_value
+  adhoc_filters: []
+  header_font_size: 0.4
+query_context: '{"datasource": {"id": 1, "type": "table"}, "force": false, "queries":
+  [{"filters": [], "extras": {"having": "", "where": ""}, "applied_time_extras": {},
+  "annotation_layers": [], "row_limit": 10000, "series_limit": 0, "order_desc": true,
+  "url_params": {}, "custom_params": {}, "custom_form_data": {}, "time_offsets": [],
+  "post_processing": [], "columns": [], "metrics": ["average_order_value"]}], "form_data":
+  {"datasource": "1__table", "viz_type": "big_number_total", "metric": "average_order_value",
+  "adhoc_filters": [], "header_font_size": 0.4}, "result_format": "json", "result_type":
+  "full"}'
+cache_timeout: null
+uuid: ba1de29c-3c0e-44bd-9999-2455f9656425
+version: 1.0.0
+dataset_uuid: 2e575f21-b5e2-4e39-a3eb-c2a918e2358c

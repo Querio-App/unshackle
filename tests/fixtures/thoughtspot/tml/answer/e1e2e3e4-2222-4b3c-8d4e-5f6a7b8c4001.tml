@@ -1,0 +1,18 @@
+guid: e1e2e3e4-2222-4b3c-8d4e-5f6a7b8c4001
+answer:
+  name: Revenue by Country
+  description: Gross revenue per customer country, all time.
+  tables:
+  - id: Sales
+    name: Sales
+    fqn: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+  search_query: "[Revenue] [Country]"
+  answer_columns:
+  - name: Country
+  - name: Total Revenue
+  chart:
+    type: BAR
+    axis_configs:
+    - x: [Country]
+      y: [Total Revenue]
+  display_mode: CHART_MODE

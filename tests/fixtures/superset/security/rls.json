@@ -1,0 +1,21 @@
+[
+  {
+    "clause": "status = 'COMPLETED'",
+    "filter_type": "Regular",
+    "group_key": "status",
+    "id": 1,
+    "name": "Sales sees completed orders",
+    "roles": [
+      {
+        "id": 6,
+        "name": "Sales"
+      }
+    ],
+    "tables": [
+      {
+        "id": 1,
+        "table_name": "orders"
+      }
+    ]
+  }
+]

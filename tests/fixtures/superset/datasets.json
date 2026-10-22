@@ -1,0 +1,24 @@
+[
+  {
+    "database": {
+      "database_name": "Dunder Mifflin"
+    },
+    "id": 1,
+    "kind": "physical",
+    "schema": "public",
+    "sql": null,
+    "table_name": "orders",
+    "uuid": "2e575f21-b5e2-4e39-a3eb-c2a918e2358c"
+  },
+  {
+    "database": {
+      "database_name": "Dunder Mifflin"
+    },
+    "id": 2,
+    "kind": "virtual",
+    "schema": "public",
+    "sql": "SELECT o.id, o.status, o.post_discount_revenue, o.purchased_at, s.region, s.mode\nFROM orders o\nJOIN shippings s ON s.order_id = o.id",
+    "table_name": "shipped_orders",
+    "uuid": "797a7b68-fcaf-4b10-a77b-6f141870af06"
+  }
+]

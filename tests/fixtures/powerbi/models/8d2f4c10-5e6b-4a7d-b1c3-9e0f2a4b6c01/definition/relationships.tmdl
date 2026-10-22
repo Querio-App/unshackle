@@ -1,0 +1,17 @@
+relationship 1f3e5d7c-9b2a-4c6e-8d0f-2a4c6e8b0d60
+	fromColumn: Sales.CustomerKey
+	toColumn: Customer.CustomerKey
+
+relationship 2a4f6e8d-0c3b-4d7f-9e1a-3b5d7f9c1e61
+	fromColumn: Sales.OrderDate
+	toColumn: Date.Date
+
+relationship 3b5a7f9e-1d4c-4e8a-8f2b-4c6e8a0d2f62
+	isActive: false
+	fromColumn: Sales.ShipDate
+	toColumn: Date.Date
+
+relationship 4c6b8a0f-2e5d-4f9b-9a3c-5d7f9b1e3a63
+	crossFilteringBehavior: bothDirections
+	fromColumn: Returns.CustomerKey
+	toColumn: Customer.CustomerKey

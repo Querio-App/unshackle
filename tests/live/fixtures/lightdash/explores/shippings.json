@@ -1,0 +1,367 @@
+{
+  "baseTable": "shippings",
+  "dbtModelIdentity": {
+    "modelName": "shippings",
+    "packageName": "dunder_mifflin",
+    "sourceName": null,
+    "sourceUuid": null,
+    "uniqueId": "model.dunder_mifflin.shippings"
+  },
+  "joinedTables": [],
+  "label": "Shippings",
+  "name": "shippings",
+  "spotlight": {
+    "categories": [],
+    "visibility": "show"
+  },
+  "sqlPath": "shippings.sql",
+  "tables": {
+    "shippings": {
+      "database": "dunder_mifflin",
+      "dbtModelUniqueId": "model.dunder_mifflin.shippings",
+      "dbtPackageName": "dunder_mifflin",
+      "description": "One delivery per order.",
+      "dimensions": {
+        "city": {
+          "compiledSql": "\"shippings\".city",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 4,
+          "isIntervalBase": false,
+          "label": "City",
+          "name": "city",
+          "sql": "${TABLE}.city",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "string"
+        },
+        "days_to_ship": {
+          "compiledSql": "\"shippings\".days_to_ship",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 6,
+          "isIntervalBase": false,
+          "label": "Days to ship",
+          "name": "days_to_ship",
+          "sql": "${TABLE}.days_to_ship",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "number"
+        },
+        "order_id": {
+          "compiledSql": "\"shippings\".order_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": true,
+          "index": 1,
+          "isIntervalBase": false,
+          "label": "Order id",
+          "name": "order_id",
+          "sql": "${TABLE}.order_id",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "number"
+        },
+        "region": {
+          "compiledSql": "\"shippings\".region",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Region",
+          "name": "region",
+          "sql": "${TABLE}.region",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "string"
+        },
+        "shipped_at": {
+          "compiledSql": "\"shippings\".shipped_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": true,
+          "label": "Shipped at",
+          "name": "shipped_at",
+          "sql": "${TABLE}.shipped_at",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "shipped_at_day": {
+          "compiledSql": "DATE_TRUNC('DAY', \"shippings\".shipped_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Shipped at"
+          ],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Shipped at day",
+          "name": "shipped_at_day",
+          "sql": "DATE_TRUNC('DAY', ${TABLE}.shipped_at)",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timeInterval": "DAY",
+          "timeIntervalBaseDimensionName": "shipped_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "shipped_at_month": {
+          "compiledSql": "DATE_TRUNC('MONTH', \"shippings\".shipped_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Shipped at"
+          ],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Shipped at month",
+          "name": "shipped_at_month",
+          "sql": "DATE_TRUNC('MONTH', ${TABLE}.shipped_at)",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timeInterval": "MONTH",
+          "timeIntervalBaseDimensionName": "shipped_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "shipped_at_quarter": {
+          "compiledSql": "DATE_TRUNC('QUARTER', \"shippings\".shipped_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Shipped at"
+          ],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Shipped at quarter",
+          "name": "shipped_at_quarter",
+          "sql": "DATE_TRUNC('QUARTER', ${TABLE}.shipped_at)",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timeInterval": "QUARTER",
+          "timeIntervalBaseDimensionName": "shipped_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "shipped_at_raw": {
+          "compiledSql": "\"shippings\".shipped_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Shipped at"
+          ],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Shipped at raw",
+          "name": "shipped_at_raw",
+          "sql": "${TABLE}.shipped_at",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timeInterval": "RAW",
+          "timeIntervalBaseDimensionName": "shipped_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "shipped_at_week": {
+          "compiledSql": "DATE_TRUNC('WEEK', \"shippings\".shipped_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Shipped at"
+          ],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Shipped at week",
+          "name": "shipped_at_week",
+          "sql": "DATE_TRUNC('WEEK', ${TABLE}.shipped_at)",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timeInterval": "WEEK",
+          "timeIntervalBaseDimensionName": "shipped_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "shipped_at_year": {
+          "compiledSql": "DATE_TRUNC('YEAR', \"shippings\".shipped_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Shipped at"
+          ],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Shipped at year",
+          "name": "shipped_at_year",
+          "sql": "DATE_TRUNC('YEAR', ${TABLE}.shipped_at)",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "timeInterval": "YEAR",
+          "timeIntervalBaseDimensionName": "shipped_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "shipping_id": {
+          "compiledSql": "\"shippings\".shipping_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "isIntervalBase": false,
+          "label": "Shipping id",
+          "name": "shipping_id",
+          "sql": "${TABLE}.shipping_id",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "number"
+        },
+        "shipping_mode": {
+          "compiledSql": "\"shippings\".shipping_mode",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 2,
+          "isIntervalBase": false,
+          "label": "Shipping mode",
+          "name": "shipping_mode",
+          "sql": "${TABLE}.shipping_mode",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "compiledSql": "\"shippings\".state",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "State",
+          "name": "state",
+          "sql": "${TABLE}.state",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "string"
+        }
+      },
+      "groupDetails": {},
+      "label": "Shippings",
+      "lineageGraph": {
+        "shippings": []
+      },
+      "metrics": {
+        "average_days_to_ship": {
+          "compiledSql": "AVG(\"shippings\".days_to_ship::DOUBLE PRECISION)",
+          "compiledValueSql": "\"shippings\".days_to_ship",
+          "description": "Average of Days to ship",
+          "dimensionReference": "shippings_days_to_ship",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "label": "Average days to ship",
+          "name": "average_days_to_ship",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.days_to_ship",
+          "table": "shippings",
+          "tableLabel": "Shippings",
+          "tablesReferences": [
+            "shippings"
+          ],
+          "type": "average"
+        }
+      },
+      "name": "shippings",
+      "orderFieldsBy": "LABEL",
+      "primaryKey": [
+        "shipping_id"
+      ],
+      "requiredFilters": [],
+      "schema": "analytics",
+      "sqlPath": "shippings.sql",
+      "sqlTable": "\"dunder_mifflin\".\"analytics\".\"shippings\"",
+      "ymlPath": "models/schema.yml"
+    }
+  },
+  "tags": [],
+  "targetDatabase": "postgres",
+  "warehouseConnection": {
+    "startOfWeek": null,
+    "warehouseConnectionUuid": null,
+    "warehouseType": "postgres"
+  },
+  "warehouseConnectionUuid": null,
+  "ymlPath": "models/schema.yml"
+}

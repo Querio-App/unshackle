@@ -1,0 +1,15 @@
+# Used by the live harness to `dbt run` / `dbt compile` against the throwaway warehouse.
+# Every value comes from the environment the harness sets; nothing secret is stored here.
+dunder_mifflin:
+  target: live
+  outputs:
+    live:
+      type: postgres
+      host: "{{ env_var('UNSHACKLE_LIVE_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('UNSHACKLE_LIVE_PG_PORT', '55432') | int }}"
+      user: unshackle
+      password: "{{ env_var('UNSHACKLE_LIVE_PG_PASSWORD') }}"
+      dbname: dunder_mifflin
+      schema: analytics
+      sslmode: disable
+      threads: 2

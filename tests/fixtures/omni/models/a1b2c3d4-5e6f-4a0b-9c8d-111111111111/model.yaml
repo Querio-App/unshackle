@@ -1,0 +1,11 @@
+connection: snowflake_prod
+ai_context: |
+  Revenue always means order_items.total_revenue (net of returns unless stated).
+  Fiscal year starts in February.
+access_grants:
+  pii_access:
+    user_attribute: team
+    allowed_values: [support, admin]
+  finance_only:
+    user_attribute: department
+    allowed_values: [finance]

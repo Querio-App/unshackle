@@ -1,0 +1,24 @@
+[
+  {
+    "id": "8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c01",
+    "name": "Sales Model",
+    "webUrl": "https://app.powerbi.com/groups/3f1e7a52-0c7d-4b8e-9a61-2d5f0b9c1a01/datasets/8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c01",
+    "addRowsAPIEnabled": false,
+    "configuredBy": "bi-admin@contoso.com",
+    "isRefreshable": true,
+    "isEffectiveIdentityRequired": true,
+    "isEffectiveIdentityRolesRequired": true,
+    "isOnPremGatewayRequired": false,
+    "targetStorageMode": "Import",
+    "createdDate": "2025-03-14T09:12:44.123Z"
+  },
+  {
+    "id": "8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c02",
+    "name": "Finance Model",
+    "webUrl": "https://app.powerbi.com/groups/3f1e7a52-0c7d-4b8e-9a61-2d5f0b9c1a01/datasets/8d2f4c10-5e6b-4a7d-b1c3-9e0f2a4b6c02",
+    "configuredBy": "finance@contoso.com",
+    "isRefreshable": true,
+    "targetStorageMode": "Import",
+    "createdDate": "2024-11-02T15:40:01.000Z"
+  }
+]

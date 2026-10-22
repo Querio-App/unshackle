@@ -1,0 +1,29 @@
+name: New source
+description: Propose support for a BI tool unshackle doesn't read yet.
+labels: [new source]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: BI tool
+    validations:
+      required: true
+  - type: textarea
+    id: access
+    attributes:
+      label: How can definitions be exported?
+      description: API docs, a manual export (files you can download), or a Git integration. Links help.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: What matters most to you
+      description: Metrics, dashboards, saved queries, permissions? Which would you want first?
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - label: I can share an anonymized export as a test fixture
+        - label: I'd like to build the source myself

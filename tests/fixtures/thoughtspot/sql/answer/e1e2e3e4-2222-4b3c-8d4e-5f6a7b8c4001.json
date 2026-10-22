@@ -1,0 +1,12 @@
+{
+  "metadata_id": "e1e2e3e4-2222-4b3c-8d4e-5f6a7b8c4001",
+  "metadata_name": "Revenue by Country",
+  "metadata_type": "ANSWER",
+  "sql_queries": [
+    {
+      "metadata_id": "e1e2e3e4-2222-4b3c-8d4e-5f6a7b8c4001",
+      "metadata_name": "Revenue by Country",
+      "sql_query": "SELECT \n  \"ta_2\".\"COUNTRY\" \"ca_1\", \n  CASE WHEN sum(\"ta_1\".\"AMOUNT\") IS NOT NULL THEN sum(\"ta_1\".\"AMOUNT\") ELSE 0 END \"ca_2\"\nFROM \"ANALYTICS\".\"PUBLIC\".\"FCT_ORDERS\" \"ta_1\"\n  JOIN \"ANALYTICS\".\"PUBLIC\".\"DIM_CUSTOMERS\" \"ta_2\"\n    ON \"ta_1\".\"CUSTOMER_ID\" = \"ta_2\".\"CUSTOMER_ID\"\nGROUP BY \"ca_1\""
+    }
+  ]
+}

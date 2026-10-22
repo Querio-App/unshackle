@@ -1,0 +1,110 @@
+{
+  "can_edit": true,
+  "created_at": "2026-10-22T11:02:36.660Z",
+  "data_source_id": 1,
+  "description": "Post-discount revenue per purchase month.",
+  "id": 1,
+  "is_archived": false,
+  "is_draft": false,
+  "is_favorite": false,
+  "is_safe": true,
+  "latest_query_data_id": 1,
+  "name": "Monthly revenue",
+  "options": {
+    "parameters": []
+  },
+  "query": "SELECT date_trunc('month', purchased_at) AS month,\n       SUM(post_discount_revenue) AS revenue\nFROM orders\nGROUP BY 1\nORDER BY 1",
+  "query_hash": "93051315587bc409755c9ccade126775",
+  "schedule": null,
+  "tags": [
+    "finance"
+  ],
+  "updated_at": "2026-10-22T11:02:36.744Z",
+  "version": 1,
+  "visualizations": [
+    {
+      "created_at": "2026-10-22T11:02:36.660Z",
+      "description": "",
+      "id": 1,
+      "name": "Table",
+      "options": {},
+      "type": "TABLE",
+      "updated_at": "2026-10-22T11:02:36.660Z"
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.744Z",
+      "description": "",
+      "id": 5,
+      "name": "Revenue trend",
+      "options": {
+        "alignYAxesAtZero": false,
+        "coefficient": 1,
+        "color_scheme": "Redash",
+        "columnMapping": {
+          "month": "x",
+          "revenue": "y"
+        },
+        "dateTimeFormat": "DD/MM/YY HH:mm",
+        "direction": {
+          "type": "counterclockwise"
+        },
+        "enableLink": false,
+        "error_y": {
+          "type": "data",
+          "visible": true
+        },
+        "globalSeriesType": "line",
+        "legend": {
+          "enabled": true,
+          "placement": "auto",
+          "traceorder": "normal"
+        },
+        "lineShape": "linear",
+        "linkFormat": "",
+        "linkOpenNewTab": true,
+        "missingValuesAsZero": true,
+        "numberFormat": "0,0[.]00000",
+        "percentFormat": "0[.]00%",
+        "piesort": true,
+        "series": {
+          "error_y": {
+            "type": "data",
+            "visible": true
+          },
+          "stacking": null
+        },
+        "seriesOptions": {
+          "revenue": {
+            "index": 0,
+            "name": "Revenue",
+            "type": "line",
+            "yAxis": 0,
+            "zIndex": 0
+          }
+        },
+        "showDataLabels": false,
+        "sizemode": "diameter",
+        "sortX": true,
+        "textFormat": "",
+        "valuesOptions": {},
+        "xAxis": {
+          "labels": {
+            "enabled": true
+          },
+          "type": "datetime"
+        },
+        "yAxis": [
+          {
+            "type": "linear"
+          },
+          {
+            "opposite": true,
+            "type": "linear"
+          }
+        ]
+      },
+      "type": "CHART",
+      "updated_at": "2026-10-22T11:02:36.785Z"
+    }
+  ]
+}

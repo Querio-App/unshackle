@@ -1,0 +1,99 @@
+schemaVersion: 1
+meta:
+  projectId: 5a8591dd-4039-49df-9202-96385ba3eff8
+  title: Revenue Overview
+  description: Monthly revenue by region for the weekly business review. Revenue excludes returned orders.
+  timezone: UTC
+cells:
+  - cellId: c-intro
+    cellType: MARKDOWN
+    label: Intro
+    config:
+      source: |-
+        # Revenue overview
+
+        **Revenue** is `amount_usd` summed over orders that were not returned.
+  - cellId: c-region
+    cellType: INPUT
+    label: Region
+    config:
+      inputType: DROPDOWN
+      name: region
+      defaultValue: EU
+      options: [EU, NA, APAC]
+  - cellId: c-start
+    cellType: INPUT
+    label: Start date
+    config:
+      inputType: DATE
+      name: start_date
+      defaultValue: "2026-01-01"
+  - cellId: c-orders
+    cellType: SQL
+    label: Orders in scope
+    config:
+      dataConnectionId: conn-snowflake
+      resultVariable: orders_in_scope
+      source: |-
+        select order_id, region, created_at, amount_usd
+        from analytics.fct_orders o
+        join analytics.dim_customers c using (customer_id)
+        where status <> 'returned'
+          and c.region = '{{ region }}'
+          and o.created_at >= {{ start_date }}
+  - cellId: c-monthly
+    cellType: SQL
+    label: Monthly revenue
+    config:
+      dataConnectionId: null
+      resultVariable: monthly_revenue
+      source: |-
+        select date_trunc('month', created_at) as month, region, sum(amount_usd) as revenue
+        from orders_in_scope
+        group by 1, 2
+  - cellId: c-py
+    cellType: CODE
+    label: Growth
+    config:
+      source: |-
+        growth = monthly_revenue.sort_values('month')
+        growth['mom'] = growth.groupby('region')['revenue'].pct_change()
+  - cellId: c-chart
+    cellType: CHART
+    label: Monthly revenue
+    config:
+      dataFrame: monthly_revenue
+      chartType: line
+      x: {column: month, type: temporal}
+      y:
+        - {column: revenue, aggregate: sum}
+      series: {column: region}
+  - cellId: c-kpi
+    cellType: SINGLE_VALUE
+    label: Total revenue
+    config:
+      dataFrame: monthly_revenue
+      column: revenue
+      aggregate: sum
+  - cellId: c-growth-chart
+    cellType: CHART
+    label: MoM growth
+    config:
+      dataFrame: growth
+      chartType: bar
+      x: {column: month, type: temporal}
+      y: [{column: mom}]
+      series: {column: region}
+  - cellId: c-scratch
+    cellType: SQL
+    label: Scratch
+    config:
+      dataConnectionId: conn-snowflake
+      resultVariable: scratch
+      source: select 1
+appLayout:
+  rows:
+    - columns: [{cellId: c-intro, width: 12}]
+    - columns: [{cellId: c-region, width: 3}, {cellId: c-start, width: 3}]
+    - columns: [{cellId: c-kpi, width: 4}, {cellId: c-chart, width: 8}]
+    - columns: [{cellId: c-growth-chart, width: 12}]

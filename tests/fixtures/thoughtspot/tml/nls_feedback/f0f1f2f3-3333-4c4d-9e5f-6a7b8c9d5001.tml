@@ -1,0 +1,16 @@
+guid: f0f1f2f3-3333-4c4d-9e5f-6a7b8c9d5001
+nls_feedback:
+  feedback:
+  - id: fb-1
+    type: BUSINESS_TERM
+    access: GLOBAL
+    feedback_phrase: big orders
+    search_tokens: "[Order Size] = 'Large'"
+  - id: fb-2
+    type: REFERENCE_QUESTION
+    access: GLOBAL
+    feedback_phrase: top regions by revenue last quarter
+    search_tokens: "[Revenue] [Region] top 5 [Order Date] = 'last quarter'"
+    rating: UPVOTE
+    display_mode: CHART_MODE
+    chart_type: COLUMN

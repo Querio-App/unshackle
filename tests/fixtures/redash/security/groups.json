@@ -1,0 +1,93 @@
+[
+  {
+    "created_at": "2026-10-22T11:02:36.057Z",
+    "data_sources": [],
+    "id": 1,
+    "members": [
+      {
+        "email": "admin@example.com",
+        "id": 1,
+        "name": "Admin"
+      }
+    ],
+    "name": "admin",
+    "permissions": [
+      "admin",
+      "super_admin"
+    ],
+    "type": "builtin"
+  },
+  {
+    "created_at": "2026-10-22T11:02:36.057Z",
+    "data_sources": [
+      {
+        "id": 1,
+        "name": "Dunder Mifflin",
+        "view_only": false
+      }
+    ],
+    "id": 2,
+    "members": [
+      {
+        "email": "admin@example.com",
+        "id": 1,
+        "name": "Admin"
+      },
+      {
+        "email": "dwight@example.com",
+        "id": 2,
+        "name": "Dwight Schrute"
+      }
+    ],
+    "name": "default",
+    "permissions": [
+      "create_dashboard",
+      "create_query",
+      "edit_dashboard",
+      "edit_query",
+      "view_query",
+      "view_source",
+      "execute_query",
+      "list_users",
+      "schedule_query",
+      "list_dashboards",
+      "list_alerts",
+      "list_data_sources"
+    ],
+    "type": "builtin"
+  },
+  {
+    "created_at": "2026-10-22T11:02:36.600Z",
+    "data_sources": [
+      {
+        "id": 1,
+        "name": "Dunder Mifflin",
+        "view_only": true
+      }
+    ],
+    "id": 3,
+    "members": [
+      {
+        "email": "dwight@example.com",
+        "id": 2,
+        "name": "Dwight Schrute"
+      }
+    ],
+    "name": "Sales",
+    "permissions": [
+      "create_dashboard",
+      "create_query",
+      "edit_dashboard",
+      "edit_query",
+      "view_query",
+      "view_source",
+      "execute_query",
+      "list_users",
+      "schedule_query",
+      "list_dashboards",
+      "list_alerts",
+      "list_data_sources"
+    ],
+    "type": "regular"
+  }
+]

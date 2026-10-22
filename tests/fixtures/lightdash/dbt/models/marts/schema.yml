@@ -1,0 +1,87 @@
+version: 2
+models:
+  - name: orders
+    description: One row per order. Amounts are in USD, net of discounts.
+    config:
+      schema: analytics
+      meta:
+        primary_key: order_id
+        default_time_dimension:
+          field: created_at
+          interval: MONTH
+        joins:
+          - join: customers
+            sql_on: ${orders.customer_id} = ${customers.customer_id}
+            relationship: many-to-one
+        metrics:
+          average_order_value:
+            type: number
+            label: AOV
+            sql: ${total_revenue} / NULLIF(${order_count}, 0)
+    columns:
+      - name: order_id
+        description: Order key
+        data_type: integer
+        meta:
+          metrics:
+            order_count:
+              type: count
+              label: Orders
+      - name: customer_id
+        data_type: integer
+        meta:
+          dimension:
+            hidden: true
+      - name: status
+        description: placed, shipped, completed, returned
+        data_type: varchar
+        meta:
+          ai_hint: Use completed for recognised revenue.
+      - name: amount
+        description: Order amount in USD
+        data_type: numeric(18,2)
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              label: Total revenue
+              format: usd
+            completed_revenue:
+              type: sum
+              filters:
+                - status: completed
+            large_open_revenue:
+              type: sum
+              filters:
+                - status: '!returned'
+                - amount: '>= 100'
+      - name: created_at
+        data_type: timestamp
+        meta:
+          dimension:
+            type: timestamp
+            time_intervals: [DAY, WEEK, MONTH]
+  - name: customers
+    description: One row per customer.
+    config:
+      schema: analytics
+    meta:
+      primary_key: customer_id
+      sql_filter: ${TABLE}.region = ${lightdash.attributes.region}
+      required_attributes:
+        department: [sales, finance]
+    columns:
+      - name: customer_id
+        data_type: integer
+        meta:
+          metrics:
+            customer_count:
+              type: count_distinct
+      - name: region
+        data_type: varchar
+      - name: email
+        data_type: varchar
+        meta:
+          dimension:
+            required_attributes:
+              is_admin: "true"

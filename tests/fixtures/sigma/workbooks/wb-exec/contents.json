@@ -1,0 +1,338 @@
+{
+  "schemaVersion": 1,
+  "kind": "workbook",
+  "elements": [
+    {
+      "id": "el-title",
+      "kind": "text",
+      "body": "## Executive sales\n\nRevenue is gross, before refunds."
+    },
+    {
+      "id": "el-ctl-date",
+      "kind": "control",
+      "controlId": "OrderDate",
+      "name": "Order date",
+      "controlType": "date-range",
+      "mode": "last",
+      "value": 12,
+      "unit": "month",
+      "filters": [
+        {
+          "source": {
+            "kind": "table",
+            "elementId": "el-rev-month"
+          },
+          "columnId": "c-month"
+        }
+      ]
+    },
+    {
+      "id": "el-ctl-region",
+      "kind": "control",
+      "controlId": "Region",
+      "name": "Region",
+      "controlType": "list",
+      "mode": "include",
+      "selectionMode": "multiple",
+      "values": [
+        "EMEA"
+      ],
+      "filters": [
+        {
+          "source": {
+            "kind": "table",
+            "elementId": "el-orders-src"
+          },
+          "columnId": "s-region"
+        }
+      ]
+    },
+    {
+      "id": "el-kpi-row",
+      "kind": "container"
+    },
+    {
+      "id": "el-kpi-rev",
+      "kind": "kpi-chart",
+      "name": {
+        "text": "Total Revenue",
+        "fontSize": 16
+      },
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "k-month",
+          "formula": "DateTrunc(\"month\", [Orders/Created At])",
+          "name": "Month"
+        },
+        {
+          "id": "k-rev",
+          "formula": "[Orders/Revenue]",
+          "name": "Revenue",
+          "format": {
+            "kind": "number",
+            "formatString": "$,.0f"
+          }
+        }
+      ],
+      "value": {
+        "columnId": "k-rev"
+      },
+      "timeline": {
+        "columnId": "k-month"
+      },
+      "periodComparison": "month"
+    },
+    {
+      "id": "el-kpi-aov",
+      "kind": "kpi-chart",
+      "name": "Average Order Value",
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "k-aov",
+          "formula": "[Orders/Average Order Value]",
+          "name": "AOV"
+        }
+      ],
+      "value": {
+        "columnId": "k-aov"
+      }
+    },
+    {
+      "id": "el-rev-month",
+      "kind": "line-chart",
+      "name": "Revenue by Month",
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "c-month",
+          "formula": "DateTrunc(\"month\", [Orders/Created At])",
+          "name": "Month of Created At"
+        },
+        {
+          "id": "c-rev",
+          "formula": "[Orders/Revenue]",
+          "name": "Revenue"
+        },
+        {
+          "id": "c-region",
+          "formula": "[Orders/Region]",
+          "name": "Region"
+        }
+      ],
+      "xAxis": {
+        "columnId": "c-month"
+      },
+      "yAxis": {
+        "columnIds": [
+          "c-rev"
+        ]
+      },
+      "color": {
+        "columnId": "c-region"
+      }
+    },
+    {
+      "id": "el-rev-region",
+      "kind": "bar-chart",
+      "name": "Revenue by Region",
+      "orientation": "horizontal",
+      "stacking": "none",
+      "source": {
+        "kind": "table",
+        "elementId": "el-orders-src"
+      },
+      "columns": [
+        {
+          "id": "r-region",
+          "formula": "[Orders Source/Region]",
+          "name": "Region"
+        },
+        {
+          "id": "r-rev",
+          "formula": "Sum([Orders Source/Amount])",
+          "name": "Revenue (USD)"
+        }
+      ],
+      "xAxis": {
+        "columnId": "r-region",
+        "sort": {
+          "by": "r-rev",
+          "direction": "descending"
+        }
+      },
+      "yAxis": {
+        "columnIds": [
+          "r-rev"
+        ]
+      },
+      "color": {
+        "by": "single",
+        "value": "#0ea5e9"
+      }
+    },
+    {
+      "id": "el-status-donut",
+      "kind": "donut-chart",
+      "name": "Revenue by Status",
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "p-status",
+          "formula": "[Orders/Status]",
+          "name": "Status"
+        },
+        {
+          "id": "p-rev",
+          "formula": "[Orders/Revenue]",
+          "name": "Revenue"
+        }
+      ],
+      "color": {
+        "columnId": "p-status"
+      },
+      "value": {
+        "columnId": "p-rev"
+      }
+    },
+    {
+      "id": "el-orders-table",
+      "kind": "table",
+      "name": "Recent Orders",
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "t-id",
+          "formula": "[Orders/Order Id]",
+          "name": "Order Id"
+        },
+        {
+          "id": "t-created",
+          "formula": "[Orders/Created At]",
+          "name": "Created At"
+        },
+        {
+          "id": "t-amount",
+          "formula": "[Orders/Amount]",
+          "name": "Amount"
+        },
+        {
+          "id": "t-status",
+          "formula": "[Orders/Status]",
+          "name": "Status"
+        }
+      ]
+    },
+    {
+      "id": "el-rolling",
+      "kind": "line-chart",
+      "name": "7-day Moving Revenue",
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "m-day",
+          "formula": "DateTrunc(\"day\", [Orders/Created At])",
+          "name": "Day of Created At"
+        },
+        {
+          "id": "m-rev",
+          "formula": "MovingAvg(Sum([Orders/Amount]), 6, 0)",
+          "name": "Moving Revenue"
+        }
+      ],
+      "xAxis": {
+        "columnId": "m-day"
+      },
+      "yAxis": {
+        "columnIds": [
+          "m-rev"
+        ]
+      }
+    },
+    {
+      "id": "el-map",
+      "kind": "region-map",
+      "name": "Revenue by Country",
+      "source": {
+        "kind": "data-model",
+        "dataModelId": "dm-sales",
+        "elementId": "el-orders"
+      },
+      "columns": [
+        {
+          "id": "g-country",
+          "formula": "[Orders/Region]",
+          "name": "Region"
+        },
+        {
+          "id": "g-rev",
+          "formula": "[Orders/Revenue]",
+          "name": "Revenue"
+        }
+      ]
+    },
+    {
+      "id": "el-orders-src",
+      "kind": "table",
+      "name": "Orders Source",
+      "source": {
+        "connectionId": "conn-snowflake",
+        "kind": "sql",
+        "statement": "select * from analytics.public.fct_orders"
+      },
+      "columns": [
+        {
+          "id": "s-region",
+          "formula": "[Custom SQL/REGION]",
+          "name": "Region"
+        },
+        {
+          "id": "s-amount",
+          "formula": "[Custom SQL/AMOUNT_USD]",
+          "name": "Amount"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "pg-overview",
+      "name": "Overview"
+    },
+    {
+      "id": "pg-detail",
+      "name": "Detail"
+    },
+    {
+      "id": "pg-data",
+      "name": "Data",
+      "visibility": "hidden"
+    }
+  ],
+  "layout": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<Page type=\"grid\" gridTemplateColumns=\"repeat(24, 1fr)\" gridTemplateRows=\"auto\" id=\"pg-overview\">\n  <Element elementId=\"el-title\" gridColumn=\"1 / 13\" gridRow=\"1 / 3\"/>\n  <Element elementId=\"el-ctl-date\" gridColumn=\"13 / 19\" gridRow=\"1 / 3\"/>\n  <Element elementId=\"el-ctl-region\" gridColumn=\"19 / 25\" gridRow=\"1 / 3\"/>\n  <Container elementId=\"el-kpi-row\" type=\"grid\" gridColumn=\"1 / 25\" gridRow=\"3 / 7\" gridTemplateColumns=\"repeat(12, 1fr)\" gridTemplateRows=\"auto\">\n    <Element elementId=\"el-kpi-aov\" gridColumn=\"7 / 13\" gridRow=\"1 / 5\"/>\n    <Element elementId=\"el-kpi-rev\" gridColumn=\"1 / 7\" gridRow=\"1 / 5\"/>\n  </Container>\n  <Element elementId=\"el-rev-month\" gridColumn=\"1 / 25\" gridRow=\"7 / 17\"/>\n  <Element elementId=\"el-status-donut\" gridColumn=\"13 / 25\" gridRow=\"17 / 27\"/>\n  <Element elementId=\"el-rev-region\" gridColumn=\"1 / 13\" gridRow=\"17 / 27\"/>\n</Page>\n<Page type=\"grid\" gridTemplateColumns=\"repeat(24, 1fr)\" gridTemplateRows=\"auto\" id=\"pg-detail\">\n  <Element elementId=\"el-orders-table\" gridColumn=\"1 / 25\" gridRow=\"1 / 10\"/>\n  <Element elementId=\"el-rolling\" gridColumn=\"1 / 13\" gridRow=\"10 / 20\"/>\n  <Element elementId=\"el-map\" gridColumn=\"13 / 25\" gridRow=\"10 / 20\"/>\n</Page>\n<Page type=\"grid\" gridTemplateColumns=\"repeat(24, 1fr)\" gridTemplateRows=\"auto\" id=\"pg-data\">\n  <Element elementId=\"el-orders-src\" gridColumn=\"1 / 25\" gridRow=\"1 / 17\"/>\n</Page>\n"
+}

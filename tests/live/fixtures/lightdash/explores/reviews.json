@@ -1,0 +1,1121 @@
+{
+  "baseTable": "reviews",
+  "dbtModelIdentity": {
+    "modelName": "reviews",
+    "packageName": "dunder_mifflin",
+    "sourceName": null,
+    "sourceUuid": null,
+    "uniqueId": "model.dunder_mifflin.reviews"
+  },
+  "joinedTables": [
+    {
+      "compiledSqlOn": "(\"reviews\".order_id) = (\"orders\".order_id)",
+      "relationship": "many-to-one",
+      "sqlOn": "${reviews.order_id} = ${orders.order_id}",
+      "table": "orders",
+      "tablesReferences": [
+        "reviews",
+        "orders"
+      ]
+    }
+  ],
+  "label": "Reviews",
+  "name": "reviews",
+  "spotlight": {
+    "categories": [],
+    "visibility": "show"
+  },
+  "sqlPath": "reviews.sql",
+  "tables": {
+    "orders": {
+      "database": "dunder_mifflin",
+      "dbtModelUniqueId": "model.dunder_mifflin.orders",
+      "dbtPackageName": "dunder_mifflin",
+      "description": "One row per order placed by a Dunder Mifflin account.",
+      "dimensions": {
+        "account_id": {
+          "compiledSql": "\"orders\".account_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": true,
+          "index": 1,
+          "isIntervalBase": false,
+          "label": "Account id",
+          "name": "account_id",
+          "sql": "${TABLE}.account_id",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "cancelled_at": {
+          "compiledSql": "\"orders\".cancelled_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": true,
+          "label": "Cancelled at",
+          "name": "cancelled_at",
+          "sql": "${TABLE}.cancelled_at",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "cancelled_at_day": {
+          "compiledSql": "DATE_TRUNC('DAY', \"orders\".cancelled_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Cancelled at"
+          ],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": false,
+          "label": "Cancelled at day",
+          "name": "cancelled_at_day",
+          "sql": "DATE_TRUNC('DAY', ${TABLE}.cancelled_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "DAY",
+          "timeIntervalBaseDimensionName": "cancelled_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "cancelled_at_month": {
+          "compiledSql": "DATE_TRUNC('MONTH', \"orders\".cancelled_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Cancelled at"
+          ],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": false,
+          "label": "Cancelled at month",
+          "name": "cancelled_at_month",
+          "sql": "DATE_TRUNC('MONTH', ${TABLE}.cancelled_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "MONTH",
+          "timeIntervalBaseDimensionName": "cancelled_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "cancelled_at_quarter": {
+          "compiledSql": "DATE_TRUNC('QUARTER', \"orders\".cancelled_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Cancelled at"
+          ],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": false,
+          "label": "Cancelled at quarter",
+          "name": "cancelled_at_quarter",
+          "sql": "DATE_TRUNC('QUARTER', ${TABLE}.cancelled_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "QUARTER",
+          "timeIntervalBaseDimensionName": "cancelled_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "cancelled_at_raw": {
+          "compiledSql": "\"orders\".cancelled_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Cancelled at"
+          ],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": false,
+          "label": "Cancelled at raw",
+          "name": "cancelled_at_raw",
+          "sql": "${TABLE}.cancelled_at",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "RAW",
+          "timeIntervalBaseDimensionName": "cancelled_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "cancelled_at_week": {
+          "compiledSql": "DATE_TRUNC('WEEK', \"orders\".cancelled_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Cancelled at"
+          ],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": false,
+          "label": "Cancelled at week",
+          "name": "cancelled_at_week",
+          "sql": "DATE_TRUNC('WEEK', ${TABLE}.cancelled_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "WEEK",
+          "timeIntervalBaseDimensionName": "cancelled_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "cancelled_at_year": {
+          "compiledSql": "DATE_TRUNC('YEAR', \"orders\".cancelled_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Cancelled at"
+          ],
+          "hidden": false,
+          "index": 9,
+          "isIntervalBase": false,
+          "label": "Cancelled at year",
+          "name": "cancelled_at_year",
+          "sql": "DATE_TRUNC('YEAR', ${TABLE}.cancelled_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "YEAR",
+          "timeIntervalBaseDimensionName": "cancelled_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "discount_percentage": {
+          "compiledSql": "\"orders\".discount_percentage",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 6,
+          "isIntervalBase": false,
+          "label": "Discount percentage",
+          "name": "discount_percentage",
+          "sql": "${TABLE}.discount_percentage",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "order_id": {
+          "compiledSql": "\"orders\".order_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "isIntervalBase": false,
+          "label": "Order id",
+          "name": "order_id",
+          "sql": "${TABLE}.order_id",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "post_discount_revenue": {
+          "compiledSql": "\"orders\".post_discount_revenue",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 7,
+          "isIntervalBase": false,
+          "label": "Post discount revenue",
+          "name": "post_discount_revenue",
+          "sql": "${TABLE}.post_discount_revenue",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "pre_discount_revenue": {
+          "compiledSql": "\"orders\".pre_discount_revenue",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Pre discount revenue",
+          "name": "pre_discount_revenue",
+          "sql": "${TABLE}.pre_discount_revenue",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "product_id": {
+          "compiledSql": "\"orders\".product_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": true,
+          "index": 2,
+          "isIntervalBase": false,
+          "label": "Product id",
+          "name": "product_id",
+          "sql": "${TABLE}.product_id",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "purchased_at": {
+          "compiledSql": "\"orders\".purchased_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 8,
+          "isIntervalBase": true,
+          "label": "Purchased at",
+          "name": "purchased_at",
+          "sql": "${TABLE}.purchased_at",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "purchased_at_day": {
+          "compiledSql": "DATE_TRUNC('DAY', \"orders\".purchased_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Purchased at"
+          ],
+          "hidden": false,
+          "index": 8,
+          "isIntervalBase": false,
+          "label": "Purchased at day",
+          "name": "purchased_at_day",
+          "sql": "DATE_TRUNC('DAY', ${TABLE}.purchased_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "DAY",
+          "timeIntervalBaseDimensionName": "purchased_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "purchased_at_month": {
+          "compiledSql": "DATE_TRUNC('MONTH', \"orders\".purchased_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Purchased at"
+          ],
+          "hidden": false,
+          "index": 8,
+          "isIntervalBase": false,
+          "label": "Purchased at month",
+          "name": "purchased_at_month",
+          "sql": "DATE_TRUNC('MONTH', ${TABLE}.purchased_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "MONTH",
+          "timeIntervalBaseDimensionName": "purchased_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "purchased_at_quarter": {
+          "compiledSql": "DATE_TRUNC('QUARTER', \"orders\".purchased_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Purchased at"
+          ],
+          "hidden": false,
+          "index": 8,
+          "isIntervalBase": false,
+          "label": "Purchased at quarter",
+          "name": "purchased_at_quarter",
+          "sql": "DATE_TRUNC('QUARTER', ${TABLE}.purchased_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "QUARTER",
+          "timeIntervalBaseDimensionName": "purchased_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "purchased_at_week": {
+          "compiledSql": "DATE_TRUNC('WEEK', \"orders\".purchased_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Purchased at"
+          ],
+          "hidden": false,
+          "index": 8,
+          "isIntervalBase": false,
+          "label": "Purchased at week",
+          "name": "purchased_at_week",
+          "sql": "DATE_TRUNC('WEEK', ${TABLE}.purchased_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "WEEK",
+          "timeIntervalBaseDimensionName": "purchased_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "purchased_at_year": {
+          "compiledSql": "DATE_TRUNC('YEAR', \"orders\".purchased_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Purchased at"
+          ],
+          "hidden": false,
+          "index": 8,
+          "isIntervalBase": false,
+          "label": "Purchased at year",
+          "name": "purchased_at_year",
+          "sql": "DATE_TRUNC('YEAR', ${TABLE}.purchased_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "YEAR",
+          "timeIntervalBaseDimensionName": "purchased_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "quantity": {
+          "compiledSql": "\"orders\".quantity",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 4,
+          "isIntervalBase": false,
+          "label": "Quantity",
+          "name": "quantity",
+          "sql": "${TABLE}.quantity",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "returned_at": {
+          "compiledSql": "\"orders\".returned_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": true,
+          "label": "Returned at",
+          "name": "returned_at",
+          "sql": "${TABLE}.returned_at",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "returned_at_day": {
+          "compiledSql": "DATE_TRUNC('DAY', \"orders\".returned_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Returned at"
+          ],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": false,
+          "label": "Returned at day",
+          "name": "returned_at_day",
+          "sql": "DATE_TRUNC('DAY', ${TABLE}.returned_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "DAY",
+          "timeIntervalBaseDimensionName": "returned_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "returned_at_month": {
+          "compiledSql": "DATE_TRUNC('MONTH', \"orders\".returned_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Returned at"
+          ],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": false,
+          "label": "Returned at month",
+          "name": "returned_at_month",
+          "sql": "DATE_TRUNC('MONTH', ${TABLE}.returned_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "MONTH",
+          "timeIntervalBaseDimensionName": "returned_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "returned_at_quarter": {
+          "compiledSql": "DATE_TRUNC('QUARTER', \"orders\".returned_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Returned at"
+          ],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": false,
+          "label": "Returned at quarter",
+          "name": "returned_at_quarter",
+          "sql": "DATE_TRUNC('QUARTER', ${TABLE}.returned_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "QUARTER",
+          "timeIntervalBaseDimensionName": "returned_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "returned_at_raw": {
+          "compiledSql": "\"orders\".returned_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Returned at"
+          ],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": false,
+          "label": "Returned at raw",
+          "name": "returned_at_raw",
+          "sql": "${TABLE}.returned_at",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "RAW",
+          "timeIntervalBaseDimensionName": "returned_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "returned_at_week": {
+          "compiledSql": "DATE_TRUNC('WEEK', \"orders\".returned_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Returned at"
+          ],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": false,
+          "label": "Returned at week",
+          "name": "returned_at_week",
+          "sql": "DATE_TRUNC('WEEK', ${TABLE}.returned_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "WEEK",
+          "timeIntervalBaseDimensionName": "returned_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "returned_at_year": {
+          "compiledSql": "DATE_TRUNC('YEAR', \"orders\".returned_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Returned at"
+          ],
+          "hidden": false,
+          "index": 10,
+          "isIntervalBase": false,
+          "label": "Returned at year",
+          "name": "returned_at_year",
+          "sql": "DATE_TRUNC('YEAR', ${TABLE}.returned_at)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "timeInterval": "YEAR",
+          "timeIntervalBaseDimensionName": "returned_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "status": {
+          "compiledSql": "\"orders\".status",
+          "description": "COMPLETED, CANCELLED or RETURNED",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Status",
+          "name": "status",
+          "sql": "${TABLE}.status",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "string"
+        }
+      },
+      "groupDetails": {},
+      "label": "Orders",
+      "lineageGraph": {
+        "orders": []
+      },
+      "metrics": {
+        "average_discount": {
+          "compiledSql": "AVG(\"orders\".discount_percentage::DOUBLE PRECISION)",
+          "compiledValueSql": "\"orders\".discount_percentage",
+          "description": "Average of Discount percentage",
+          "dimensionReference": "orders_discount_percentage",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 3,
+          "label": "Average discount",
+          "name": "average_discount",
+          "round": 2,
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.discount_percentage",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "average"
+        },
+        "average_order_value": {
+          "compiledSql": "(SUM(\"orders\".post_discount_revenue)) / NULLIF((COUNT(DISTINCT \"orders\".order_id)), 0)",
+          "compiledValueSql": "(SUM(\"orders\".post_discount_revenue)) / NULLIF((COUNT(DISTINCT \"orders\".order_id)), 0)",
+          "fieldType": "metric",
+          "filters": [],
+          "format": "usd",
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "label": "Average order value",
+          "name": "average_order_value",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${total_revenue} / NULLIF(${order_count}, 0)",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "number"
+        },
+        "completed_revenue": {
+          "compiledSql": "SUM(CASE WHEN ((\"orders\".status) IN ('COMPLETED')) THEN (\"orders\".post_discount_revenue) ELSE NULL END)",
+          "compiledValueSql": "CASE WHEN ((\"orders\".status) IN ('COMPLETED')) THEN (\"orders\".post_discount_revenue) ELSE NULL END",
+          "description": "Sum of Post discount revenue",
+          "dimensionReference": "orders_post_discount_revenue",
+          "fieldType": "metric",
+          "filters": [
+            {
+              "id": "e3b065b7-8377-4ec4-b201-46c7f08b74ba",
+              "operator": "equals",
+              "target": {
+                "fieldRef": "status"
+              },
+              "values": [
+                "COMPLETED"
+              ]
+            }
+          ],
+          "groups": [],
+          "hidden": false,
+          "index": 5,
+          "label": "Completed revenue",
+          "name": "completed_revenue",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.post_discount_revenue",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "sum"
+        },
+        "order_count": {
+          "compiledSql": "COUNT(DISTINCT \"orders\".order_id)",
+          "compiledValueSql": "\"orders\".order_id",
+          "description": "Count distinct of Order id",
+          "dimensionReference": "orders_order_id",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 1,
+          "label": "Order count",
+          "name": "order_count",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.order_id",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "count_distinct"
+        },
+        "total_quantity": {
+          "compiledSql": "SUM(\"orders\".quantity)",
+          "compiledValueSql": "\"orders\".quantity",
+          "description": "Sum of Quantity",
+          "dimensionReference": "orders_quantity",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 2,
+          "label": "Total quantity",
+          "name": "total_quantity",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.quantity",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "sum"
+        },
+        "total_revenue": {
+          "compiledSql": "SUM(\"orders\".post_discount_revenue)",
+          "compiledValueSql": "\"orders\".post_discount_revenue",
+          "description": "Sum of Post discount revenue",
+          "dimensionReference": "orders_post_discount_revenue",
+          "fieldType": "metric",
+          "filters": [],
+          "format": "usd",
+          "groups": [],
+          "hidden": false,
+          "index": 4,
+          "label": "Revenue",
+          "name": "total_revenue",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.post_discount_revenue",
+          "table": "orders",
+          "tableLabel": "Orders",
+          "tablesReferences": [
+            "orders"
+          ],
+          "type": "sum"
+        }
+      },
+      "name": "orders",
+      "orderFieldsBy": "LABEL",
+      "originalName": "orders",
+      "primaryKey": [
+        "order_id"
+      ],
+      "requiredFilters": [],
+      "schema": "analytics",
+      "sqlPath": "orders.sql",
+      "sqlTable": "\"dunder_mifflin\".\"analytics\".\"orders\"",
+      "ymlPath": "models/schema.yml"
+    },
+    "reviews": {
+      "database": "dunder_mifflin",
+      "dbtModelUniqueId": "model.dunder_mifflin.reviews",
+      "dbtPackageName": "dunder_mifflin",
+      "description": "Customer reviews of completed orders.",
+      "dimensions": {
+        "order_id": {
+          "compiledSql": "\"reviews\".order_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": true,
+          "index": 1,
+          "isIntervalBase": false,
+          "label": "Order id",
+          "name": "order_id",
+          "sql": "${TABLE}.order_id",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "type": "number"
+        },
+        "rating": {
+          "compiledSql": "\"reviews\".rating",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 2,
+          "isIntervalBase": false,
+          "label": "Rating",
+          "name": "rating",
+          "sql": "${TABLE}.rating",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "type": "number"
+        },
+        "review_id": {
+          "compiledSql": "\"reviews\".review_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "isIntervalBase": false,
+          "label": "Review id",
+          "name": "review_id",
+          "sql": "${TABLE}.review_id",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "type": "number"
+        },
+        "reviewed_at": {
+          "compiledSql": "\"reviews\".reviewed_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": true,
+          "label": "Reviewed at",
+          "name": "reviewed_at",
+          "sql": "${TABLE}.reviewed_at",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "reviewed_at_day": {
+          "compiledSql": "DATE_TRUNC('DAY', \"reviews\".reviewed_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Reviewed at"
+          ],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Reviewed at day",
+          "name": "reviewed_at_day",
+          "sql": "DATE_TRUNC('DAY', ${TABLE}.reviewed_at)",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timeInterval": "DAY",
+          "timeIntervalBaseDimensionName": "reviewed_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "reviewed_at_month": {
+          "compiledSql": "DATE_TRUNC('MONTH', \"reviews\".reviewed_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Reviewed at"
+          ],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Reviewed at month",
+          "name": "reviewed_at_month",
+          "sql": "DATE_TRUNC('MONTH', ${TABLE}.reviewed_at)",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timeInterval": "MONTH",
+          "timeIntervalBaseDimensionName": "reviewed_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "reviewed_at_quarter": {
+          "compiledSql": "DATE_TRUNC('QUARTER', \"reviews\".reviewed_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Reviewed at"
+          ],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Reviewed at quarter",
+          "name": "reviewed_at_quarter",
+          "sql": "DATE_TRUNC('QUARTER', ${TABLE}.reviewed_at)",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timeInterval": "QUARTER",
+          "timeIntervalBaseDimensionName": "reviewed_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "reviewed_at_raw": {
+          "compiledSql": "\"reviews\".reviewed_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Reviewed at"
+          ],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Reviewed at raw",
+          "name": "reviewed_at_raw",
+          "sql": "${TABLE}.reviewed_at",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timeInterval": "RAW",
+          "timeIntervalBaseDimensionName": "reviewed_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "reviewed_at_week": {
+          "compiledSql": "DATE_TRUNC('WEEK', \"reviews\".reviewed_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Reviewed at"
+          ],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Reviewed at week",
+          "name": "reviewed_at_week",
+          "sql": "DATE_TRUNC('WEEK', ${TABLE}.reviewed_at)",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timeInterval": "WEEK",
+          "timeIntervalBaseDimensionName": "reviewed_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "reviewed_at_year": {
+          "compiledSql": "DATE_TRUNC('YEAR', \"reviews\".reviewed_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Reviewed at"
+          ],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Reviewed at year",
+          "name": "reviewed_at_year",
+          "sql": "DATE_TRUNC('YEAR', ${TABLE}.reviewed_at)",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "timeInterval": "YEAR",
+          "timeIntervalBaseDimensionName": "reviewed_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        }
+      },
+      "groupDetails": {},
+      "label": "Reviews",
+      "lineageGraph": {
+        "reviews": []
+      },
+      "metrics": {
+        "average_rating": {
+          "compiledSql": "AVG(\"reviews\".rating::DOUBLE PRECISION)",
+          "compiledValueSql": "\"reviews\".rating",
+          "description": "Average of Rating",
+          "dimensionReference": "reviews_rating",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 1,
+          "label": "Average rating",
+          "name": "average_rating",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.rating",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "type": "average"
+        },
+        "review_count": {
+          "compiledSql": "COUNT(DISTINCT \"reviews\".review_id)",
+          "compiledValueSql": "\"reviews\".review_id",
+          "description": "Count distinct of Review id",
+          "dimensionReference": "reviews_review_id",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "label": "Review count",
+          "name": "review_count",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.review_id",
+          "table": "reviews",
+          "tableLabel": "Reviews",
+          "tablesReferences": [
+            "reviews"
+          ],
+          "type": "count_distinct"
+        }
+      },
+      "name": "reviews",
+      "orderFieldsBy": "LABEL",
+      "primaryKey": [
+        "review_id"
+      ],
+      "requiredFilters": [],
+      "schema": "analytics",
+      "sqlPath": "reviews.sql",
+      "sqlTable": "\"dunder_mifflin\".\"analytics\".\"reviews\"",
+      "ymlPath": "models/schema.yml"
+    }
+  },
+  "tags": [],
+  "targetDatabase": "postgres",
+  "warehouseConnection": {
+    "startOfWeek": null,
+    "warehouseConnectionUuid": null,
+    "warehouseType": "postgres"
+  },
+  "warehouseConnectionUuid": null,
+  "ymlPath": "models/schema.yml"
+}

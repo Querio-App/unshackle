@@ -1,0 +1,47 @@
+{
+  "config": "{\"version\": \"5.43\", \"themeCollection\": {\"baseTheme\": {\"name\": \"CY23SU08\"}}}",
+  "layoutOptimization": 0,
+  "filters": "[]",
+  "resourcePackages": [],
+  "sections": [
+    {
+      "name": "ReportSection",
+      "displayName": "Summary",
+      "ordinal": 0,
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720,
+      "filters": "[]",
+      "config": "{}",
+      "visualContainers": [
+        {
+          "x": 20,
+          "y": 20,
+          "z": 0,
+          "width": 300,
+          "height": 150,
+          "config": "{\"name\": \"a1b2c3d4e5f6a7b8c9d0\", \"layouts\": [{\"id\": 0, \"position\": {\"x\": 20, \"y\": 20, \"z\": 0, \"width\": 300, \"height\": 150}}], \"singleVisual\": {\"visualType\": \"card\", \"projections\": {\"Values\": [{\"queryRef\": \"Sales.Margin %\"}]}, \"prototypeQuery\": {\"Version\": 2, \"From\": [{\"Name\": \"s\", \"Entity\": \"Sales\", \"Type\": 0}], \"Select\": [{\"Measure\": {\"Expression\": {\"SourceRef\": {\"Source\": \"s\"}}, \"Property\": \"Margin %\"}, \"Name\": \"Sales.Margin %\"}]}, \"drillFilterOtherVisuals\": true}}",
+          "filters": "[]"
+        },
+        {
+          "x": 340,
+          "y": 20,
+          "z": 0,
+          "width": 400,
+          "height": 300,
+          "config": "{\"name\": \"b2c3d4e5f6a7b8c9d0e1\", \"layouts\": [{\"id\": 0, \"position\": {\"x\": 340, \"y\": 20, \"z\": 0, \"width\": 400, \"height\": 300}}], \"singleVisual\": {\"visualType\": \"donutChart\", \"projections\": {\"Category\": [{\"queryRef\": \"Sales.Channel\", \"active\": true}], \"Y\": [{\"queryRef\": \"Sales.Total Sales\"}]}, \"prototypeQuery\": {\"Version\": 2, \"From\": [{\"Name\": \"s\", \"Entity\": \"Sales\", \"Type\": 0}], \"Select\": [{\"Column\": {\"Expression\": {\"SourceRef\": {\"Source\": \"s\"}}, \"Property\": \"Channel\"}, \"Name\": \"Sales.Channel\"}, {\"Measure\": {\"Expression\": {\"SourceRef\": {\"Source\": \"s\"}}, \"Property\": \"Total Sales\"}, \"Name\": \"Sales.Total Sales\"}]}, \"drillFilterOtherVisuals\": true, \"vcObjects\": {\"title\": [{\"properties\": {\"show\": {\"expr\": {\"Literal\": {\"Value\": \"true\"}}}, \"text\": {\"expr\": {\"Literal\": {\"Value\": \"'Sales by channel'\"}}}}}]}}}",
+          "filters": "[]"
+        },
+        {
+          "x": 20,
+          "y": 340,
+          "z": 0,
+          "width": 1220,
+          "height": 360,
+          "config": "{\"name\": \"c3d4e5f6a7b8c9d0e1f2\", \"layouts\": [{\"id\": 0, \"position\": {\"x\": 20, \"y\": 340, \"z\": 0, \"width\": 1220, \"height\": 360}}], \"singleVisual\": {\"visualType\": \"pivotTable\", \"projections\": {\"Rows\": [{\"queryRef\": \"Customer.Region\"}], \"Columns\": [{\"queryRef\": \"Date.Year\"}], \"Values\": [{\"queryRef\": \"Sales.Total Sales\"}]}, \"prototypeQuery\": {\"Version\": 2, \"From\": [{\"Name\": \"s\", \"Entity\": \"Sales\", \"Type\": 0}, {\"Name\": \"c\", \"Entity\": \"Customer\", \"Type\": 0}, {\"Name\": \"d\", \"Entity\": \"Date\", \"Type\": 0}], \"Select\": [{\"Column\": {\"Expression\": {\"SourceRef\": {\"Source\": \"c\"}}, \"Property\": \"Region\"}, \"Name\": \"Customer.Region\"}, {\"Column\": {\"Expression\": {\"SourceRef\": {\"Source\": \"d\"}}, \"Property\": \"Year\"}, \"Name\": \"Date.Year\"}, {\"Measure\": {\"Expression\": {\"SourceRef\": {\"Source\": \"s\"}}, \"Property\": \"Total Sales\"}, \"Name\": \"Sales.Total Sales\"}]}, \"drillFilterOtherVisuals\": true}}",
+          "filters": "[]"
+        }
+      ]
+    }
+  ]
+}

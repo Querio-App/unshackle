@@ -1,0 +1,186 @@
+dashboard_title: Sales overview
+description: null
+css: null
+slug: sales-overview
+certified_by: null
+certification_details: null
+published: true
+uuid: 8e7997a9-bd46-4b75-ad2d-4f0f7e50c853
+position:
+  DASHBOARD_VERSION_KEY: v2
+  ROOT_ID:
+    type: ROOT
+    id: ROOT_ID
+    children:
+    - GRID_ID
+  HEADER_ID:
+    id: HEADER_ID
+    type: HEADER
+    meta:
+      text: Sales overview
+  GRID_ID:
+    type: GRID
+    id: GRID_ID
+    children:
+    - ROW-1
+    - ROW-2
+    - ROW-3
+    parents:
+    - ROOT_ID
+  ROW-1:
+    type: ROW
+    id: ROW-1
+    children:
+    - CHART-3
+    - CHART-2
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    meta:
+      background: BACKGROUND_TRANSPARENT
+  CHART-3:
+    id: CHART-3
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-1
+    type: CHART
+    meta:
+      chartId: 3
+      uuid: ba1de29c-3c0e-44bd-9999-2455f9656425
+      width: 4
+      height: 50
+      sliceName: Average order value
+  CHART-2:
+    id: CHART-2
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-1
+    type: CHART
+    meta:
+      chartId: 2
+      uuid: ca0108cf-5744-43f8-9ab3-75dff08917d0
+      width: 8
+      height: 50
+      sliceName: Monthly revenue
+  ROW-2:
+    type: ROW
+    id: ROW-2
+    children:
+    - CHART-1
+    - CHART-4
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    meta:
+      background: BACKGROUND_TRANSPARENT
+  CHART-1:
+    id: CHART-1
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-2
+    type: CHART
+    meta:
+      chartId: 1
+      uuid: 1d05f11b-447e-4373-a248-fef6030ec747
+      width: 6
+      height: 50
+      sliceName: Revenue by region
+  CHART-4:
+    id: CHART-4
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-2
+    type: CHART
+    meta:
+      chartId: 4
+      uuid: 4681d925-313f-4c8e-8c75-afe33f985d31
+      width: 6
+      height: 50
+      sliceName: Orders by status
+  ROW-3:
+    type: ROW
+    id: ROW-3
+    children:
+    - MARKDOWN-1
+    - CHART-5
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    meta:
+      background: BACKGROUND_TRANSPARENT
+  MARKDOWN-1:
+    id: MARKDOWN-1
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-3
+    type: MARKDOWN
+    meta:
+      width: 4
+      height: 50
+      code: '## Notes
+
+        Revenue is **post-discount**. The status filter does not apply to the region
+        chart.'
+  CHART-5:
+    id: CHART-5
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-3
+    type: CHART
+    meta:
+      chartId: 5
+      uuid: c73487fb-fa28-4cd7-8cdf-656664ea5eb3
+      width: 8
+      height: 50
+      sliceName: Orders by size
+metadata:
+  native_filter_configuration:
+  - id: NATIVE_FILTER-status
+    name: Status
+    filterType: filter_select
+    type: NATIVE_FILTER
+    targets:
+    - column:
+        name: status
+      datasetUuid: 2e575f21-b5e2-4e39-a3eb-c2a918e2358c
+    controlValues:
+      multiSelect: true
+      enableEmptyFilter: false
+      defaultToFirstItem: false
+      searchAllOptions: false
+    defaultDataMask:
+      extraFormData: {}
+      filterState: {}
+      ownState: {}
+    cascadeParentIds: []
+    scope:
+      rootPath:
+      - ROOT_ID
+      excluded:
+      - 1
+    chartsInScope:
+    - 2
+    - 3
+    - 4
+    - 5
+    description: ''
+  color_scheme: ''
+  refresh_frequency: 0
+  cross_filters_enabled: false
+  label_colors: {}
+  shared_label_colors: []
+  timed_refresh_immune_slices: []
+theme_uuid: null
+version: 1.0.0

@@ -1,0 +1,60 @@
+name: Revenue by region and status
+description: ""
+tableName: orders
+slug: revenue-by-region
+spaceSlug: sales
+version: 1
+metricQuery:
+  exploreName: orders
+  dimensions:
+    - customers_region
+    - orders_status
+  metrics:
+    - orders_total_revenue
+  filters:
+    dimensions:
+      id: 7c1f
+      and:
+        - id: a1
+          target:
+            fieldId: orders_status
+          operator: notEquals
+          values:
+            - returned
+  sorts:
+    - fieldId: orders_total_revenue
+      descending: true
+  limit: 500
+  tableCalculations: []
+  additionalMetrics: []
+pivotConfig:
+  columns:
+    - orders_status
+chartConfig:
+  type: cartesian
+  config:
+    layout:
+      xField: customers_region
+      yField:
+        - orders_total_revenue
+      flipAxes: false
+    eChartsConfig:
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: customers_region
+            yRef:
+              field: orders_total_revenue
+              pivotValues:
+                - field: orders_status
+                  value: completed
+        - type: bar
+          encode:
+            xRef:
+              field: customers_region
+            yRef:
+              field: orders_total_revenue
+              pivotValues:
+                - field: orders_status
+                  value: shipped

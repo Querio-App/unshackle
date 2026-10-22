@@ -1,0 +1,20 @@
+[
+  {
+    "grantId": "g-1",
+    "inodeId": "wb-exec",
+    "teamId": "t-fin",
+    "permission": "edit"
+  },
+  {
+    "grantId": "g-2",
+    "inodeId": "wb-exec",
+    "memberId": "m-dana",
+    "permission": "view"
+  },
+  {
+    "grantId": "g-3",
+    "inodeId": "wb-exec",
+    "teamId": "t-sales",
+    "permission": "explore"
+  }
+]

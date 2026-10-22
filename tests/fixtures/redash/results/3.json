@@ -1,0 +1,15 @@
+{
+  "columns": [
+    {
+      "friendly_name": "revenue",
+      "name": "revenue",
+      "type": "float"
+    },
+    {
+      "friendly_name": "orders",
+      "name": "orders",
+      "type": "integer"
+    }
+  ],
+  "retrieved_at": "2026-10-22T11:02:37.931Z"
+}

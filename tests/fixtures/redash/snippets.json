@@ -1,0 +1,10 @@
+[
+  {
+    "created_at": "2026-10-22T11:02:36.654Z",
+    "description": "Orders that count as revenue",
+    "id": 1,
+    "snippet": "status = 'COMPLETED'",
+    "trigger": "completed",
+    "updated_at": "2026-10-22T11:02:36.654Z"
+  }
+]

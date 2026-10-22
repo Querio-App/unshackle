@@ -1,0 +1,135 @@
+{
+  "archived": false,
+  "archived_directly": false,
+  "average_query_time": null,
+  "cache_invalidated_at": null,
+  "cache_ttl": null,
+  "can_delete": false,
+  "can_manage_db": true,
+  "can_restore": false,
+  "can_write": true,
+  "card_schema": 24,
+  "collection": {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "created_at": "2026-10-22T10:21:33.851738Z",
+    "description": null,
+    "entity_id": "1_6ltq7WPzVJPPbI6Rbv3",
+    "id": 5,
+    "is_personal": false,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/",
+    "name": "Sales",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "sales",
+    "type": null
+  },
+  "collection_id": 5,
+  "collection_position": null,
+  "collection_preview": true,
+  "created_at": "2026-10-22T10:21:34.113903Z",
+  "creator_id": 2,
+  "dashboard": null,
+  "dashboard_count": 1,
+  "dashboard_id": null,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "SELECT o.status, COUNT(*) AS orders\nFROM orders o JOIN shippings s ON s.order_id = o.id\nWHERE s.region = {{region}}\n[[AND o.purchased_at >= {{since}}]]\nGROUP BY o.status\nORDER BY o.status",
+        "template-tags": [
+          {
+            "default": "West",
+            "display-name": "Region",
+            "id": "6b8b4567-0000-4000-8000-000000000001",
+            "name": "region",
+            "required": true,
+            "type": "text"
+          },
+          {
+            "display-name": "Since",
+            "id": "6b8b4567-0000-4000-8000-000000000002",
+            "name": "since",
+            "type": "date"
+          }
+        ]
+      }
+    ]
+  },
+  "description": null,
+  "dimension_mappings": null,
+  "dimensions": null,
+  "display": "bar",
+  "document_id": null,
+  "embedding_params": null,
+  "embedding_type": null,
+  "enable_embedding": false,
+  "entity_id": "na8bOqs4jQLdwAXxM0z_-",
+  "id": 41,
+  "initially_published_at": null,
+  "is_remote_synced": false,
+  "last_query_start": null,
+  "last_used_at": "2026-10-22T10:21:34.113903Z",
+  "legacy_query": null,
+  "metabase_version": "v0.64.1 (7010f27)",
+  "metabot_chart_id": null,
+  "metabot_conversation_id": null,
+  "moderation_reviews": [],
+  "name": "Orders by status for a region",
+  "param_fields": {},
+  "parameter_mappings": [],
+  "parameter_usage_count": 0,
+  "parameters": [],
+  "public_uuid": null,
+  "public_uuid_prefix": null,
+  "query_type": "native",
+  "result_metadata": [
+    {
+      "base_type": "type/Text",
+      "database_type": "text",
+      "display_name": "status",
+      "field_ref": [
+        "field",
+        "status",
+        {
+          "base-type": "type/Text"
+        }
+      ],
+      "name": "status",
+      "semantic_type": "type/Category"
+    },
+    {
+      "base_type": "type/BigInteger",
+      "database_type": "int8",
+      "display_name": "orders",
+      "field_ref": [
+        "field",
+        "orders",
+        {
+          "base-type": "type/BigInteger"
+        }
+      ],
+      "name": "orders"
+    }
+  ],
+  "source_card_id": null,
+  "table_id": null,
+  "type": "question",
+  "updated_at": "2026-10-22T10:21:34.113903Z",
+  "view_count": 0,
+  "visualization_settings": {
+    "graph.dimensions": [
+      "status"
+    ],
+    "graph.metrics": [
+      "orders"
+    ]
+  }
+}

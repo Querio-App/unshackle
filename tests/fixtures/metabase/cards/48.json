@@ -1,0 +1,120 @@
+{
+  "archived": false,
+  "archived_directly": false,
+  "average_query_time": null,
+  "cache_invalidated_at": null,
+  "cache_ttl": null,
+  "can_delete": false,
+  "can_manage_db": true,
+  "can_restore": false,
+  "can_write": true,
+  "card_schema": 24,
+  "collection": {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "created_at": "2026-10-22T10:21:33.919449Z",
+    "description": null,
+    "entity_id": "UWErwdmovZj4_ssOkuvtd",
+    "id": 6,
+    "is_personal": false,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/5/",
+    "name": "Finance",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "finance",
+    "type": null
+  },
+  "collection_id": 6,
+  "collection_position": null,
+  "collection_preview": true,
+  "created_at": "2026-10-22T10:21:34.88078Z",
+  "creator_id": 2,
+  "dashboard": null,
+  "dashboard_count": 1,
+  "dashboard_id": null,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "aggregation": [
+          [
+            "sum",
+            {
+              "lib/uuid": "21d9bee0-c65b-420e-8729-6daf1b0ab977"
+            },
+            [
+              "field",
+              {
+                "base-type": "type/Decimal",
+                "effective-type": "type/Decimal",
+                "lib/uuid": "556bb15a-75f4-4fd6-b1de-dcde4baad408"
+              },
+              86
+            ]
+          ]
+        ],
+        "lib/type": "mbql.stage/mbql",
+        "source-table": 10
+      }
+    ]
+  },
+  "description": "Post-discount revenue, all statuses.",
+  "dimension_mappings": null,
+  "dimensions": null,
+  "display": "scalar",
+  "document_id": null,
+  "embedding_params": null,
+  "embedding_type": null,
+  "enable_embedding": false,
+  "entity_id": "afjtRu1rcX79lz9unsRc8",
+  "id": 48,
+  "initially_published_at": null,
+  "is_remote_synced": false,
+  "last_query_start": null,
+  "last_used_at": "2026-10-22T10:21:34.88078Z",
+  "legacy_query": null,
+  "metabase_version": "v0.64.1 (7010f27)",
+  "metabot_chart_id": null,
+  "metabot_conversation_id": null,
+  "moderation_reviews": [],
+  "name": "Total revenue",
+  "param_fields": {},
+  "parameter_mappings": [],
+  "parameter_usage_count": 0,
+  "parameters": [],
+  "public_uuid": null,
+  "public_uuid_prefix": null,
+  "query_description": "Orders, Sum of Post Discount Revenue",
+  "query_type": "query",
+  "result_metadata": [
+    {
+      "base_type": "type/Decimal",
+      "display_name": "Sum of Post Discount Revenue",
+      "effective_type": "type/Decimal",
+      "field_ref": [
+        "aggregation",
+        0
+      ],
+      "lib/deduplicated-name": "sum",
+      "lib/desired-column-alias": "sum",
+      "lib/original-name": "sum",
+      "lib/source": "source/aggregations",
+      "lib/source-column-alias": "sum",
+      "name": "sum",
+      "semantic_type": "type/Discount",
+      "source": "aggregation"
+    }
+  ],
+  "source_card_id": null,
+  "table_id": 10,
+  "type": "metric",
+  "updated_at": "2026-10-22T10:21:34.88078Z",
+  "view_count": 0,
+  "visualization_settings": {}
+}

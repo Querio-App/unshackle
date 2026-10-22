@@ -1,0 +1,196 @@
+"""unshackle command line."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import click
+import httpx
+
+from unshackle import build, scaffold, verify
+from unshackle.http import SourceError
+from unshackle.lock import Lock
+from unshackle.raw import RawStore
+from unshackle.sources import TOOLS, get_source, source_class
+
+REPO = click.option("--repo", type=click.Path(file_okay=False, path_type=Path), default=Path("."), show_default=True, help="Target repo.")
+TOOL = click.argument("tool", type=click.Choice(sorted(TOOLS)))
+
+
+@click.group()
+@click.version_option(package_name="unshackle", prog_name="unshackle")
+def main() -> None:
+    """Unshackle your BI tool: extract its definitions into open formats in a Git repo you own."""
+
+
+@main.command()
+def tools() -> None:
+    """List supported tools and the environment variables each needs."""
+    for name in TOOLS:
+        cls = source_class(name)
+        click.echo(f"{name:12} {', '.join(cls.env_vars)}")
+
+
+@main.command()
+@REPO
+@click.option("--name", default=None)
+@click.option("--update-skills", is_flag=True, help="Refresh migration/skills/ from this unshackle version.")
+def init(repo: Path, name: str | None, update_skills: bool) -> None:
+    """Create the unshackle layout in REPO and copy the migration skills (never overwrites)."""
+    for rel in scaffold.init(repo, name, update_skills):
+        click.echo(f"created {rel}")
+
+
+@main.command()
+@TOOL
+@REPO
+def inventory(tool: str, repo: Path) -> None:
+    """List everything in TOOL, with usage, into migration/inventory.<tool>.md."""
+    inv = _run(lambda: get_source(tool).inventory())
+    out = repo / "migration"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"inventory.{tool}.md").write_text(inv.to_markdown())
+    (out / f"inventory.{tool}.json").write_text(json.dumps(inv.to_dict(), indent=2) + "\n")
+    click.echo(f"{len(inv.items)} items -> migration/inventory.{tool}.md")
+
+
+@main.command()
+@TOOL
+@REPO
+@click.option("--only", multiple=True, help="Inventory ids to extract (repeatable). Default: everything.")
+def extract(tool: str, repo: Path, only: tuple[str, ...]) -> None:
+    """Pull raw definitions into migration/raw/<tool>/ (no LLM, exact copies)."""
+    src = get_source(tool)
+    store = RawStore(repo, tool)
+    if not only:
+        store.begin()
+    _run(lambda: src.extract(store, set(only) or None))
+    store.save()
+    if store.had_errors():
+        click.echo(f"some items failed: see migration/raw/{tool}/_errors.json (earlier raw files were kept)", err=True)
+    changes = Lock.load(repo).changed_sources(tool, store.manifest)
+    click.echo(f"{len(store.manifest)} raw files, {len(changes)} added/changed/removed since last build")
+
+
+@main.command(name="import")
+@TOOL
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@REPO
+def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path) -> None:
+    """Use files downloaded from TOOL by hand (no API access) as migration/raw/<tool>/. Replaces earlier raw files."""
+    from unshackle.sources._manual import run as import_files
+
+    store = RawStore(repo, tool)
+    before = len(store.content_files())
+    files = _run(lambda: import_files(get_source(tool), store, list(paths)))
+    click.echo(f"{len(files)} raw files imported manually" + (f" (replacing {before} earlier raw files)" if before else ""))
+    click.echo(f"next: unshackle build {tool}")
+
+
+@main.command(name="build")
+@TOOL
+@REPO
+@click.option("--dry-run", is_flag=True)
+def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
+    """Parse raw files and write the unshackle layout. Keeps hand edits."""
+    src = get_source(tool)
+    store = RawStore(repo, tool)
+    if not store.manifest:
+        store.rescan()
+        if store.manifest:
+            store.save()
+    if not store.content_files():
+        hint = f" (extract errors: migration/raw/{tool}/_errors.json)" if store.had_errors() else ""
+        raise click.ClickException(f"no raw files for {tool}{hint}; run `unshackle extract {tool}` (or `unshackle import {tool} <files>`) first")
+    bundle = _run(lambda: src.parse(store))
+    if not dry_run:
+        from unshackle.resources import copy_skills
+
+        copy_skills(repo)
+    result = build.apply(bundle, repo, dry_run=dry_run)
+    if not dry_run:
+        lock = Lock.load(repo)
+        lock.record_source(tool, store.manifest)
+        lock.save()
+    w = result.writes
+    click.echo(f"{len(w.written)} written, {len(w.unchanged)} unchanged, {len(w.kept_hand_edits)} hand edits kept")
+    click.echo(f"report: {result.report_path}")
+
+
+@main.command()
+@TOOL
+@REPO
+@click.option("--only", multiple=True)
+def migrate(tool: str, repo: Path, only: tuple[str, ...]) -> None:
+    """init + inventory + extract + build in one go."""
+    ctx = click.get_current_context()
+    ctx.invoke(init, repo=repo, name=None, update_skills=False)
+    ctx.invoke(inventory, tool=tool, repo=repo)
+    ctx.invoke(extract, tool=tool, repo=repo, only=only)
+    ctx.invoke(build_cmd, tool=tool, repo=repo, dry_run=False)
+
+
+@main.command()
+@REPO
+def todo(repo: Path) -> None:
+    """List everything still marked TODO(unshackle)."""
+    items = build.scan_todos(repo, build.all_generated(repo))
+    for rel, n, msg in items:
+        click.echo(f"{rel}:{n}: {msg}")
+    click.echo(f"{len(items)} left")
+
+
+@main.command(name="verify")
+@REPO
+@click.option("--url", envvar="UNSHACKLE_WAREHOUSE_URL", default=None, help="SQLAlchemy URL of the warehouse.")
+def verify_cmd(repo: Path, url: str | None) -> None:
+    """Run migration/parity/*.yaml checks; passing ones become evals."""
+    results = verify.run_checks(repo, url)
+    if not results:
+        click.echo("no checks in migration/parity/*.yaml (see skills/verify)")
+    for r in results:
+        click.echo(f"{r.status:12} {r.name} {r.note}")
+    build.write_report(repo)
+    if any(r.status != "pass" for r in results):
+        raise SystemExit(1)
+
+
+@main.command()
+@REPO
+def report(repo: Path) -> None:
+    """Rebuild migration/report.md."""
+    click.echo(build.write_report(repo))
+
+
+@main.command()
+@REPO
+def status(repo: Path) -> None:
+    """What changed in each source since the last build."""
+    lock = Lock.load(repo)
+    for tool in TOOLS:
+        store = RawStore(repo, tool)
+        if not store.manifest and tool not in lock.sources:
+            continue
+        changes = lock.changed_sources(tool, store.manifest)
+        click.echo(f"{tool}: {len(changes)} changed")
+        for k, v in sorted(changes.items()):
+            click.echo(f"  {v:8} {k}")
+
+
+def _run(fn):
+    try:
+        return fn()
+    except SourceError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except httpx.HTTPError as exc:
+        host = ""
+        try:
+            host = f" reaching {exc.request.url.host}"
+        except (AttributeError, RuntimeError):
+            pass
+        raise click.ClickException(f"network error{host}: {exc} (a 403 here can come from a proxy, not the BI tool)") from exc
+
+
+if __name__ == "__main__":
+    main()

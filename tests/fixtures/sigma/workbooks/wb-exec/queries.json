@@ -1,0 +1,51 @@
+{
+  "entries": [
+    {
+      "elementId": "el-kpi-rev",
+      "name": "el-kpi-rev",
+      "sql": "select sum(Q1.\"AMOUNT_USD\") \"Revenue\"\nfrom ANALYTICS.PUBLIC.FCT_ORDERS Q1\n"
+    },
+    {
+      "elementId": "el-kpi-aov",
+      "name": "el-kpi-aov",
+      "sql": "select sum(Q1.\"AMOUNT_USD\") / nullif(count(distinct Q1.\"ORDER_ID\"), 0) \"AOV\"\nfrom ANALYTICS.PUBLIC.FCT_ORDERS Q1\n"
+    },
+    {
+      "elementId": "el-rev-month",
+      "name": "el-rev-month",
+      "sql": "with Q1 as (\n  select date_trunc('month', \"CREATED_AT\") \"Month of Created At\", \"REGION\" \"Region\", \"AMOUNT_USD\"\n  from ANALYTICS.PUBLIC.FCT_ORDERS\n  where \"CREATED_AT\" >= '2025-10-01'\n)\nselect Q1.\"Month of Created At\", Q1.\"Region\", sum(Q1.\"AMOUNT_USD\") \"Revenue\"\nfrom Q1\ngroup by 1, 2\norder by 1 asc\nlimit 25000\n"
+    },
+    {
+      "elementId": "el-rev-region",
+      "name": "el-rev-region",
+      "sql": "with Q1 as (\n  select * from analytics.public.fct_orders\n)\nselect Q1.\"REGION\" \"Region\", sum(Q1.\"AMOUNT_USD\") \"Revenue (USD)\"\nfrom Q1\nwhere Q1.\"REGION\" in ('EMEA')\ngroup by 1\norder by 2 desc\nlimit 25000\n"
+    },
+    {
+      "elementId": "el-status-donut",
+      "name": "el-status-donut",
+      "sql": "select Q1.\"STATUS\" \"Status\", sum(Q1.\"AMOUNT_USD\") \"Revenue\"\nfrom ANALYTICS.PUBLIC.FCT_ORDERS Q1\ngroup by 1\nlimit 25000\n"
+    },
+    {
+      "elementId": "el-orders-table",
+      "name": "el-orders-table",
+      "sql": "select Q1.\"ORDER_ID\" \"Order Id\", Q1.\"CREATED_AT\" \"Created At\", Q1.\"AMOUNT_USD\" \"Amount\", Q1.\"STATUS\" \"Status\"\nfrom ANALYTICS.PUBLIC.FCT_ORDERS Q1\norder by 2 desc\nlimit 25000\n"
+    },
+    {
+      "elementId": "el-rolling",
+      "name": "el-rolling",
+      "sql": "with Q1 as (\n  select date_trunc('day', \"CREATED_AT\") \"Day of Created At\", sum(\"AMOUNT_USD\") \"S\"\n  from ANALYTICS.PUBLIC.FCT_ORDERS\n  group by 1\n)\nselect \"Day of Created At\",\n  avg(\"S\") over (order by \"Day of Created At\" rows between 6 preceding and current row) \"Moving Revenue\"\nfrom Q1\norder by 1\n"
+    },
+    {
+      "elementId": "el-orders-src",
+      "name": "el-orders-src",
+      "sql": "select * from (select * from analytics.public.fct_orders) Q1\nlimit 25000\n"
+    },
+    {
+      "elementId": "el-map",
+      "name": "Revenue by Country",
+      "error": "Maps are not supported by the SQL endpoint"
+    }
+  ],
+  "nextPage": null,
+  "total": 9
+}

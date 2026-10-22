@@ -1,0 +1,21 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv --python ${{ matrix.python }} && uv pip install -e ".[dev]"
+      - run: uv venv /tmp/dbt && uv pip install --python /tmp/dbt/bin/python "dbt-core>=1.9" dbt-duckdb
+      - run: .venv/bin/pytest -q
+        env:
+          UNSHACKLE_DBT: /tmp/dbt/bin/dbt
+      - run: ./examples/tableau-demo/run.sh /tmp/acme

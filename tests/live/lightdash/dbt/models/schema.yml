@@ -1,0 +1,223 @@
+version: 2
+
+models:
+  - name: orders
+    description: One row per order placed by a Dunder Mifflin account.
+    meta:
+      primary_key: order_id
+      joins:
+        - join: accounts
+          sql_on: ${orders.account_id} = ${accounts.account_id}
+          relationship: many-to-one
+        - join: products
+          sql_on: ${orders.product_id} = ${products.product_id}
+          relationship: many-to-one
+        - join: shippings
+          sql_on: ${orders.order_id} = ${shippings.order_id}
+          relationship: one-to-one
+      metrics:
+        average_order_value:
+          type: number
+          label: Average order value
+          sql: ${total_revenue} / NULLIF(${order_count}, 0)
+          format: usd
+    columns:
+      - name: order_id
+        meta:
+          dimension:
+            type: number
+          metrics:
+            order_count:
+              type: count_distinct
+              label: Order count
+      - name: account_id
+        meta:
+          dimension:
+            type: number
+            hidden: true
+      - name: product_id
+        meta:
+          dimension:
+            type: number
+            hidden: true
+      - name: status
+        description: COMPLETED, CANCELLED or RETURNED
+        meta:
+          dimension:
+            type: string
+      - name: quantity
+        meta:
+          dimension:
+            type: number
+          metrics:
+            total_quantity:
+              type: sum
+      - name: pre_discount_revenue
+        meta:
+          dimension:
+            type: number
+      - name: discount_percentage
+        meta:
+          dimension:
+            type: number
+          metrics:
+            average_discount:
+              type: average
+              round: 2
+      - name: post_discount_revenue
+        meta:
+          dimension:
+            type: number
+          metrics:
+            total_revenue:
+              type: sum
+              label: Revenue
+              format: usd
+            completed_revenue:
+              type: sum
+              label: Completed revenue
+              filters:
+                - status: COMPLETED
+      - name: purchased_at
+        meta:
+          dimension:
+            type: timestamp
+            time_intervals: [DAY, WEEK, MONTH, QUARTER, YEAR]
+      - name: cancelled_at
+        meta:
+          dimension:
+            type: timestamp
+      - name: returned_at
+        meta:
+          dimension:
+            type: timestamp
+
+  - name: accounts
+    description: B2B client accounts.
+    meta:
+      primary_key: account_id
+    columns:
+      - name: account_id
+        meta:
+          dimension:
+            type: number
+          metrics:
+            account_count:
+              type: count_distinct
+      - name: account_name
+        meta:
+          dimension:
+            type: string
+      - name: account_manager
+        meta:
+          dimension:
+            type: string
+      - name: payment_cycle
+        meta:
+          dimension:
+            type: string
+      - name: business_size
+        meta:
+          dimension:
+            type: number
+      - name: created_at
+        meta:
+          dimension:
+            type: timestamp
+
+  - name: products
+    description: Paper product catalog.
+    meta:
+      primary_key: product_id
+    columns:
+      - name: product_id
+        meta:
+          dimension:
+            type: number
+      - name: product_name
+        meta:
+          dimension:
+            type: string
+      - name: paper_type
+        meta:
+          dimension:
+            type: string
+      - name: price
+        meta:
+          dimension:
+            type: number
+
+  - name: shippings
+    description: One delivery per order.
+    meta:
+      primary_key: shipping_id
+    columns:
+      - name: shipping_id
+        meta:
+          dimension:
+            type: number
+      - name: order_id
+        meta:
+          dimension:
+            type: number
+            hidden: true
+      - name: shipping_mode
+        meta:
+          dimension:
+            type: string
+      - name: region
+        meta:
+          dimension:
+            type: string
+      - name: city
+        meta:
+          dimension:
+            type: string
+      - name: state
+        meta:
+          dimension:
+            type: string
+      - name: days_to_ship
+        meta:
+          dimension:
+            type: number
+          metrics:
+            average_days_to_ship:
+              type: average
+      - name: shipped_at
+        meta:
+          dimension:
+            type: timestamp
+
+  - name: reviews
+    description: Customer reviews of completed orders.
+    meta:
+      primary_key: review_id
+      joins:
+        - join: orders
+          sql_on: ${reviews.order_id} = ${orders.order_id}
+          relationship: many-to-one
+    columns:
+      - name: review_id
+        meta:
+          dimension:
+            type: number
+          metrics:
+            review_count:
+              type: count_distinct
+      - name: order_id
+        meta:
+          dimension:
+            type: number
+            hidden: true
+      - name: rating
+        meta:
+          dimension:
+            type: number
+          metrics:
+            average_rating:
+              type: average
+      - name: reviewed_at
+        meta:
+          dimension:
+            type: timestamp

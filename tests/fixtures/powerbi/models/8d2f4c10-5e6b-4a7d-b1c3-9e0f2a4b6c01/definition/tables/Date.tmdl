@@ -1,0 +1,59 @@
+table Date
+	dataCategory: Time
+	lineageTag: 6e1c4a05-3f7b-4d6e-8a9c-5b4d3e2f1a36
+
+	column Date
+		dataType: dateTime
+		isKey
+		formatString: Short Date
+		lineageTag: 7f2d5b16-4a8c-4e7f-9b0d-6c5e4f3a2b37
+		summarizeBy: none
+		sourceColumn: Date
+
+	column Year
+		dataType: int64
+		formatString: 0
+		lineageTag: 8a3e6c27-5b9d-4f8a-8c1e-7d6f5a4b3c38
+		summarizeBy: none
+		sourceColumn: CalendarYear
+
+	column Month
+		dataType: string
+		lineageTag: 9b4f7d38-6c0e-4a9b-9d2f-8e7a6b5c4d39
+		summarizeBy: none
+		sourceColumn: MonthName
+		sortByColumn: 'Month Number'
+
+	column 'Month Number'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 0c5a8e49-7d1f-4b0c-8e3a-9f8b7c6d5e40
+		summarizeBy: none
+		sourceColumn: MonthNumber
+
+	hierarchy Calendar
+		lineageTag: 1d6b9f50-8e2a-4c1d-9f4b-0a9c8d7e6f41
+
+		level Year
+			lineageTag: 2e7c0a61-9f3b-4d2e-8a5c-1b0d9e8f7a42
+			column: Year
+
+		level Month
+			lineageTag: 3f8d1b72-0a4c-4e3f-9b6d-2c1e0f9a8b43
+			column: Month
+
+		level Day
+			lineageTag: 4a9e2c83-1b5d-4f4a-8c7e-3d2f1a0b9c44
+			column: Date
+
+	partition Date = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(Server, Database),
+					dbo_DimDate = Source{[Schema="dbo",Item="DimDate"]}[Data]
+				in
+					dbo_DimDate
+
+	annotation PBI_ResultType = Table

@@ -1,0 +1,32 @@
+{
+  "metadata_id": "c4d5e6f7-1111-4a2b-9c3d-4e5f6a7b3001",
+  "metadata_name": "Sales Overview",
+  "metadata_type": "LIVEBOARD",
+  "sql_queries": [
+    {
+      "metadata_id": "a0000000-0000-4000-8000-000000000001",
+      "metadata_name": "Total Revenue",
+      "sql_query": "SELECT \n  CASE WHEN sum(\"ta_1\".\"AMOUNT\") IS NOT NULL THEN sum(\"ta_1\".\"AMOUNT\") ELSE 0 END \"ca_1\"\nFROM \"ANALYTICS\".\"PUBLIC\".\"FCT_ORDERS\" \"ta_1\"\nWHERE \"ta_1\".\"REGION\" IN ('EMEA', 'AMER')"
+    },
+    {
+      "metadata_id": "a0000000-0000-4000-8000-000000000002",
+      "metadata_name": "Revenue by Month",
+      "sql_query": "SELECT \n  DATE_TRUNC('MONTH', \"ta_1\".\"ORDER_DATE\") \"ca_1\", \n  \"ta_1\".\"REGION\" \"ca_2\", \n  CASE WHEN sum(\"ta_1\".\"AMOUNT\") IS NOT NULL THEN sum(\"ta_1\".\"AMOUNT\") ELSE 0 END \"ca_3\"\nFROM \"ANALYTICS\".\"PUBLIC\".\"FCT_ORDERS\" \"ta_1\"\nWHERE \"ta_1\".\"REGION\" IN ('EMEA', 'AMER')\nGROUP BY \n  \"ca_1\", \n  \"ca_2\""
+    },
+    {
+      "metadata_id": "a0000000-0000-4000-8000-000000000003",
+      "metadata_name": "Revenue by Segment",
+      "sql_query": "SELECT \n  \"ta_2\".\"SEGMENT\" \"ca_1\", \n  CASE WHEN sum(\"ta_1\".\"AMOUNT\") IS NOT NULL THEN sum(\"ta_1\".\"AMOUNT\") ELSE 0 END \"ca_2\"\nFROM \"ANALYTICS\".\"PUBLIC\".\"FCT_ORDERS\" \"ta_1\"\n  JOIN \"ANALYTICS\".\"PUBLIC\".\"DIM_CUSTOMERS\" \"ta_2\"\n    ON \"ta_1\".\"CUSTOMER_ID\" = \"ta_2\".\"CUSTOMER_ID\"\nWHERE \"ta_1\".\"REGION\" IN ('EMEA', 'AMER')\nGROUP BY \"ca_1\""
+    },
+    {
+      "metadata_id": "a0000000-0000-4000-8000-000000000004",
+      "metadata_name": "Top Customers",
+      "sql_query": "SELECT \n  \"ta_2\".\"CUSTOMER_NAME\" \"ca_1\", \n  CASE WHEN sum(\"ta_1\".\"AMOUNT\") IS NOT NULL THEN sum(\"ta_1\".\"AMOUNT\") ELSE 0 END \"ca_2\", \n  count(DISTINCT \"ta_1\".\"ORDER_ID\") \"ca_3\"\nFROM \"ANALYTICS\".\"PUBLIC\".\"FCT_ORDERS\" \"ta_1\"\n  JOIN \"ANALYTICS\".\"PUBLIC\".\"DIM_CUSTOMERS\" \"ta_2\"\n    ON \"ta_1\".\"CUSTOMER_ID\" = \"ta_2\".\"CUSTOMER_ID\"\nWHERE \"ta_1\".\"REGION\" IN ('EMEA', 'AMER')\nGROUP BY \"ca_1\"\nORDER BY \"ca_2\" DESC\nLIMIT 10"
+    },
+    {
+      "metadata_id": "a0000000-0000-4000-8000-000000000005",
+      "metadata_name": "Revenue Share by Region",
+      "sql_query": "SELECT \n  \"ta_1\".\"REGION\" \"ca_1\", \n  (sum(\"ta_1\".\"AMOUNT\") / sum(sum(\"ta_1\".\"AMOUNT\")) OVER ()) \"ca_2\"\nFROM \"ANALYTICS\".\"PUBLIC\".\"FCT_ORDERS\" \"ta_1\"\nWHERE \"ta_1\".\"REGION\" IN ('EMEA', 'AMER')\nGROUP BY \"ca_1\""
+    }
+  ]
+}

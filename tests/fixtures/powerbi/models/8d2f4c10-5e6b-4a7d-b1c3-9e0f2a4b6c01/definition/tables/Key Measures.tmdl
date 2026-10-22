@@ -1,0 +1,37 @@
+/// Time-intelligence measures
+table 'Key Measures'
+	lineageTag: 0a5e8c49-7b1d-4f0a-8c3e-9d8f7a6b5c50
+
+	measure 'Sales YTD' = TOTALYTD([Total Sales], 'Date'[Date])
+		formatString: \$#,0
+		lineageTag: 1b6f9d50-8c2e-4a1b-9d4f-0e9a8b7c6d51
+
+	measure 'Sales QTD' = CALCULATE([Total Sales], DATESQTD('Date'[Date]))
+		lineageTag: 2c7a0e61-9d3f-4b2c-8e5a-1f0b9c8d7e52
+
+	measure 'Sales PY' = CALCULATE([Total Sales], SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: \$#,0
+		lineageTag: 3d8b1f72-0e4a-4c3d-9f6b-2a1c0d9e8f53
+
+	measure 'Sales 3M Ago' = CALCULATE([Total Sales], DATEADD('Date'[Date], -3, MONTH))
+		lineageTag: 4e9c2a83-1f5b-4d4e-8a7c-3b2d1e0f9a54
+
+	measure 'Sales YoY %' = DIVIDE([Total Sales] - [Sales PY], [Sales PY])
+		formatString: 0.0%
+		lineageTag: 5f0d3b94-2a6c-4e5f-9b8d-4c3e2f1a0b55
+
+	measure 'Fiscal YTD' = TOTALYTD([Total Sales], 'Date'[Date], "6/30")
+		lineageTag: 6a1e4c05-3b7d-4f6a-8c9e-5d4f3a2b1c56
+
+	column Value
+		dataType: string
+		isHidden
+		lineageTag: 7b2f5d16-4c8e-4a7b-9d0f-6e5a4b3c2d57
+		summarizeBy: none
+		sourceColumn: Value
+
+	partition 'Key Measures' = m
+		mode: import
+		source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i44FAA==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Value = _t])
+
+	annotation PBI_ResultType = Table

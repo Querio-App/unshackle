@@ -1,0 +1,20 @@
+name: Top customers by revenue
+description: Ten customers with the highest lifetime revenue
+tableName: orders
+slug: top-customers
+spaceSlug: sales
+version: 1
+metricQuery:
+  exploreName: orders
+  dimensions:
+    - orders_customer_id
+  metrics:
+    - orders_total_revenue
+  filters: {}
+  sorts:
+    - fieldId: orders_total_revenue
+      descending: true
+  limit: 10
+chartConfig:
+  type: table
+  config: {}

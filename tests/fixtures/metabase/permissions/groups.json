@@ -1,0 +1,29 @@
+[
+  {
+    "entity_id": "57d28c2ba25e447ba0757",
+    "id": 2,
+    "is_data_app_group": false,
+    "is_tenant_group": false,
+    "magic_group_type": "admin",
+    "member_count": 2,
+    "name": "Administrators"
+  },
+  {
+    "entity_id": "35757e76ebb849ba9a3a7",
+    "id": 1,
+    "is_data_app_group": false,
+    "is_tenant_group": false,
+    "magic_group_type": "all-internal-users",
+    "member_count": 2,
+    "name": "All Users"
+  },
+  {
+    "entity_id": "1I5tFIKwvPb8F2aiV6CKK",
+    "id": 5,
+    "is_data_app_group": false,
+    "is_tenant_group": false,
+    "magic_group_type": null,
+    "member_count": 0,
+    "name": "Analysts"
+  }
+]

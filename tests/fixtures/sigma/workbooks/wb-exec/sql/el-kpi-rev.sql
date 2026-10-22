@@ -1,0 +1,2 @@
+select sum(Q1."AMOUNT_USD") "Revenue"
+from ANALYTICS.PUBLIC.FCT_ORDERS Q1

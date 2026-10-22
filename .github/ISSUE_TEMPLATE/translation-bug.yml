@@ -1,0 +1,23 @@
+name: Translation bug
+description: Something was translated wrong, or a number doesn't match the BI tool.
+labels: [bug]
+body:
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Source tool
+      options: [Looker, Tableau, Power BI, Lightdash, Omni, Hex, Sigma, ThoughtSpot, Other]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: unshackle version (`unshackle --version`) and the BI tool version, if you know it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The original definition, what unshackle produced, and what you expected. Remove anything confidential.
+    validations:
+      required: true

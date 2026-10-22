@@ -1,0 +1,10 @@
+[
+  {"id": "k-1", "cellType": "MARKDOWN", "label": "",
+   "contents": {"markdownCell": {"source": "A customer is **churned** when they have not ordered for 90 days."}}},
+  {"id": "k-2", "cellType": "SQL", "label": "last_orders",
+   "contents": {"sqlCell": {"source": "select customer_id, max(created_at) as last_order_at\nfrom analytics.fct_orders\nwhere created_at >= {{ since }}\ngroup by 1", "dataConnectionId": "conn-snowflake"}}},
+  {"id": "k-3", "cellType": "SQL", "label": "churned",
+   "contents": {"sqlCell": {"source": "select c.region, count(*) as churned_customers\nfrom last_orders l\njoin analytics.dim_customers c using (customer_id)\nwhere l.last_order_at < current_date - 90\n{% if regions %}and c.region in ({{ regions | array }}){% endif %}\ngroup by 1", "dataConnectionId": "conn-snowflake"}}},
+  {"id": "k-4", "cellType": "CODE", "label": "Survival curve",
+   "contents": {"codeCell": {"source": "from lifelines import KaplanMeierFitter\nkmf = KaplanMeierFitter()"}}}
+]

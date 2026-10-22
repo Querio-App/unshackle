@@ -1,0 +1,26 @@
+# Metabase v0.64.1 (open source) plus a Postgres warehouse with the synthetic Dunder Mifflin data.
+# Host ports: Postgres 56432, Metabase 3300.  docker-compose -p unshackle-mb up -d / down -v
+services:
+  warehouse:
+    image: postgres:16-alpine
+    container_name: unshackle-mb-warehouse
+    environment:
+      POSTGRES_USER: dunder
+      POSTGRES_PASSWORD: dunder
+      POSTGRES_DB: dunder
+    ports: ["56432:5432"]
+    volumes: ["./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dunder", "-d", "dunder"]
+      interval: 2s
+      retries: 30
+  metabase:
+    image: metabase/metabase:v0.64.1
+    container_name: unshackle-mb-metabase
+    environment:
+      MB_DB_TYPE: h2
+      MB_ANON_TRACKING_ENABLED: "false"
+      MB_CHECK_FOR_UPDATES: "false"
+    ports: ["3300:3000"]
+    depends_on:
+      warehouse: {condition: service_healthy}

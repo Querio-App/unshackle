@@ -1,0 +1,18 @@
+slice_name: Orders by size
+description: Saved before Superset stored query contexts.
+certified_by: null
+certification_details: null
+viz_type: pie
+params:
+  datasource: 1__table
+  viz_type: pie
+  groupby:
+  - order_size
+  metric: order_count
+  adhoc_filters: []
+  row_limit: 100
+query_context: null
+cache_timeout: null
+uuid: c73487fb-fa28-4cd7-8cdf-656664ea5eb3
+version: 1.0.0
+dataset_uuid: 2e575f21-b5e2-4e39-a3eb-c2a918e2358c

@@ -1,0 +1,40 @@
+{
+  "exportVersion": "0.1",
+  "document": {"identifier": "7f3e9a21", "name": "Sales Overview", "description": "Weekly revenue review for the sales team", "modelId": "a1b2c3d4-5e6f-4a0b-9c8d-111111111111"},
+  "workbookModel": {"id": "w-7f3e9a21", "baseModelId": "a1b2c3d4-5e6f-4a0b-9c8d-111111111111"},
+  "queryModels": {},
+  "dashboard": {
+    "name": "Sales Overview",
+    "filterConfig": {
+      "f_date": {"fieldName": "order_items.created_at", "label": "Order date", "type": "date", "kind": "TIME_FOR_INTERVAL_DURATION", "left_side": "12 months ago", "right_side": "12 months"},
+      "f_country": {"fieldName": "users.country", "label": "Country", "type": "string", "kind": "EQUALS", "values": ["United Kingdom"]}
+    },
+    "filterOrder": ["f_date", "f_country"],
+    "queryPresentationCollection": {
+      "queryPresentationCollectionMemberships": [
+        {"queryPresentation": {"id": "qp1", "queryId": "q1", "name": "Revenue by month", "visConfig": {"chartType": "line", "fields": ["order_items.created_at[month]", "order_items.total_revenue"]}}},
+        {"queryPresentation": {"id": "qp2", "queryId": "q2", "name": "Revenue by country and status", "visConfig": {"chartType": "bar"}}},
+        {"queryPresentation": {"id": "qp3", "queryId": "q3", "name": "Total revenue", "visConfig": {"chartType": "kpi"}}},
+        {"queryPresentation": {"id": "qp4", "queryId": "q4", "name": "Top users", "visConfig": {"chartType": "table"}}},
+        {"queryPresentation": {"id": "qp5", "queryId": "q5", "name": "Margin distribution", "visConfig": {"chartType": "vegalite", "spec": {"mark": "boxplot", "encoding": {"x": {"field": "order_items.status", "type": "nominal"}, "y": {"field": "order_items.total_margin", "type": "quantitative"}}}}}},
+        {"queryPresentation": {"id": "qp6", "queryId": "q6", "name": "Running revenue", "visConfig": {"chartType": "line"}}}
+      ]
+    },
+    "textTiles": [
+      {"id": "txt1", "title": "Read me", "markdown": "Revenue is **net of returns**. Data refreshes hourly."}
+    ],
+    "metadata": {
+      "layouts": {
+        "lg": [
+          {"i": "txt1", "x": 0, "y": 0, "w": 24, "h": 2},
+          {"i": "qp3", "x": 0, "y": 2, "w": 6, "h": 5},
+          {"i": "qp1", "x": 6, "y": 2, "w": 18, "h": 5},
+          {"i": "qp2", "x": 0, "y": 7, "w": 12, "h": 6},
+          {"i": "qp5", "x": 12, "y": 7, "w": 12, "h": 6},
+          {"i": "qp6", "x": 0, "y": 13, "w": 12, "h": 6},
+          {"i": "qp4", "x": 12, "y": 13, "w": 12, "h": 6}
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+[
+  {"id": "a1b2c3d4-5e6f-4a0b-9c8d-111111111111", "name": "Ecommerce", "modelKind": "SHARED", "connectionId": "c-1", "createdAt": "2025-03-01T00:00:00Z"},
+  {"id": "b0000000-0000-4000-8000-000000000000", "name": "Ecommerce (schema)", "modelKind": "SCHEMA", "connectionId": "c-1"}
+]

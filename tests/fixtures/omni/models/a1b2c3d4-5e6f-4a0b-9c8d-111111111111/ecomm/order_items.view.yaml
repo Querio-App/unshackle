@@ -1,0 +1,68 @@
+schema: ecomm
+table_name: order_items
+label: Order Items
+description: One row per item sold. sale_price is in USD.
+dimensions:
+  id:
+    primary_key: true
+    sql: '"ID"'
+  order_id:
+    sql: '"ORDER_ID"'
+  user_id:
+    sql: '"USER_ID"'
+    hidden: true
+  status:
+    sql: '"STATUS"'
+    description: Complete, Shipped, Processing, Returned, Cancelled
+    synonyms: [state, order status]
+  created_at:
+    sql: '"CREATED_AT"'
+    timeframes: [date, week, month, quarter, year]
+    description: When the item was ordered
+  sale_price:
+    sql: '"SALE_PRICE"'
+    format: usdcurrency
+  cost:
+    sql: '"COST"'
+    format: usdcurrency
+  margin:
+    sql: ${sale_price} - ${cost}
+    format: usdcurrency
+    description: Sale price minus cost
+measures:
+  count:
+    aggregate_type: count
+  total_revenue:
+    sql: ${order_items.sale_price}
+    aggregate_type: sum
+    label: Total Revenue
+    format: usdcurrency
+    synonyms: [sales, gmv]
+    ai_context: Use this for any question about revenue or sales.
+  completed_revenue:
+    sql: ${sale_price}
+    aggregate_type: sum
+    description: Revenue from completed items only
+    filters:
+      status:
+        is: Complete
+  non_returned_count:
+    aggregate_type: count
+    filters:
+      status:
+        not: [Returned, Cancelled]
+  total_margin:
+    sql: ${margin}
+    aggregate_type: sum
+  average_sale_price:
+    sql: ${sale_price}
+    aggregate_type: average
+  margin_pct:
+    sql: ${total_margin} / NULLIF(${total_revenue}, 0)
+    label: Margin %
+    format: percent_1
+  revenue_per_user:
+    sql: ${order_items.total_revenue} / NULLIF(${users.count}, 0)
+  statuses:
+    sql: ${status}
+    aggregate_type: list

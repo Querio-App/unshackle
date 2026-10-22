@@ -1,0 +1,28 @@
+name: Fixture submission
+description: Share an anonymized export so we can test against real-world definitions.
+labels: [fixture]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you! Real exports are the best way to make translations reliable.
+        **Before attaching anything,** remove names, emails, hostnames, IDs and anything confidential.
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Source tool
+      options: [Looker, Tableau, Power BI, Lightdash, Omni, Hex, Sigma, ThoughtSpot, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What's interesting about it
+      description: Features it uses (e.g. LOD expressions, Liquid, row-level security) and anything unshackle gets wrong today.
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Permission
+      options:
+        - label: I have the right to share this, and it's been anonymized. It can be published under Apache 2.0.
+          required: true

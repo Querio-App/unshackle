@@ -1,0 +1,32 @@
+{
+  "name": "customers",
+  "label": "Customers",
+  "baseTable": "customers",
+  "joinedTables": [],
+  "targetDatabase": "snowflake",
+  "tables": {
+    "customers": {
+      "name": "customers",
+      "label": "Customers",
+      "database": "jaffle",
+      "schema": "analytics",
+      "sqlTable": "\"jaffle\".\"analytics\".\"customers\"",
+      "description": "One row per customer, with their region and plan.",
+      "primaryKey": ["customer_id"],
+      "uncompiledSqlWhere": "${TABLE}.region = ${lightdash.attributes.region}",
+      "sqlWhere": "\"customers\".region = 'EU'",
+      "aiHint": "Region is the billing region. Use plan, not tier.",
+      "dimensions": {
+        "customer_id": {"fieldType": "dimension", "type": "number", "name": "customer_id", "label": "Customer id", "table": "customers", "sql": "${TABLE}.customer_id", "compiledSql": "\"customers\".customer_id", "hidden": false, "description": "Customer key"},
+        "email": {"fieldType": "dimension", "type": "string", "name": "email", "label": "Email", "table": "customers", "sql": "${TABLE}.email", "hidden": false, "description": "Primary email", "requiredAttributes": {"is_admin": "true"}},
+        "region": {"fieldType": "dimension", "type": "string", "name": "region", "label": "Region", "table": "customers", "sql": "${TABLE}.region", "hidden": false, "description": "Billing region (EU, US, APAC)"},
+        "plan": {"fieldType": "dimension", "type": "string", "name": "plan", "label": "Plan", "table": "customers", "sql": "${TABLE}.plan_name", "hidden": false, "description": "Current subscription plan"},
+        "signup_date": {"fieldType": "dimension", "type": "date", "name": "signup_date", "label": "Signup date", "table": "customers", "sql": "${TABLE}.signup_date", "hidden": false, "isIntervalBase": true, "description": "Date the customer signed up"},
+        "signup_date_month": {"fieldType": "dimension", "type": "date", "name": "signup_date_month", "label": "Signup date month", "table": "customers", "sql": "DATE_TRUNC('MONTH', ${TABLE}.signup_date)", "hidden": false, "timeInterval": "MONTH", "timeIntervalBaseDimensionName": "signup_date"}
+      },
+      "metrics": {
+        "customer_count": {"fieldType": "metric", "type": "count_distinct", "name": "customer_count", "label": "Customers", "table": "customers", "sql": "${TABLE}.customer_id", "hidden": false, "description": "Distinct customers"}
+      }
+    }
+  }
+}

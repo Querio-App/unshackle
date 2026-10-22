@@ -1,0 +1,10 @@
+[
+  {
+    "teamId": "t-fin",
+    "name": "Finance"
+  },
+  {
+    "teamId": "t-sales",
+    "name": "Sales"
+  }
+]

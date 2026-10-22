@@ -1,0 +1,113 @@
+{
+  "can_edit": true,
+  "created_at": "2026-10-22T11:02:36.689Z",
+  "data_source_id": 1,
+  "description": "Revenue and orders per shipping region for one order status.",
+  "id": 2,
+  "is_archived": false,
+  "is_draft": false,
+  "is_favorite": false,
+  "is_safe": false,
+  "latest_query_data_id": 2,
+  "name": "Revenue by region",
+  "options": {
+    "parameters": [
+      {
+        "global": false,
+        "locals": [],
+        "name": "status",
+        "parentQueryId": null,
+        "title": "Status",
+        "type": "text",
+        "value": "COMPLETED"
+      }
+    ]
+  },
+  "query": "SELECT s.region,\n       s.mode,\n       SUM(o.post_discount_revenue) AS revenue\nFROM orders o\nJOIN shippings s ON s.order_id = o.id\nWHERE o.status = '{{ status }}'\nGROUP BY 1, 2\nORDER BY 1, 2",
+  "query_hash": "8aae73e20a20f3de9fe42cecda7b2713",
+  "schedule": null,
+  "tags": [
+    "sales"
+  ],
+  "updated_at": "2026-10-22T11:02:36.750Z",
+  "version": 1,
+  "visualizations": [
+    {
+      "created_at": "2026-10-22T11:02:36.689Z",
+      "description": "",
+      "id": 2,
+      "name": "Table",
+      "options": {},
+      "type": "TABLE",
+      "updated_at": "2026-10-22T11:02:36.689Z"
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.750Z",
+      "description": "",
+      "id": 6,
+      "name": "Revenue by region and mode",
+      "options": {
+        "alignYAxesAtZero": false,
+        "coefficient": 1,
+        "color_scheme": "Redash",
+        "columnMapping": {
+          "mode": "series",
+          "region": "x",
+          "revenue": "y"
+        },
+        "dateTimeFormat": "DD/MM/YY HH:mm",
+        "direction": {
+          "type": "counterclockwise"
+        },
+        "enableLink": false,
+        "error_y": {
+          "type": "data",
+          "visible": true
+        },
+        "globalSeriesType": "column",
+        "legend": {
+          "enabled": true,
+          "placement": "auto",
+          "traceorder": "normal"
+        },
+        "lineShape": "linear",
+        "linkFormat": "",
+        "linkOpenNewTab": true,
+        "missingValuesAsZero": true,
+        "numberFormat": "0,0[.]00000",
+        "percentFormat": "0[.]00%",
+        "piesort": true,
+        "series": {
+          "error_y": {
+            "type": "data",
+            "visible": true
+          },
+          "stacking": null
+        },
+        "seriesOptions": {},
+        "showDataLabels": false,
+        "sizemode": "diameter",
+        "sortX": true,
+        "textFormat": "",
+        "valuesOptions": {},
+        "xAxis": {
+          "labels": {
+            "enabled": true
+          },
+          "type": "-"
+        },
+        "yAxis": [
+          {
+            "type": "linear"
+          },
+          {
+            "opposite": true,
+            "type": "linear"
+          }
+        ]
+      },
+      "type": "CHART",
+      "updated_at": "2026-10-22T11:02:36.791Z"
+    }
+  ]
+}
