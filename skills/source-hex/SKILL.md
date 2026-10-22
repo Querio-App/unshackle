@@ -77,7 +77,7 @@ unshackle build hex
 ## Finishing TODOs
 
 - **Jinja beyond a bare variable**: `{% if x %}...{% endif %}` -> an always-on
-  predicate with a neutral default (`AND (:x IS NULL OR col = :x)`);
+  predicate with a neutral default (`AND (col = :x OR :x IS NULL)`);
   `{{ list | array }}` / `inclause` -> `col IN :x` with an expanding bind, or one
   tile per value; `{{ x | sqlsafe }}` injects raw SQL - inline the chosen value.
   Hex inputs are typed: a date input renders as a quoted date, so `:start_date`

@@ -626,7 +626,7 @@ class SupersetSource(Source):
             lit = f"'{SENTINEL}{bind}'"
             pat = re.compile(rf"((?:\"[^\"]+\"\.)*(?:\"[^\"]+\"|[\w.]+))\s+IN\s+\(\s*{re.escape(lit)}\s*\)", re.I)
             if pat.search(sql):
-                sql = pat.sub(lambda m: f"(:{bind} IS NULL OR {m.group(1)} = :{bind})", sql)
+                sql = pat.sub(lambda m: f"({m.group(1)} = :{bind} OR :{bind} IS NULL)", sql)
             elif lit in sql:
                 todos.append(f"dashboard filter {bind} compiled to an expression unshackle can't bind; replace {lit} in the SQL with :{bind}")
         ch = self.charts[ch_uuid]

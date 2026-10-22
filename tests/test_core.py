@@ -1,3 +1,4 @@
+import io
 from conftest import notebook_source, todo_for
 from pathlib import Path
 
@@ -162,6 +163,14 @@ def test_compare_edge_cases():
     raw = pd.DataFrame({"k": ["a", "b"], "v": [1234.5, 0.125]})
     assert verify.compare(fmt, raw, ["k"])[0] == "pass"
     assert verify.compare(a, b_ok, ["nope"], columns={"Sum of Revenue": "revenue"})[0] == "differs"
+
+
+def test_compare_treats_empty_strings_as_null():
+    """A tool's CSV has an empty cell where the warehouse returns ''; both mean "no value" in an export."""
+    exported = pd.read_csv(io.StringIO("mode,n\n,1\nEXPRESS,2\n"), dtype=str)
+    warehouse = pd.DataFrame({"mode": ["", "EXPRESS"], "n": [1, 2]})
+    assert verify.compare(exported, warehouse, ["mode"])[0] == "pass"
+    assert verify.compare(exported, pd.DataFrame({"mode": ["", "EXPRESS"], "n": [2, 1]}), ["mode"])[0] == "differs"
 
 
 def test_compare_keeps_leading_zeros():
