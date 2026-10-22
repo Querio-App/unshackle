@@ -1,0 +1,14 @@
+# Changelog
+
+## 0.1.0
+
+First release.
+
+- Sources: Looker, Tableau, Power BI, Lightdash, Omni, Hex, Sigma, ThoughtSpot,
+  Metabase, Apache Superset and Redash, through their APIs (`unshackle extract`)
+  or from files downloaded by hand (`unshackle import`).
+- Outputs: Apache Ossie semantic models (plus MetricFlow in dbt projects),
+  Jupyter notebooks with Altair/Vega-Lite charts, `.sql` queries, Cedar
+  policies with SQL row filters, and Markdown.
+- `unshackle verify` compares the source tool's numbers with the migrated SQL.
+- Live end-to-end tests for Metabase, Lightdash, Superset and Redash.

@@ -6,7 +6,7 @@ we take security reports seriously.
 ## Reporting a vulnerability
 
 Please **don't open a public issue.** Report it privately through
-[GitHub's private vulnerability reporting](https://github.com/unshackle-data/unshackle/security/advisories/new).
+[GitHub's private vulnerability reporting](https://github.com/unshackle-analytics/unshackle/security/advisories/new).
 
 Include what you found, how to reproduce it, and the version you used. We'll
 acknowledge your report within 3 working days and keep you updated until it's
