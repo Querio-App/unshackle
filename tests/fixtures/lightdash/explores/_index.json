@@ -1,0 +1,5 @@
+[
+  {"name": "customers", "label": "Customers", "tags": [], "groupLabel": "Marts", "databaseName": "jaffle", "schemaName": "analytics", "description": "One row per customer"},
+  {"name": "orders", "label": "Orders", "tags": [], "groupLabel": "Marts", "databaseName": "jaffle", "schemaName": "analytics", "description": "One row per order"},
+  {"name": "stg_payments", "label": "Stg payments", "errors": [{"type": "FieldError", "message": "Cannot find dimension payment_id"}]}
+]

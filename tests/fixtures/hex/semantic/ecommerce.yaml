@@ -1,0 +1,96 @@
+# hex context semantic-project pull --project ecommerce
+name: ecommerce
+description: Core commerce semantic project
+data_connection: conn-snowflake
+models:
+  - id: orders
+    name: Orders
+    description: One row per order placed on the web store.
+    base_sql_table: analytics.fct_orders
+    dimensions:
+      - id: order_id
+        type: number
+        unique: true
+      - id: customer_id
+        type: number
+      - id: status
+        type: string
+        description: placed, shipped, complete or returned
+      - id: amount
+        name: Amount (USD)
+        type: number
+        expr_sql: amount_usd
+      - id: created_at
+        type: timestamp_tz
+      - id: order_week
+        type: date
+        expr_sql: date_trunc('week', created_at)
+    measures:
+      - id: revenue
+        func: sum
+        of: amount
+      - id: order_count
+        func: count
+      - id: customer_count
+        func: count_distinct
+        of: customer_id
+      - id: completed_revenue
+        func: sum
+        of: amount
+        filters:
+          - dimension: status
+            operator: equals
+            value: complete
+      - id: large_order_count
+        func: count
+        filters:
+          - expr_sql: amount_usd >= 500
+      - id: median_order_value
+        func: median
+        of: amount
+      - id: aov
+        name: Average order value
+        func_calc: revenue / NULLIF(order_count, 0)
+      - id: revenue_per_large_order
+        func_calc: revenue / large_order_count * 1.0 + 0
+      - id: gross_margin
+        func_sql: SUM(amount_usd - cost_usd)
+      - id: blended_rate
+        func_sql: SUM(amount_usd) / COUNT(DISTINCT customer_id)
+      - id: revenue_stddev
+        func: stddev
+        of: amount
+    relations:
+      - id: customer
+        target: customers
+        type: many_to_one
+        join_sql: ${orders}.customer_id = ${customers}.customer_id
+  - id: customers
+    name: Customers
+    base_sql_table: analytics.dim_customers
+    dimensions:
+      - id: customer_id
+        type: number
+        unique: true
+      - id: region
+        type: string
+      - id: signup_date
+        type: date
+    measures:
+      - id: customer_total
+        func: count
+  - id: active_customers
+    name: Active customers
+    base_sql_query: |
+      select customer_id, max(created_at) as last_order_at
+      from analytics.fct_orders
+      group by 1
+    dimensions:
+      - id: customer_id
+        type: number
+        unique: true
+      - id: last_order_at
+        type: timestamp_tz
+    measures:
+      - id: active_count
+        func: count

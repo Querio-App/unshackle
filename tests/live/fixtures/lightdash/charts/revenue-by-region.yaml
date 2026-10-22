@@ -1,0 +1,37 @@
+name: Revenue by region
+description: Completed revenue and average order value by shipping region.
+tableName: orders
+updatedAt: '2026-10-22T10:28:41.029Z'
+metricQuery:
+  exploreName: orders
+  dimensions:
+  - shippings_region
+  metrics:
+  - orders_completed_revenue
+  - orders_average_order_value
+  - orders_order_count
+  filters: {}
+  sorts:
+  - fieldId: orders_completed_revenue
+    descending: true
+  limit: 500
+  metricOverrides: {}
+  tableCalculations: []
+  additionalMetrics: []
+  customDimensions: []
+  timezone: project_timezone
+chartConfig:
+  type: table
+  config: {}
+slug: revenue-by-region
+tableConfig:
+  columnOrder:
+  - shippings_region
+  - orders_completed_revenue
+  - orders_average_order_value
+  - orders_order_count
+spaceSlug: sales
+version: 1
+contentType: chart
+downloadedAt: '2026-10-22T10:28:44.541Z'
+verification: null

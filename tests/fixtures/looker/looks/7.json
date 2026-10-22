@@ -1,0 +1,18 @@
+{
+  "id": "7",
+  "title": "Weekly orders by status",
+  "description": "Order volume per week, split by fulfilment status.",
+  "user": {"id": "4", "display_name": "Dana Ops"},
+  "query_id": "6001",
+  "query": {
+    "id": "6001",
+    "model": "ecommerce",
+    "view": "orders",
+    "fields": ["orders.created_week", "orders.status", "orders.order_count"],
+    "filters": {"orders.created_date": "8 weeks"},
+    "sorts": ["orders.created_week desc"],
+    "limit": "500",
+    "dynamic_fields": null,
+    "vis_config": {"type": "looker_column"}
+  }
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "contentUrl": "SalesTargets",
+    "createdAt": "2024-01-10T08:00:00Z",
+    "description": "Monthly sales targets by region, set by Finance.",
+    "hasExtracts": false,
+    "id": "d2000000-0000-4000-8000-000000000001",
+    "isCertified": true,
+    "name": "Sales Targets",
+    "owner": {"id": "u1000000-0000-4000-8000-000000000002"},
+    "project": {"id": "p1000000-0000-4000-8000-000000000002", "name": "Finance"},
+    "type": "postgres",
+    "updatedAt": "2025-05-01T08:00:00Z"
+  }
+]

@@ -1,0 +1,73 @@
+{
+  "groups": {
+    "1": {
+      "1": {
+        "create-queries": "query-builder-and-native",
+        "download": {
+          "schemas": "full"
+        },
+        "view-data": "unrestricted"
+      },
+      "2": {
+        "create-queries": "query-builder-and-native",
+        "download": {
+          "schemas": "full"
+        },
+        "view-data": "unrestricted"
+      }
+    },
+    "2": {
+      "1": {
+        "create-queries": "query-builder-and-native",
+        "data-model": {
+          "schemas": "all"
+        },
+        "download": {
+          "schemas": "full"
+        },
+        "transforms": "yes",
+        "view-data": "unrestricted"
+      },
+      "2": {
+        "create-queries": "query-builder-and-native",
+        "data-model": {
+          "schemas": "all"
+        },
+        "download": {
+          "schemas": "full"
+        },
+        "transforms": "yes",
+        "view-data": "unrestricted"
+      }
+    },
+    "4": {
+      "1": {
+        "data-model": {
+          "schemas": "all"
+        }
+      },
+      "2": {
+        "data-model": {
+          "schemas": "all"
+        }
+      }
+    },
+    "5": {
+      "1": {
+        "create-queries": "query-builder-and-native",
+        "download": {
+          "schemas": "full"
+        },
+        "view-data": "unrestricted"
+      },
+      "2": {
+        "create-queries": "query-builder",
+        "download": {
+          "schemas": "full"
+        },
+        "view-data": "unrestricted"
+      }
+    }
+  },
+  "revision": 1
+}

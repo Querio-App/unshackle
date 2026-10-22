@@ -1,0 +1,72 @@
+[
+  {
+    "changed_on_utc": "2026-10-22T10:46:58.939171+0000",
+    "dashboards": [
+      {
+        "id": 1
+      }
+    ],
+    "datasource_id": 1,
+    "id": 5,
+    "slice_name": "Orders by size",
+    "url": "/explore/?slice_id=5",
+    "uuid": "c73487fb-fa28-4cd7-8cdf-656664ea5eb3",
+    "viz_type": "pie"
+  },
+  {
+    "changed_on_utc": "2026-10-22T10:46:58.931488+0000",
+    "dashboards": [
+      {
+        "id": 1
+      }
+    ],
+    "datasource_id": 1,
+    "id": 4,
+    "slice_name": "Orders by status",
+    "url": "/explore/?slice_id=4",
+    "uuid": "4681d925-313f-4c8e-8c75-afe33f985d31",
+    "viz_type": "table"
+  },
+  {
+    "changed_on_utc": "2026-10-22T10:46:58.923607+0000",
+    "dashboards": [
+      {
+        "id": 1
+      }
+    ],
+    "datasource_id": 2,
+    "id": 1,
+    "slice_name": "Revenue by region",
+    "url": "/explore/?slice_id=1",
+    "uuid": "1d05f11b-447e-4373-a248-fef6030ec747",
+    "viz_type": "echarts_timeseries_bar"
+  },
+  {
+    "changed_on_utc": "2026-10-22T10:46:58.915788+0000",
+    "dashboards": [
+      {
+        "id": 1
+      }
+    ],
+    "datasource_id": 1,
+    "id": 2,
+    "slice_name": "Monthly revenue",
+    "url": "/explore/?slice_id=2",
+    "uuid": "ca0108cf-5744-43f8-9ab3-75dff08917d0",
+    "viz_type": "echarts_timeseries_line"
+  },
+  {
+    "changed_on_utc": "2026-10-22T10:46:58.907237+0000",
+    "dashboards": [
+      {
+        "id": 1
+      }
+    ],
+    "datasource_id": 1,
+    "id": 3,
+    "slice_name": "Average order value",
+    "url": "/explore/?slice_id=3",
+    "uuid": "ba1de29c-3c0e-44bd-9999-2455f9656425",
+    "viz_type": "big_number_total"
+  }
+]

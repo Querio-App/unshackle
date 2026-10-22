@@ -1,0 +1,4 @@
+[
+  {"identifier": "7f3e9a21", "name": "Sales Overview", "hasDashboard": true, "type": "document", "updatedAt": "2026-09-20T12:00:00Z", "owner": {"id": "u1", "name": "Dana"}, "folder": {"id": "f1", "name": "Sales", "path": "Sales"}, "modelId": "a1b2c3d4-5e6f-4a0b-9c8d-111111111111", "views": 128},
+  {"identifier": "5c2b8d10", "name": "Scratch analysis", "hasDashboard": false, "type": "document", "updatedAt": "2026-07-02T09:30:00Z", "modelId": "a1b2c3d4-5e6f-4a0b-9c8d-111111111111"}
+]

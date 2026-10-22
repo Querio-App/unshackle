@@ -1,0 +1,123 @@
+guid: c4d5e6f7-1111-4a2b-9c3d-4e5f6a7b3001
+liveboard:
+  name: Sales Overview
+  description: Weekly revenue review for the leadership team.
+  visualizations:
+  - id: Viz_1
+    viz_guid: a0000000-0000-4000-8000-000000000001
+    answer:
+      name: Total Revenue
+      tables:
+      - id: Sales
+        name: Sales
+        fqn: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+      search_query: "[Revenue]"
+      answer_columns:
+      - name: Total Revenue
+      chart:
+        type: KPI
+        chart_columns:
+        - column_id: Total Revenue
+        axis_configs:
+        - y: [Total Revenue]
+      display_mode: CHART_MODE
+  - id: Viz_2
+    viz_guid: a0000000-0000-4000-8000-000000000002
+    answer:
+      name: Revenue by Month
+      tables:
+      - id: Sales
+        name: Sales
+        fqn: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+      search_query: "[Revenue] [Order Date].monthly [Region]"
+      answer_columns:
+      - name: Month(Order Date)
+      - name: Region
+      - name: Total Revenue
+      chart:
+        type: LINE
+        chart_columns:
+        - column_id: Month(Order Date)
+        - column_id: Region
+        - column_id: Total Revenue
+        axis_configs:
+        - x: [Month(Order Date)]
+          y: [Total Revenue]
+          color: [Region]
+      display_mode: CHART_MODE
+  - id: Viz_3
+    viz_guid: a0000000-0000-4000-8000-000000000003
+    answer:
+      name: Revenue by Segment
+      tables:
+      - id: Sales
+        name: Sales
+        fqn: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+      search_query: "[Revenue] [Segment]"
+      answer_columns:
+      - name: Segment
+      - name: Total Revenue
+      chart:
+        type: COLUMN
+        axis_configs:
+        - x: [Segment]
+          y: [Total Revenue]
+      display_mode: CHART_MODE
+  - id: Viz_4
+    viz_guid: a0000000-0000-4000-8000-000000000004
+    answer:
+      name: Top Customers
+      tables:
+      - id: Sales
+        name: Sales
+        fqn: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+      search_query: "[Customer Name] [Revenue] [Order Id] top 10 [Revenue]"
+      answer_columns:
+      - name: Customer Name
+      - name: Total Revenue
+      - name: Unique Number of Order Id
+      chart:
+        type: COLUMN
+      display_mode: TABLE_MODE
+  - id: Viz_5
+    viz_guid: a0000000-0000-4000-8000-000000000005
+    answer:
+      name: Revenue Share by Region
+      tables:
+      - id: Sales
+        name: Sales
+        fqn: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+      search_query: "[Region] [Region Share]"
+      formulas:
+      - id: formula_Region Share
+        name: Region Share
+        expr: "sum ( [Revenue] ) / group_aggregate ( sum ( [Revenue] ) , { } , query_filters ( ) )"
+      answer_columns:
+      - name: Region
+      - name: Region Share
+      chart:
+        type: PIE
+        axis_configs:
+        - x: [Region]
+          y: [Region Share]
+      display_mode: CHART_MODE
+  - id: Viz_6
+    note_tile:
+      html_parsed_string: "<p>Revenue is <b>gross</b>, before refunds.</p>"
+  filters:
+  - column: [Region]
+    oper: in
+    values: [EMEA, AMER]
+  - column: [Order Date]
+    date_filter:
+      type: LAST_N_PERIOD
+      datePeriod: MONTH
+      number: 12
+  layout:
+    tiles:
+    - {visualization_id: Viz_1, x: 0, y: 0, height: 3, width: 4}
+    - {visualization_id: Viz_6, x: 4, y: 0, height: 3, width: 8}
+    - {visualization_id: Viz_2, x: 0, y: 3, height: 6, width: 12}
+    - {visualization_id: Viz_5, x: 6, y: 9, height: 6, width: 6}
+    - {visualization_id: Viz_3, x: 0, y: 9, height: 6, width: 6}
+    - {visualization_id: Viz_4, x: 0, y: 15, height: 6, width: 12}

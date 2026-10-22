@@ -1,0 +1,35 @@
+slice_name: Revenue by region
+description: null
+certified_by: null
+certification_details: null
+viz_type: echarts_timeseries_bar
+params:
+  datasource: 2__table
+  viz_type: echarts_timeseries_bar
+  x_axis: region
+  metrics:
+  - shipped_revenue
+  groupby:
+  - mode
+  orientation: vertical
+  adhoc_filters: []
+  row_limit: 10000
+  order_desc: true
+  stack: Stack
+query_context: '{"datasource": {"id": 2, "type": "table"}, "force": false, "queries":
+  [{"filters": [], "extras": {"having": "", "where": ""}, "applied_time_extras": {},
+  "annotation_layers": [], "row_limit": 10000, "series_limit": 0, "order_desc": true,
+  "url_params": {}, "custom_params": {}, "custom_form_data": {}, "time_offsets": [],
+  "post_processing": [{"operation": "pivot", "options": {"index": ["region"], "columns":
+  ["mode"], "aggregates": {"shipped_revenue": {"operator": "mean"}}, "drop_missing_columns":
+  false}}, {"operation": "flatten"}], "columns": [{"columnType": "BASE_AXIS", "sqlExpression":
+  "region", "label": "region", "expressionType": "SQL"}, "mode"], "metrics": ["shipped_revenue"],
+  "orderby": [["shipped_revenue", false]], "series_columns": ["mode"]}], "form_data":
+  {"datasource": "2__table", "viz_type": "echarts_timeseries_bar", "x_axis": "region",
+  "metrics": ["shipped_revenue"], "groupby": ["mode"], "orientation": "vertical",
+  "adhoc_filters": [], "row_limit": 10000, "order_desc": true, "stack": "Stack"},
+  "result_format": "json", "result_type": "full"}'
+cache_timeout: null
+uuid: 1d05f11b-447e-4373-a248-fef6030ec747
+version: 1.0.0
+dataset_uuid: 797a7b68-fcaf-4b10-a77b-6f141870af06

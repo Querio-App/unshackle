@@ -1,0 +1,31 @@
+base_view: order_items
+label: Ecommerce
+description: Orders, items and the customers who bought them.
+joins:
+  users: {}
+ai_context: |
+  Default time field is order_items.created_at. Exclude Cancelled items unless asked.
+access_filters:
+  - field: users.country
+    user_attribute: country
+    values_for_unfiltered: [all]
+required_access_grants: [finance_only]
+sample_queries:
+  Revenue by country:
+    prompt: What was revenue by country last month?
+    description: Monthly revenue split by customer country
+    query:
+      fields: [users.country, order_items.total_revenue]
+      base_view: order_items
+      filters:
+        order_items.created_at:
+          time_for_interval_duration: [1 months ago, 1 months]
+      sorts:
+        - column_name: order_items.total_revenue
+          sort_descending: true
+      limit: 50
+  Top statuses:
+    prompt: How many items are in each status?
+    query:
+      fields: [order_items.status, order_items.count]
+      base_view: order_items

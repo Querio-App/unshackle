@@ -1,0 +1,38 @@
+[
+  {
+    "id": "5a8591dd-4039-49df-9202-96385ba3eff8",
+    "title": "Revenue Overview",
+    "description": "Monthly revenue by region for the weekly business review. Revenue excludes returned orders.",
+    "type": "PROJECT",
+    "status": {"name": "Published"},
+    "categories": [{"name": "Finance", "description": ""}],
+    "creator": {"email": "dana@acme.com"},
+    "owner": {"email": "dana@acme.com"},
+    "createdAt": "2025-11-02T10:00:00.000Z",
+    "lastEditedAt": "2026-09-12T14:20:00.000Z",
+    "lastPublishedAt": "2026-09-12T14:25:00.000Z",
+    "archivedAt": null,
+    "trashedAt": null,
+    "analytics": {
+      "publishedResultsUpdatedAt": "2026-09-29T06:00:00.000Z",
+      "lastViewedAt": "2026-09-29T09:14:00.000Z",
+      "appViews": {"allTime": 812, "lastSevenDays": 41, "lastFourteenDays": 77, "lastThirtyDays": 160}
+    }
+  },
+  {
+    "id": "0f2b6c1e-77aa-4a0e-9d2c-1c1f0b8e3a51",
+    "title": "Churn deep dive",
+    "description": "",
+    "type": "PROJECT",
+    "status": {"name": "In development"},
+    "categories": [],
+    "creator": {"email": "sam@acme.com"},
+    "owner": {"email": "sam@acme.com"},
+    "archivedAt": null,
+    "trashedAt": null,
+    "analytics": {
+      "lastViewedAt": "2026-08-01T12:00:00.000Z",
+      "appViews": {"allTime": 17, "lastSevenDays": 0, "lastFourteenDays": 0, "lastThirtyDays": 2}
+    }
+  }
+]

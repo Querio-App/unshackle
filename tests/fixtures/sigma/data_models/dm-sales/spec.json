@@ -1,0 +1,303 @@
+{
+  "dataModelId": "dm-sales",
+  "name": "Sales",
+  "url": "https://app.sigmacomputing.com/acme/data-model/Sales-5aB1",
+  "documentVersion": 7,
+  "latestDocumentVersion": 7,
+  "schemaVersion": 1,
+  "kind": "data-model",
+  "description": "Governed sales data model. Revenue is gross (before refunds), in USD.",
+  "pages": [
+    {
+      "id": "pg-tables",
+      "name": "Tables",
+      "elements": [
+        {
+          "id": "el-orders",
+          "kind": "table",
+          "name": "Orders",
+          "description": "One row per order placed on the web store.",
+          "source": {
+            "connectionId": "conn-snowflake",
+            "kind": "warehouse-table",
+            "path": [
+              "ANALYTICS",
+              "PUBLIC",
+              "FCT_ORDERS"
+            ]
+          },
+          "columns": [
+            {
+              "id": "inode-4tKq2bF0/ORDER_ID",
+              "formula": "[FCT_ORDERS/Order Id]",
+              "description": "Order primary key."
+            },
+            {
+              "id": "inode-4tKq2bF0/CUSTOMER_ID",
+              "formula": "[FCT_ORDERS/Customer Id]"
+            },
+            {
+              "id": "inode-4tKq2bF0/CREATED_AT",
+              "formula": "[FCT_ORDERS/Created At]",
+              "description": "When the order was placed (UTC).",
+              "format": {
+                "kind": "datetime",
+                "formatString": "%Y-%m-%d"
+              }
+            },
+            {
+              "id": "inode-4tKq2bF0/STATUS",
+              "formula": "[FCT_ORDERS/Status]",
+              "description": "paid, refunded or pending."
+            },
+            {
+              "id": "inode-4tKq2bF0/REGION",
+              "formula": "[FCT_ORDERS/Region]"
+            },
+            {
+              "id": "inode-4tKq2bF0/AMOUNT_USD",
+              "formula": "[FCT_ORDERS/Amount Usd]",
+              "name": "Amount",
+              "description": "Gross order amount in USD.",
+              "format": {
+                "kind": "number",
+                "formatString": "$,.2f",
+                "currencySymbol": "$"
+              }
+            },
+            {
+              "id": "inode-4tKq2bF0/DISCOUNT",
+              "formula": "[FCT_ORDERS/Discount]"
+            },
+            {
+              "id": "c-net",
+              "formula": "[Amount] - [Discount]",
+              "name": "Net Amount",
+              "description": "Amount after discount."
+            },
+            {
+              "id": "c-size",
+              "formula": "If([Amount] >= 500, \"Large\", \"Small\")",
+              "name": "Order Size"
+            },
+            {
+              "id": "c-month",
+              "formula": "DateTrunc(\"month\", [Created At])",
+              "name": "Order Month"
+            },
+            {
+              "id": "c-cust-name",
+              "formula": "Lookup([DIM_CUSTOMERS/Name], [Customer Id], [DIM_CUSTOMERS/Customer Id])",
+              "name": "Customer Name"
+            },
+            {
+              "id": "c-hash",
+              "formula": "CallText(\"MD5\", [Customer Id])",
+              "name": "Customer Hash"
+            },
+            {
+              "id": "c-access",
+              "formula": "[Region] = CurrentUserAttributeText(\"region\")",
+              "name": "Region Access",
+              "hidden": true
+            }
+          ],
+          "metrics": [
+            {
+              "id": "m-aov",
+              "name": "Average Order Value",
+              "formula": "[Revenue] / [Orders]",
+              "description": "Revenue per distinct order."
+            },
+            {
+              "id": "m-revenue",
+              "name": "Revenue",
+              "formula": "Sum([Amount])",
+              "description": "Gross revenue in USD.",
+              "format": {
+                "kind": "number",
+                "formatString": "$,.0f"
+              }
+            },
+            {
+              "id": "m-orders",
+              "name": "Orders",
+              "formula": "CountDistinct([Order Id])",
+              "description": "Number of distinct orders."
+            },
+            {
+              "id": "m-paid",
+              "name": "Paid Revenue",
+              "formula": "SumIf([Amount], [Status] = \"paid\")",
+              "description": "Revenue from paid orders only."
+            },
+            {
+              "id": "m-disc-rate",
+              "name": "Discount Rate",
+              "formula": "Sum([Discount]) / Sum([Amount])"
+            },
+            {
+              "id": "m-net",
+              "name": "Net Revenue",
+              "formula": "[Revenue] - Sum([Discount])"
+            },
+            {
+              "id": "m-cum",
+              "name": "Cumulative Revenue",
+              "formula": "CumulativeSum(Sum([Amount]))",
+              "description": "Running total of revenue."
+            },
+            {
+              "id": "m-pct",
+              "name": "Median Order",
+              "formula": "Median([Amount])"
+            }
+          ],
+          "filters": [
+            {
+              "columnId": "c-access",
+              "kind": "list",
+              "values": [
+                true
+              ]
+            }
+          ],
+          "columnSecurity": [
+            {
+              "columnId": "inode-4tKq2bF0/DISCOUNT",
+              "allowedTeams": [
+                "Finance"
+              ]
+            }
+          ],
+          "relationships": [
+            {
+              "id": "rel-order-customer",
+              "name": "Order customer",
+              "targetElementId": "el-customers",
+              "keys": [
+                {
+                  "sourceColumnId": "inode-4tKq2bF0/CUSTOMER_ID",
+                  "targetColumnId": "inode-9sLm1cD3/CUSTOMER_ID"
+                }
+              ]
+            }
+          ],
+          "order": [
+            "inode-4tKq2bF0/ORDER_ID",
+            "inode-4tKq2bF0/CUSTOMER_ID",
+            "inode-4tKq2bF0/CREATED_AT",
+            "inode-4tKq2bF0/STATUS",
+            "inode-4tKq2bF0/REGION",
+            "inode-4tKq2bF0/AMOUNT_USD",
+            "inode-4tKq2bF0/DISCOUNT"
+          ]
+        },
+        {
+          "id": "el-customers",
+          "kind": "table",
+          "source": {
+            "connectionId": "conn-snowflake",
+            "kind": "warehouse-table",
+            "path": [
+              "ANALYTICS",
+              "PUBLIC",
+              "DIM_CUSTOMERS"
+            ]
+          },
+          "columns": [
+            {
+              "id": "inode-9sLm1cD3/CUSTOMER_ID",
+              "formula": "[DIM_CUSTOMERS/Customer Id]"
+            },
+            {
+              "id": "inode-9sLm1cD3/NAME",
+              "formula": "[DIM_CUSTOMERS/Name]"
+            },
+            {
+              "id": "inode-9sLm1cD3/SEGMENT",
+              "formula": "[DIM_CUSTOMERS/Segment]",
+              "description": "SMB, Mid-market or Enterprise."
+            },
+            {
+              "id": "inode-9sLm1cD3/SIGNED_UP_AT",
+              "formula": "[DIM_CUSTOMERS/Signed Up At]",
+              "format": {
+                "kind": "datetime",
+                "formatString": "%Y-%m-%d"
+              }
+            }
+          ],
+          "metrics": [
+            {
+              "id": "m-customers",
+              "name": "Customers",
+              "formula": "CountDistinct([Customer Id])"
+            }
+          ]
+        },
+        {
+          "id": "el-large",
+          "kind": "table",
+          "name": "Large Orders",
+          "source": {
+            "kind": "table",
+            "elementId": "el-orders"
+          },
+          "columns": [
+            {
+              "id": "l-id",
+              "formula": "[Orders/Order Id]"
+            },
+            {
+              "id": "l-amount",
+              "formula": "[Orders/Amount]"
+            },
+            {
+              "id": "l-created",
+              "formula": "[Orders/Created At]"
+            }
+          ],
+          "filters": [
+            {
+              "columnId": "l-amount",
+              "kind": "range",
+              "min": 500
+            }
+          ]
+        },
+        {
+          "id": "el-targets",
+          "kind": "table",
+          "name": "Targets",
+          "source": {
+            "connectionId": "conn-snowflake",
+            "kind": "sql",
+            "statement": "select region, month, target_usd from finance.monthly_targets"
+          },
+          "columns": [
+            {
+              "id": "t-region",
+              "formula": "[Custom SQL/REGION]"
+            },
+            {
+              "id": "t-month",
+              "formula": "[Custom SQL/MONTH]"
+            },
+            {
+              "id": "t-target",
+              "formula": "[Custom SQL/TARGET_USD]"
+            }
+          ],
+          "metrics": [
+            {
+              "id": "m-target",
+              "name": "Target",
+              "formula": "Sum([TARGET_USD])"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

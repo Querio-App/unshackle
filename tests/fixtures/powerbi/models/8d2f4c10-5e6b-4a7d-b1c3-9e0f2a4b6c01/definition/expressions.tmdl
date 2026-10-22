@@ -1,0 +1,9 @@
+expression Server = "contoso-sql.database.windows.net" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 6b1f9c2e-0d44-4b8a-a1f3-4c2d9e8b7a10
+
+	annotation PBI_ResultType = Text
+
+expression Database = "SalesDW" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 7c2a0d3f-1e55-4c9b-b2a4-5d3e0f9c8b21
+
+	annotation PBI_ResultType = Text

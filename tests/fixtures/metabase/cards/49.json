@@ -1,0 +1,129 @@
+{
+  "archived": false,
+  "archived_directly": false,
+  "average_query_time": null,
+  "cache_invalidated_at": null,
+  "cache_ttl": null,
+  "can_delete": false,
+  "can_manage_db": true,
+  "can_restore": false,
+  "can_write": true,
+  "card_schema": 24,
+  "collection": {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "created_at": "2026-10-22T10:21:33.919449Z",
+    "description": null,
+    "entity_id": "UWErwdmovZj4_ssOkuvtd",
+    "id": 6,
+    "is_personal": false,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/5/",
+    "name": "Finance",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "finance",
+    "type": null
+  },
+  "collection_id": 6,
+  "collection_position": null,
+  "collection_preview": true,
+  "created_at": "2026-10-22T10:21:34.973415Z",
+  "creator_id": 2,
+  "dashboard": null,
+  "dashboard_count": 0,
+  "dashboard_id": null,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "aggregation": [
+          [
+            "count",
+            {
+              "lib/uuid": "e6f927f2-565f-482f-b926-61d5fc62dc93"
+            }
+          ]
+        ],
+        "filters": [
+          [
+            "=",
+            {
+              "lib/uuid": "820f2a40-7994-471f-b38b-edf582221c89"
+            },
+            [
+              "field",
+              {
+                "base-type": "type/Text",
+                "effective-type": "type/Text",
+                "lib/uuid": "60ef6729-52ae-4431-a430-701d9e3626d7"
+              },
+              82
+            ],
+            "COMPLETED"
+          ]
+        ],
+        "lib/type": "mbql.stage/mbql",
+        "source-table": 10
+      }
+    ]
+  },
+  "description": null,
+  "dimension_mappings": null,
+  "dimensions": null,
+  "display": "scalar",
+  "document_id": null,
+  "embedding_params": null,
+  "embedding_type": null,
+  "enable_embedding": false,
+  "entity_id": "9btAsaAVYZh9-m-3PHL7Z",
+  "id": 49,
+  "initially_published_at": null,
+  "is_remote_synced": false,
+  "last_query_start": null,
+  "last_used_at": "2026-10-22T10:21:34.973415Z",
+  "legacy_query": null,
+  "metabase_version": "v0.64.1 (7010f27)",
+  "metabot_chart_id": null,
+  "metabot_conversation_id": null,
+  "moderation_reviews": [],
+  "name": "Completed orders",
+  "param_fields": {},
+  "parameter_mappings": [],
+  "parameter_usage_count": 0,
+  "parameters": [],
+  "public_uuid": null,
+  "public_uuid_prefix": null,
+  "query_description": "Orders, Count, Filtered by Status is COMPLETED",
+  "query_type": "query",
+  "result_metadata": [
+    {
+      "base_type": "type/Integer",
+      "display_name": "Count",
+      "effective_type": "type/Integer",
+      "field_ref": [
+        "aggregation",
+        0
+      ],
+      "lib/deduplicated-name": "count",
+      "lib/desired-column-alias": "count",
+      "lib/original-name": "count",
+      "lib/source": "source/aggregations",
+      "lib/source-column-alias": "count",
+      "name": "count",
+      "semantic_type": "type/Quantity",
+      "source": "aggregation"
+    }
+  ],
+  "source_card_id": null,
+  "table_id": 10,
+  "type": "metric",
+  "updated_at": "2026-10-22T10:21:34.973415Z",
+  "view_count": 0,
+  "visualization_settings": {}
+}

@@ -1,0 +1,31 @@
+name: Total revenue
+description: null
+tableName: orders
+updatedAt: '2026-10-22T10:28:41.341Z'
+metricQuery:
+  exploreName: orders
+  dimensions: []
+  metrics:
+  - orders_total_revenue
+  filters: {}
+  sorts: []
+  limit: 1
+  metricOverrides: {}
+  tableCalculations: []
+  additionalMetrics: []
+  customDimensions: []
+  timezone: project_timezone
+chartConfig:
+  type: big_number
+  config:
+    label: Revenue
+    selectedField: orders_total_revenue
+slug: total-revenue
+tableConfig:
+  columnOrder:
+  - orders_total_revenue
+spaceSlug: sales
+version: 1
+contentType: chart
+downloadedAt: '2026-10-22T10:28:44.541Z'
+verification: null

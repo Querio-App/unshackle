@@ -1,0 +1,57 @@
+name: Monthly revenue
+description: Revenue and orders by month of purchase, H1 2025.
+tableName: orders
+updatedAt: '2026-10-22T10:28:40.690Z'
+metricQuery:
+  exploreName: orders
+  dimensions:
+  - orders_purchased_at_month
+  metrics:
+  - orders_total_revenue
+  - orders_order_count
+  filters:
+    dimensions:
+      id: 3b56339b-7c1f-4241-b3dd-fe25193de58e
+      and:
+      - id: e4f0172f-326a-4b04-bf61-c16b36b6ef6f
+        target:
+          fieldId: orders_purchased_at
+        values:
+        - '2025-01-01'
+        - '2025-06-30'
+        operator: inBetween
+  sorts:
+  - fieldId: orders_purchased_at_month
+    descending: false
+  limit: 500
+  metricOverrides: {}
+  tableCalculations: []
+  additionalMetrics: []
+  customDimensions: []
+  timezone: project_timezone
+chartConfig:
+  type: cartesian
+  config:
+    layout:
+      xField: orders_purchased_at_month
+      yField:
+      - orders_total_revenue
+    eChartsConfig:
+      series:
+      - type: bar
+        encode:
+          xRef:
+            field: orders_purchased_at_month
+          yRef:
+            field: orders_total_revenue
+slug: monthly-revenue
+tableConfig:
+  columnOrder:
+  - orders_purchased_at_month
+  - orders_total_revenue
+  - orders_order_count
+spaceSlug: sales
+version: 1
+contentType: chart
+downloadedAt: '2026-10-22T10:28:44.541Z'
+verification: null

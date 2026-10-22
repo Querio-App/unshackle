@@ -1,0 +1,20 @@
+{
+  "columns": [
+    {
+      "friendly_name": "region",
+      "name": "region",
+      "type": null
+    },
+    {
+      "friendly_name": "mode",
+      "name": "mode",
+      "type": null
+    },
+    {
+      "friendly_name": "revenue",
+      "name": "revenue",
+      "type": "float"
+    }
+  ],
+  "retrieved_at": "2026-10-22T11:02:37.398Z"
+}

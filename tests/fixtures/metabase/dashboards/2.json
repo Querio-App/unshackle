@@ -1,0 +1,1109 @@
+{
+  "archived": false,
+  "archived_directly": false,
+  "auto_apply_filters": true,
+  "cache_ttl": null,
+  "can_delete": false,
+  "can_restore": false,
+  "can_set_cache_policy": true,
+  "can_write": true,
+  "caveats": null,
+  "collection": {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "created_at": "2026-10-22T10:21:33.851738Z",
+    "description": null,
+    "effective_location": "/",
+    "entity_id": "1_6ltq7WPzVJPPbI6Rbv3",
+    "id": 5,
+    "is_personal": false,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/",
+    "name": "Sales",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "sales",
+    "type": null
+  },
+  "collection_authority_level": null,
+  "collection_id": 5,
+  "collection_position": null,
+  "created_at": "2026-10-22T10:21:35.138238Z",
+  "creator_id": 2,
+  "dashcards": [
+    {
+      "action_id": null,
+      "card": {
+        "archived": false,
+        "archived_directly": false,
+        "cache_invalidated_at": null,
+        "cache_ttl": null,
+        "can_write": true,
+        "card_schema": 24,
+        "collection_id": 6,
+        "collection_position": null,
+        "collection_preview": true,
+        "created_at": "2026-10-22T10:21:34.88078Z",
+        "creator_id": 2,
+        "dashboard_id": null,
+        "database_id": 2,
+        "dataset_query": {
+          "database": 2,
+          "lib/type": "mbql/query",
+          "stages": [
+            {
+              "aggregation": [
+                [
+                  "sum",
+                  {
+                    "lib/uuid": "21d9bee0-c65b-420e-8729-6daf1b0ab977"
+                  },
+                  [
+                    "field",
+                    {
+                      "base-type": "type/Decimal",
+                      "effective-type": "type/Decimal",
+                      "lib/uuid": "556bb15a-75f4-4fd6-b1de-dcde4baad408"
+                    },
+                    86
+                  ]
+                ]
+              ],
+              "lib/type": "mbql.stage/mbql",
+              "source-table": 10
+            }
+          ]
+        },
+        "description": "Post-discount revenue, all statuses.",
+        "dimension_mappings": null,
+        "dimensions": null,
+        "display": "scalar",
+        "document_id": null,
+        "download_perms": "full",
+        "embedding_params": null,
+        "embedding_type": null,
+        "enable_embedding": false,
+        "entity_id": "afjtRu1rcX79lz9unsRc8",
+        "id": 48,
+        "initially_published_at": null,
+        "last_used_at": "2026-10-22T10:21:34.88078Z",
+        "legacy_query": null,
+        "metabase_version": "v0.64.1 (7010f27)",
+        "metabot_chart_id": null,
+        "metabot_conversation_id": null,
+        "moderation_reviews": [],
+        "name": "Total revenue",
+        "parameter_mappings": [],
+        "parameters": [],
+        "public_uuid": null,
+        "public_uuid_prefix": null,
+        "query_average_duration": null,
+        "query_description": "Orders, Sum of Post Discount Revenue",
+        "query_type": "query",
+        "result_metadata": [
+          {
+            "base_type": "type/Decimal",
+            "display_name": "Sum of Post Discount Revenue",
+            "effective_type": "type/Decimal",
+            "field_ref": [
+              "aggregation",
+              0
+            ],
+            "lib/deduplicated-name": "sum",
+            "lib/desired-column-alias": "sum",
+            "lib/original-name": "sum",
+            "lib/source": "source/aggregations",
+            "lib/source-column-alias": "sum",
+            "name": "sum",
+            "semantic_type": "type/Discount",
+            "source": "aggregation"
+          }
+        ],
+        "source_card_id": null,
+        "table_id": 10,
+        "type": "metric",
+        "updated_at": "2026-10-22T10:21:34.88078Z",
+        "view_count": 0,
+        "visualization_settings": {}
+      },
+      "card_id": 48,
+      "col": 0,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 4,
+      "entity_id": "GniMk-uwA9KMH25kUxA80",
+      "id": 37,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 0,
+      "series": [],
+      "size_x": 6,
+      "size_y": 3,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {}
+    },
+    {
+      "action_id": null,
+      "card": {
+        "archived": false,
+        "archived_directly": false,
+        "cache_invalidated_at": null,
+        "cache_ttl": null,
+        "can_write": true,
+        "card_schema": 24,
+        "collection_id": 5,
+        "collection_position": null,
+        "collection_preview": true,
+        "created_at": "2026-10-22T10:21:34.211106Z",
+        "creator_id": 2,
+        "dashboard_id": null,
+        "database_id": 2,
+        "dataset_query": {
+          "database": 2,
+          "lib/type": "mbql/query",
+          "stages": [
+            {
+              "aggregation": [
+                [
+                  "sum",
+                  {
+                    "lib/uuid": "6aaf0f53-f97d-4b14-ad15-1f9e9b09f7cf"
+                  },
+                  [
+                    "field",
+                    {
+                      "base-type": "type/Decimal",
+                      "effective-type": "type/Decimal",
+                      "lib/uuid": "fbc26210-4a7d-48c7-b55f-8aa619db8f52"
+                    },
+                    86
+                  ]
+                ]
+              ],
+              "breakout": [
+                [
+                  "field",
+                  {
+                    "base-type": "type/DateTime",
+                    "effective-type": "type/DateTime",
+                    "lib/uuid": "694f51f7-1294-4ac7-b3fa-da1f5196850a",
+                    "temporal-unit": "month"
+                  },
+                  87
+                ]
+              ],
+              "lib/type": "mbql.stage/mbql",
+              "source-table": 10
+            }
+          ]
+        },
+        "description": null,
+        "dimension_mappings": null,
+        "dimensions": null,
+        "display": "line",
+        "document_id": null,
+        "download_perms": "full",
+        "embedding_params": null,
+        "embedding_type": null,
+        "enable_embedding": false,
+        "entity_id": "QoMHVRlkZAF_ZIAinlZwO",
+        "id": 42,
+        "initially_published_at": null,
+        "last_used_at": "2026-10-22T10:21:34.211106Z",
+        "legacy_query": null,
+        "metabase_version": "v0.64.1 (7010f27)",
+        "metabot_chart_id": null,
+        "metabot_conversation_id": null,
+        "moderation_reviews": [],
+        "name": "Monthly revenue",
+        "parameter_mappings": [],
+        "parameters": [],
+        "public_uuid": null,
+        "public_uuid_prefix": null,
+        "query_average_duration": null,
+        "query_type": "query",
+        "result_metadata": [
+          {
+            "active": true,
+            "base_type": "type/DateTime",
+            "database_type": "timestamp",
+            "display_name": "Purchased At: Month",
+            "effective_type": "type/DateTime",
+            "field_ref": [
+              "field",
+              87,
+              {
+                "temporal-unit": "month"
+              }
+            ],
+            "id": 87,
+            "inherited_temporal_unit": "month",
+            "lib/breakout?": true,
+            "lib/deduplicated-name": "purchased_at",
+            "lib/desired-column-alias": "purchased_at",
+            "lib/original-display-name": "Purchased At",
+            "lib/original-name": "purchased_at",
+            "lib/source": "source/table-defaults",
+            "lib/source-column-alias": "purchased_at",
+            "lib/temporal-unit": "month",
+            "lib/transformation-added-base-type": true,
+            "name": "purchased_at",
+            "position": 8,
+            "source": "breakout",
+            "table_id": 10,
+            "unit": "month",
+            "visibility_type": "normal"
+          },
+          {
+            "base_type": "type/Decimal",
+            "display_name": "Sum of Post Discount Revenue",
+            "effective_type": "type/Decimal",
+            "field_ref": [
+              "aggregation",
+              0
+            ],
+            "lib/deduplicated-name": "sum",
+            "lib/desired-column-alias": "sum",
+            "lib/original-name": "sum",
+            "lib/source": "source/aggregations",
+            "lib/source-column-alias": "sum",
+            "name": "sum",
+            "semantic_type": "type/Discount",
+            "source": "aggregation"
+          }
+        ],
+        "source_card_id": null,
+        "table_id": 10,
+        "type": "question",
+        "updated_at": "2026-10-22T10:21:34.211106Z",
+        "view_count": 0,
+        "visualization_settings": {
+          "graph.dimensions": [
+            "purchased_at"
+          ],
+          "graph.metrics": [
+            "sum"
+          ]
+        }
+      },
+      "card_id": 42,
+      "col": 6,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 4,
+      "entity_id": "nb5cHbBRj1jU-_E2JNqhJ",
+      "id": 38,
+      "inline_parameters": [],
+      "parameter_mappings": [
+        {
+          "card_id": 42,
+          "parameter_id": "e5f6a7b8",
+          "target": [
+            "dimension",
+            [
+              "field",
+              82,
+              null
+            ],
+            {
+              "stage-number": 0
+            }
+          ]
+        }
+      ],
+      "row": 0,
+      "series": [],
+      "size_x": 18,
+      "size_y": 6,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {}
+    },
+    {
+      "action_id": null,
+      "card": {
+        "archived": false,
+        "archived_directly": false,
+        "cache_invalidated_at": null,
+        "cache_ttl": null,
+        "can_write": true,
+        "card_schema": 24,
+        "collection_id": 5,
+        "collection_position": null,
+        "collection_preview": true,
+        "created_at": "2026-10-22T10:21:34.334596Z",
+        "creator_id": 2,
+        "dashboard_id": null,
+        "database_id": 2,
+        "dataset_query": {
+          "database": 2,
+          "lib/type": "mbql/query",
+          "stages": [
+            {
+              "aggregation": [
+                [
+                  "sum",
+                  {
+                    "lib/uuid": "aeca003c-7c4f-40ef-907f-19d8138765ab"
+                  },
+                  [
+                    "field",
+                    {
+                      "base-type": "type/Decimal",
+                      "effective-type": "type/Decimal",
+                      "lib/uuid": "09cd48bf-1875-48c1-a6af-cd1d3d368b4b"
+                    },
+                    86
+                  ]
+                ],
+                [
+                  "count",
+                  {
+                    "lib/uuid": "1c31fb2f-17cf-4ef5-b5ce-9dc21f3989a3"
+                  }
+                ]
+              ],
+              "breakout": [
+                [
+                  "field",
+                  {
+                    "base-type": "type/Text",
+                    "effective-type": "type/Text",
+                    "lib/uuid": "7e7ecf19-5a48-40ff-9595-d11e9023a5c6",
+                    "source-field": 80
+                  },
+                  77
+                ]
+              ],
+              "filters": [
+                [
+                  "!=",
+                  {
+                    "lib/uuid": "3ed39656-9d95-4af5-9aea-0b6916219972"
+                  },
+                  [
+                    "field",
+                    {
+                      "base-type": "type/Text",
+                      "effective-type": "type/Text",
+                      "lib/uuid": "897b9770-2f72-4c7c-8511-cd570946da3b"
+                    },
+                    82
+                  ],
+                  "CANCELLED"
+                ]
+              ],
+              "lib/type": "mbql.stage/mbql",
+              "order-by": [
+                [
+                  "desc",
+                  {
+                    "lib/uuid": "da0ca3cd-5f9b-4675-890d-c6ee4c10d82a"
+                  },
+                  [
+                    "aggregation",
+                    {
+                      "lib/uuid": "54f90b2a-21c9-484b-98bd-0d8e6348dfd3"
+                    },
+                    "aeca003c-7c4f-40ef-907f-19d8138765ab"
+                  ]
+                ]
+              ],
+              "source-table": 10
+            }
+          ]
+        },
+        "description": null,
+        "dimension_mappings": null,
+        "dimensions": null,
+        "display": "row",
+        "document_id": null,
+        "download_perms": "full",
+        "embedding_params": null,
+        "embedding_type": null,
+        "enable_embedding": false,
+        "entity_id": "wappNVCOkqRHpzLx4vGlS",
+        "id": 43,
+        "initially_published_at": null,
+        "last_used_at": "2026-10-22T10:21:34.334596Z",
+        "legacy_query": null,
+        "metabase_version": "v0.64.1 (7010f27)",
+        "metabot_chart_id": null,
+        "metabot_conversation_id": null,
+        "moderation_reviews": [],
+        "name": "Revenue by account manager",
+        "parameter_mappings": [],
+        "parameters": [],
+        "public_uuid": null,
+        "public_uuid_prefix": null,
+        "query_average_duration": null,
+        "query_type": "query",
+        "result_metadata": [
+          {
+            "active": true,
+            "base_type": "type/Text",
+            "database_type": "text",
+            "display_name": "Account \u2192 Account Manager",
+            "effective_type": "type/Text",
+            "field_ref": [
+              "field",
+              77,
+              {
+                "source-field": 80
+              }
+            ],
+            "fk_field_id": 80,
+            "id": 77,
+            "lib/breakout?": true,
+            "lib/deduplicated-name": "account_manager",
+            "lib/desired-column-alias": "accounts__via__account_id__account_manager",
+            "lib/original-display-name": "Account Manager",
+            "lib/original-name": "account_manager",
+            "lib/source": "source/implicitly-joinable",
+            "lib/source-column-alias": "account_manager",
+            "lib/transformation-added-base-type": true,
+            "name": "account_manager",
+            "position": 5,
+            "semantic_type": "type/Category",
+            "source": "breakout",
+            "table_id": 9,
+            "visibility_type": "normal"
+          },
+          {
+            "base_type": "type/Decimal",
+            "display_name": "Sum of Post Discount Revenue",
+            "effective_type": "type/Decimal",
+            "field_ref": [
+              "aggregation",
+              0
+            ],
+            "lib/deduplicated-name": "sum",
+            "lib/desired-column-alias": "sum",
+            "lib/original-name": "sum",
+            "lib/source": "source/aggregations",
+            "lib/source-column-alias": "sum",
+            "name": "sum",
+            "semantic_type": "type/Discount",
+            "source": "aggregation"
+          },
+          {
+            "base_type": "type/Integer",
+            "display_name": "Count",
+            "effective_type": "type/Integer",
+            "field_ref": [
+              "aggregation",
+              1
+            ],
+            "lib/deduplicated-name": "count",
+            "lib/desired-column-alias": "count",
+            "lib/original-name": "count",
+            "lib/source": "source/aggregations",
+            "lib/source-column-alias": "count",
+            "name": "count",
+            "semantic_type": "type/Quantity",
+            "source": "aggregation"
+          }
+        ],
+        "source_card_id": null,
+        "table_id": 10,
+        "type": "question",
+        "updated_at": "2026-10-22T10:21:34.334596Z",
+        "view_count": 0,
+        "visualization_settings": {
+          "graph.dimensions": [
+            "account_manager"
+          ],
+          "graph.metrics": [
+            "sum"
+          ]
+        }
+      },
+      "card_id": 43,
+      "col": 0,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 4,
+      "entity_id": "9BQxNlDwWdO7vj_TMYr_R",
+      "id": 39,
+      "inline_parameters": [],
+      "parameter_mappings": [
+        {
+          "card_id": 43,
+          "parameter_id": "e5f6a7b8",
+          "target": [
+            "dimension",
+            [
+              "field",
+              82,
+              null
+            ],
+            {
+              "stage-number": 0
+            }
+          ]
+        }
+      ],
+      "row": 6,
+      "series": [],
+      "size_x": 12,
+      "size_y": 6,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {}
+    },
+    {
+      "action_id": null,
+      "card": {
+        "archived": false,
+        "archived_directly": false,
+        "cache_invalidated_at": null,
+        "cache_ttl": null,
+        "can_write": true,
+        "card_schema": 24,
+        "collection_id": 5,
+        "collection_position": null,
+        "collection_preview": true,
+        "created_at": "2026-10-22T10:21:34.113903Z",
+        "creator_id": 2,
+        "dashboard_id": null,
+        "database_id": 2,
+        "dataset_query": {
+          "database": 2,
+          "lib/type": "mbql/query",
+          "stages": [
+            {
+              "lib/type": "mbql.stage/native",
+              "native": "SELECT o.status, COUNT(*) AS orders\nFROM orders o JOIN shippings s ON s.order_id = o.id\nWHERE s.region = {{region}}\n[[AND o.purchased_at >= {{since}}]]\nGROUP BY o.status\nORDER BY o.status",
+              "template-tags": [
+                {
+                  "default": "West",
+                  "display-name": "Region",
+                  "id": "6b8b4567-0000-4000-8000-000000000001",
+                  "name": "region",
+                  "required": true,
+                  "type": "text"
+                },
+                {
+                  "display-name": "Since",
+                  "id": "6b8b4567-0000-4000-8000-000000000002",
+                  "name": "since",
+                  "type": "date"
+                }
+              ]
+            }
+          ]
+        },
+        "description": null,
+        "dimension_mappings": null,
+        "dimensions": null,
+        "display": "bar",
+        "document_id": null,
+        "download_perms": "full",
+        "embedding_params": null,
+        "embedding_type": null,
+        "enable_embedding": false,
+        "entity_id": "na8bOqs4jQLdwAXxM0z_-",
+        "id": 41,
+        "initially_published_at": null,
+        "last_used_at": "2026-10-22T10:21:34.113903Z",
+        "legacy_query": null,
+        "metabase_version": "v0.64.1 (7010f27)",
+        "metabot_chart_id": null,
+        "metabot_conversation_id": null,
+        "moderation_reviews": [],
+        "name": "Orders by status for a region",
+        "parameter_mappings": [],
+        "parameters": [],
+        "public_uuid": null,
+        "public_uuid_prefix": null,
+        "query_average_duration": null,
+        "query_type": "native",
+        "result_metadata": [
+          {
+            "base_type": "type/Text",
+            "database_type": "text",
+            "display_name": "status",
+            "field_ref": [
+              "field",
+              "status",
+              {
+                "base-type": "type/Text"
+              }
+            ],
+            "name": "status",
+            "semantic_type": "type/Category"
+          },
+          {
+            "base_type": "type/BigInteger",
+            "database_type": "int8",
+            "display_name": "orders",
+            "field_ref": [
+              "field",
+              "orders",
+              {
+                "base-type": "type/BigInteger"
+              }
+            ],
+            "name": "orders"
+          }
+        ],
+        "source_card_id": null,
+        "table_id": null,
+        "type": "question",
+        "updated_at": "2026-10-22T10:21:34.113903Z",
+        "view_count": 0,
+        "visualization_settings": {
+          "graph.dimensions": [
+            "status"
+          ],
+          "graph.metrics": [
+            "orders"
+          ]
+        }
+      },
+      "card_id": 41,
+      "col": 12,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 4,
+      "entity_id": "DntKE9990oEMoVslZE4_i",
+      "id": 40,
+      "inline_parameters": [],
+      "parameter_mappings": [
+        {
+          "card_id": 41,
+          "parameter_id": "a1b2c3d4",
+          "target": [
+            "variable",
+            [
+              "template-tag",
+              "region"
+            ]
+          ]
+        }
+      ],
+      "row": 6,
+      "series": [],
+      "size_x": 12,
+      "size_y": 6,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {}
+    },
+    {
+      "action_id": null,
+      "card": {
+        "archived": false,
+        "archived_directly": false,
+        "cache_invalidated_at": null,
+        "cache_ttl": null,
+        "can_write": true,
+        "card_schema": 24,
+        "collection_id": 5,
+        "collection_position": null,
+        "collection_preview": true,
+        "created_at": "2026-10-22T10:21:34.000298Z",
+        "creator_id": 2,
+        "dashboard_id": null,
+        "database_id": 2,
+        "dataset_query": {
+          "database": 2,
+          "lib/type": "mbql/query",
+          "stages": [
+            {
+              "lib/type": "mbql.stage/native",
+              "native": "SELECT p.paper_type, SUM(o.post_discount_revenue) AS revenue\nFROM orders o JOIN products p ON p.id = o.product_id\nWHERE o.status = 'COMPLETED'\nGROUP BY p.paper_type\nORDER BY revenue DESC"
+            }
+          ]
+        },
+        "description": "Completed revenue split by paper type.",
+        "dimension_mappings": null,
+        "dimensions": null,
+        "display": "pie",
+        "document_id": null,
+        "download_perms": "full",
+        "embedding_params": null,
+        "embedding_type": null,
+        "enable_embedding": false,
+        "entity_id": "wmz65OAFTkwDZsZc5Z1EY",
+        "id": 40,
+        "initially_published_at": null,
+        "last_used_at": "2026-10-22T10:21:34.000298Z",
+        "legacy_query": null,
+        "metabase_version": "v0.64.1 (7010f27)",
+        "metabot_chart_id": null,
+        "metabot_conversation_id": null,
+        "moderation_reviews": [],
+        "name": "Revenue by paper type",
+        "parameter_mappings": [],
+        "parameters": [],
+        "public_uuid": null,
+        "public_uuid_prefix": null,
+        "query_average_duration": null,
+        "query_type": "native",
+        "result_metadata": [
+          {
+            "base_type": "type/Text",
+            "database_type": "text",
+            "display_name": "paper_type",
+            "field_ref": [
+              "field",
+              "paper_type",
+              {
+                "base-type": "type/Text"
+              }
+            ],
+            "name": "paper_type",
+            "semantic_type": "type/Category"
+          },
+          {
+            "base_type": "type/Decimal",
+            "database_type": "numeric",
+            "display_name": "revenue",
+            "field_ref": [
+              "field",
+              "revenue",
+              {
+                "base-type": "type/Decimal"
+              }
+            ],
+            "name": "revenue"
+          }
+        ],
+        "source_card_id": null,
+        "table_id": null,
+        "type": "question",
+        "updated_at": "2026-10-22T10:21:34.000298Z",
+        "view_count": 0,
+        "visualization_settings": {
+          "pie.dimension": "paper_type",
+          "pie.metric": "revenue"
+        }
+      },
+      "card_id": 40,
+      "col": 0,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 5,
+      "entity_id": "I2CgXdRPIcTV2G4x2b5j5",
+      "id": 41,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 0,
+      "series": [],
+      "size_x": 12,
+      "size_y": 6,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {}
+    },
+    {
+      "action_id": null,
+      "card": {
+        "archived": false,
+        "archived_directly": false,
+        "cache_invalidated_at": null,
+        "cache_ttl": null,
+        "can_write": true,
+        "card_schema": 24,
+        "collection_id": 5,
+        "collection_position": null,
+        "collection_preview": true,
+        "created_at": "2026-10-22T10:21:34.801138Z",
+        "creator_id": 2,
+        "dashboard_id": null,
+        "database_id": 2,
+        "dataset_query": {
+          "database": 2,
+          "lib/type": "mbql/query",
+          "stages": [
+            {
+              "aggregation": [
+                [
+                  "sum",
+                  {
+                    "lib/uuid": "194273bf-af3e-4670-b8a1-a20c911a8f83"
+                  },
+                  [
+                    "field",
+                    {
+                      "base-type": "type/Decimal",
+                      "effective-type": "type/Decimal",
+                      "lib/uuid": "df2bc745-c8f1-45b3-8db1-2286142beaaf"
+                    },
+                    86
+                  ]
+                ],
+                [
+                  "count",
+                  {
+                    "lib/uuid": "12a1b726-1d8f-43ca-a368-ae3d9701787d"
+                  }
+                ]
+              ],
+              "breakout": [
+                [
+                  "field",
+                  {
+                    "base-type": "type/DateTime",
+                    "effective-type": "type/DateTime",
+                    "lib/uuid": "ddc47c96-9a66-4791-9f21-4c83e126aa7e",
+                    "temporal-unit": "month"
+                  },
+                  87
+                ]
+              ],
+              "lib/type": "mbql.stage/mbql",
+              "source-table": 10
+            }
+          ]
+        },
+        "description": null,
+        "dimension_mappings": null,
+        "dimensions": null,
+        "display": "combo",
+        "document_id": null,
+        "download_perms": "full",
+        "embedding_params": null,
+        "embedding_type": null,
+        "enable_embedding": false,
+        "entity_id": "SPcpdaTYdb0WJSuPZenul",
+        "id": 47,
+        "initially_published_at": null,
+        "last_used_at": "2026-10-22T10:21:34.801138Z",
+        "legacy_query": null,
+        "metabase_version": "v0.64.1 (7010f27)",
+        "metabot_chart_id": null,
+        "metabot_conversation_id": null,
+        "moderation_reviews": [],
+        "name": "Revenue and orders by month",
+        "parameter_mappings": [],
+        "parameters": [],
+        "public_uuid": null,
+        "public_uuid_prefix": null,
+        "query_average_duration": null,
+        "query_type": "query",
+        "result_metadata": [
+          {
+            "active": true,
+            "base_type": "type/DateTime",
+            "database_type": "timestamp",
+            "display_name": "Purchased At: Month",
+            "effective_type": "type/DateTime",
+            "field_ref": [
+              "field",
+              87,
+              {
+                "temporal-unit": "month"
+              }
+            ],
+            "id": 87,
+            "inherited_temporal_unit": "month",
+            "lib/breakout?": true,
+            "lib/deduplicated-name": "purchased_at",
+            "lib/desired-column-alias": "purchased_at",
+            "lib/original-display-name": "Purchased At",
+            "lib/original-name": "purchased_at",
+            "lib/source": "source/table-defaults",
+            "lib/source-column-alias": "purchased_at",
+            "lib/temporal-unit": "month",
+            "lib/transformation-added-base-type": true,
+            "name": "purchased_at",
+            "position": 8,
+            "source": "breakout",
+            "table_id": 10,
+            "unit": "month",
+            "visibility_type": "normal"
+          },
+          {
+            "base_type": "type/Decimal",
+            "display_name": "Sum of Post Discount Revenue",
+            "effective_type": "type/Decimal",
+            "field_ref": [
+              "aggregation",
+              0
+            ],
+            "lib/deduplicated-name": "sum",
+            "lib/desired-column-alias": "sum",
+            "lib/original-name": "sum",
+            "lib/source": "source/aggregations",
+            "lib/source-column-alias": "sum",
+            "name": "sum",
+            "semantic_type": "type/Discount",
+            "source": "aggregation"
+          },
+          {
+            "base_type": "type/Integer",
+            "display_name": "Count",
+            "effective_type": "type/Integer",
+            "field_ref": [
+              "aggregation",
+              1
+            ],
+            "lib/deduplicated-name": "count",
+            "lib/desired-column-alias": "count",
+            "lib/original-name": "count",
+            "lib/source": "source/aggregations",
+            "lib/source-column-alias": "count",
+            "name": "count",
+            "semantic_type": "type/Quantity",
+            "source": "aggregation"
+          }
+        ],
+        "source_card_id": null,
+        "table_id": 10,
+        "type": "question",
+        "updated_at": "2026-10-22T10:21:34.801138Z",
+        "view_count": 0,
+        "visualization_settings": {
+          "graph.dimensions": [
+            "purchased_at"
+          ],
+          "graph.metrics": [
+            "sum",
+            "count"
+          ],
+          "series_settings": {
+            "count": {
+              "axis": "right",
+              "display": "line"
+            },
+            "sum": {
+              "display": "bar"
+            }
+          }
+        }
+      },
+      "card_id": 47,
+      "col": 12,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 5,
+      "entity_id": "rlpliP167V523YlyBze9a",
+      "id": 42,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 0,
+      "series": [],
+      "size_x": 12,
+      "size_y": 6,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {}
+    },
+    {
+      "action_id": null,
+      "card": {
+        "download_perms": "none",
+        "query_average_duration": null
+      },
+      "card_id": null,
+      "col": 0,
+      "collection_authority_level": null,
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "dashboard_tab_id": 5,
+      "entity_id": "Bf0EBKnnPMkRC7HeqPeew",
+      "id": 43,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 6,
+      "series": [],
+      "size_x": 24,
+      "size_y": 2,
+      "updated_at": "2026-10-22T10:21:35.232868Z",
+      "visualization_settings": {
+        "text": "Revenue is **post-discount**. Cancelled orders are excluded from the manager chart.",
+        "virtual_card": {
+          "archived": false,
+          "dataset_query": {},
+          "display": "text",
+          "name": null,
+          "visualization_settings": {}
+        }
+      }
+    }
+  ],
+  "description": "Revenue and orders.",
+  "embedding_params": null,
+  "embedding_type": null,
+  "enable_embedding": false,
+  "entity_id": "yLoLcD2eymKCCOcodpcYg",
+  "id": 2,
+  "initially_published_at": null,
+  "is_remote_synced": false,
+  "last_used_param_values": {},
+  "last_viewed_at": "2026-10-22T10:21:35.138238Z",
+  "moderation_reviews": [],
+  "name": "Sales overview",
+  "param_fields": {
+    "e5f6a7b8": [
+      {
+        "base_type": "type/Text",
+        "dimensions": [],
+        "display_name": "Status",
+        "effective_type": "type/Text",
+        "fk_target_field_id": null,
+        "has_field_values": "list",
+        "id": 82,
+        "name": "status",
+        "name_field": null,
+        "semantic_type": "type/Category",
+        "settings": null,
+        "table_id": 10,
+        "target": null
+      }
+    ]
+  },
+  "parameters": [
+    {
+      "default": [
+        "West"
+      ],
+      "id": "a1b2c3d4",
+      "name": "Region",
+      "sectionId": "string",
+      "slug": "region",
+      "type": "string/="
+    },
+    {
+      "id": "e5f6a7b8",
+      "name": "Status",
+      "sectionId": "string",
+      "slug": "status",
+      "type": "string/="
+    }
+  ],
+  "points_of_interest": null,
+  "position": null,
+  "public_uuid": null,
+  "public_uuid_prefix": null,
+  "show_in_getting_started": false,
+  "tabs": [
+    {
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "entity_id": "hHgxjESI6igmZtMoWirFi",
+      "id": 4,
+      "name": "Overview",
+      "position": 0,
+      "updated_at": "2026-10-22T10:21:35.232868Z"
+    },
+    {
+      "created_at": "2026-10-22T10:21:35.232868Z",
+      "dashboard_id": 2,
+      "entity_id": "6B4PpqmefEAyO3kZSJ8FD",
+      "id": 5,
+      "name": "Details",
+      "position": 1,
+      "updated_at": "2026-10-22T10:21:35.232868Z"
+    }
+  ],
+  "updated_at": "2026-10-22T10:21:35.232868Z",
+  "view_count": 0,
+  "width": "fixed"
+}

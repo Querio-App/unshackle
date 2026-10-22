@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "name": "Dunder Mifflin",
+    "pause_reason": null,
+    "paused": 0,
+    "supports_auto_limit": true,
+    "syntax": "sql",
+    "type": "pg",
+    "view_only": false
+  }
+]

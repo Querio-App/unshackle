@@ -1,0 +1,23 @@
+schema: ecomm
+table_name: users
+label: Users
+description: One row per registered user.
+dimensions:
+  id:
+    primary_key: true
+    sql: '"ID"'
+  email:
+    sql: '"EMAIL"'
+    required_access_grants: [pii_access]
+  country:
+    sql: '"COUNTRY"'
+    ai_context: ISO country name, e.g. United Kingdom
+  state:
+    sql: '"STATE"'
+  created_at:
+    sql: '"CREATED_AT"'
+    timeframes: [date, month, year]
+measures:
+  count:
+    aggregate_type: count
+    label: Users

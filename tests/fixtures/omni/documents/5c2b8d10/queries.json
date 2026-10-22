@@ -1,0 +1,3 @@
+[
+  {"id": "s1", "name": "Refund audit (SQL)", "query": {"modelId": "a1b2c3d4-5e6f-4a0b-9c8d-111111111111", "userEditedSQL": "SELECT order_id, SUM(sale_price) AS refunded\nFROM ecomm.order_items\nWHERE status = 'Returned'\nGROUP BY 1\nORDER BY 2 DESC", "fields": []}}
+]

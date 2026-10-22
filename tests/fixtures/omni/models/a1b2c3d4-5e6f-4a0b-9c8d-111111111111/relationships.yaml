@@ -1,0 +1,5 @@
+- join_from_view: order_items
+  join_to_view: users
+  join_type: always_left
+  on_sql: ${order_items.user_id} = ${users.id}
+  relationship_type: many_to_one

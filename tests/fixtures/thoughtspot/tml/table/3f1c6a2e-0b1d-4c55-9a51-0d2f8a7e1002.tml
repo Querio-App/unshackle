@@ -1,0 +1,31 @@
+guid: 3f1c6a2e-0b1d-4c55-9a51-0d2f8a7e1002
+table:
+  name: DIM_CUSTOMERS
+  description: One row per customer.
+  db: ANALYTICS
+  schema: PUBLIC
+  db_table: DIM_CUSTOMERS
+  connection:
+    name: Snowflake Prod
+  columns:
+  - name: CUSTOMER_ID
+    db_column_name: CUSTOMER_ID
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: CUSTOMER_NAME
+    db_column_name: CUSTOMER_NAME
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: SEGMENT
+    db_column_name: SEGMENT
+    description: SMB, Mid-market or Enterprise.
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: COUNTRY
+    db_column_name: COUNTRY
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: SIGNUP_DATE
+    db_column_name: SIGNUP_DATE
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: DATE}

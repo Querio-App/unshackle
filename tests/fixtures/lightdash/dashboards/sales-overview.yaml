@@ -1,0 +1,84 @@
+name: Sales overview
+description: Weekly sales review for the leadership team
+slug: sales-overview
+spaceSlug: sales
+version: 1
+updatedAt: "2026-09-01T10:00:00.000Z"
+tiles:
+  - type: markdown
+    x: 0
+    y: 0
+    h: 3
+    w: 36
+    tabUuid: null
+    properties:
+      title: About this dashboard
+      content: Revenue is **net of discounts**. Returned orders are excluded from status charts.
+  - type: saved_chart
+    x: 0
+    y: 3
+    h: 6
+    w: 12
+    properties:
+      title: Revenue (all time)
+      chartSlug: total-revenue
+      hideTitle: false
+  - type: saved_chart
+    x: 12
+    y: 3
+    h: 6
+    w: 24
+    properties:
+      title: ""
+      chartSlug: monthly-revenue
+  - type: saved_chart
+    x: 0
+    y: 9
+    h: 6
+    w: 18
+    properties:
+      chartSlug: revenue-by-region
+  - type: saved_chart
+    x: 18
+    y: 9
+    h: 6
+    w: 18
+    properties:
+      chartSlug: order-funnel
+  - type: saved_chart
+    x: 0
+    y: 15
+    h: 8
+    w: 36
+    properties:
+      chartSlug: recent-orders
+  - type: loom
+    x: 0
+    y: 23
+    h: 4
+    w: 36
+    properties:
+      title: How to read this dashboard
+      url: https://www.loom.com/share/0f1e2d3c4b5a
+filters:
+  dimensions:
+    - id: 2b6e
+      label: Order month
+      target:
+        fieldId: orders_created_at_month
+        tableName: orders
+      operator: inThePast
+      values:
+        - 12
+      settings:
+        unitOfTime: months
+        completed: false
+    - id: 9a0c
+      target:
+        fieldId: customers_region
+        tableName: customers
+      operator: equals
+      values:
+        - EU
+  metrics: []
+  tableCalculations: []

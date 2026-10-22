@@ -1,0 +1,3 @@
+[
+  {"error": "download: GET /api/3.24/sites/9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d/workbooks/7d000000-0000-4000-8000-000000000404/content -> 403: {\"error\":{\"code\":\"403004\",\"summary\":\"Forbidden\",\"detail\":\"The user does not have permission to download this workbook\"}}", "item": "workbook Board Pack (7d000000-0000-4000-8000-000000000404)"}
+]

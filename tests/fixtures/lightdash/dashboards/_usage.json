@@ -1,0 +1,4 @@
+[
+  {"uuid": "b1c2d3e4-0000-4000-8000-000000000001", "name": "Sales overview", "description": "Weekly sales review", "views": 342, "firstViewedAt": "2025-11-02T08:00:00.000Z", "spaceUuid": "s-1"},
+  {"uuid": "b1c2d3e4-0000-4000-8000-000000000002", "name": "Old dashboard", "views": 3, "firstViewedAt": "2024-01-01T00:00:00.000Z"}
+]

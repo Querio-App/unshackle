@@ -1,0 +1,9 @@
+[
+  {
+    "dataModelId": "dm-sales",
+    "name": "Sales",
+    "path": "Shared/Finance",
+    "url": "https://app.sigmacomputing.com/acme/data-model/dm-sales",
+    "updatedAt": "2026-09-12T10:21:00Z"
+  }
+]

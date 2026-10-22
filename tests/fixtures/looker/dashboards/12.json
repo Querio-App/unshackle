@@ -1,0 +1,177 @@
+{
+  "id": "12",
+  "title": "Sales Overview",
+  "description": "Weekly business review: revenue, orders and customers.",
+  "folder": {"id": "3", "name": "Sales"},
+  "dashboard_filters": [
+    {
+      "id": "40",
+      "name": "Region",
+      "title": "Region",
+      "type": "field_filter",
+      "model": "ecommerce",
+      "explore": "orders",
+      "dimension": "customers.region",
+      "default_value": "",
+      "allow_multiple_values": true
+    },
+    {
+      "id": "41",
+      "name": "Order Date",
+      "title": "Order Date",
+      "type": "field_filter",
+      "model": "ecommerce",
+      "explore": "orders",
+      "dimension": "orders.created_date",
+      "default_value": "12 months"
+    }
+  ],
+  "dashboard_elements": [
+    {
+      "id": "106",
+      "type": "text",
+      "title_text": "How to read this dashboard",
+      "subtitle_text": "",
+      "body_text": "Revenue is **net of tax** and in USD. Returned orders stay in `total revenue` and are subtracted in `net revenue`.",
+      "query_id": null,
+      "query": null
+    },
+    {
+      "id": "103",
+      "type": "vis",
+      "title": "Total revenue",
+      "query_id": "5003",
+      "query": {
+        "id": "5003",
+        "model": "ecommerce",
+        "view": "orders",
+        "fields": ["orders.total_revenue"],
+        "pivots": null,
+        "filters": {"orders.created_date": "12 months"},
+        "sorts": [],
+        "limit": "500",
+        "dynamic_fields": null,
+        "vis_config": {"type": "single_value", "value_format": "$#,##0"}
+      },
+      "result_maker": {
+        "filterables": [
+          {"model": "ecommerce", "view": "orders", "listen": [{"dashboard_filter_name": "Region", "field": "customers.region"}]}
+        ]
+      }
+    },
+    {
+      "id": "101",
+      "type": "vis",
+      "title": "Monthly revenue by region",
+      "query_id": "5001",
+      "query": {
+        "id": "5001",
+        "model": "ecommerce",
+        "view": "orders",
+        "fields": ["orders.created_month", "customers.region", "orders.total_revenue"],
+        "pivots": ["customers.region"],
+        "filters": {"orders.created_date": "12 months"},
+        "sorts": ["orders.created_month desc", "customers.region"],
+        "limit": "500",
+        "dynamic_fields": null,
+        "vis_config": {"type": "looker_line", "show_value_labels": false, "interpolation": "linear"}
+      },
+      "result_maker": {
+        "filterables": [
+          {"model": "ecommerce", "view": "orders", "listen": [
+            {"dashboard_filter_name": "Region", "field": "customers.region"},
+            {"dashboard_filter_name": "Order Date", "field": "orders.created_date"}
+          ]}
+        ]
+      }
+    },
+    {
+      "id": "102",
+      "type": "vis",
+      "title": "Revenue by channel",
+      "query_id": "5002",
+      "query": {
+        "id": "5002",
+        "model": "ecommerce",
+        "view": "orders",
+        "fields": ["orders.channel", "orders.total_revenue", "orders.completed_revenue"],
+        "pivots": null,
+        "filters": {},
+        "sorts": ["orders.total_revenue desc"],
+        "limit": "50",
+        "dynamic_fields": "[{\"table_calculation\":\"completion_rate\",\"label\":\"Completion rate\",\"expression\":\"${orders.completed_revenue} / ${orders.total_revenue}\",\"value_format_name\":\"percent_1\",\"_kind_hint\":\"measure\",\"_type_hint\":\"number\"}]",
+        "vis_config": {"type": "looker_column", "stacking": "", "hidden_fields": []}
+      }
+    },
+    {
+      "id": "107",
+      "type": "vis",
+      "title": "Orders by status",
+      "query_id": "5007",
+      "query": {
+        "id": "5007",
+        "model": "ecommerce",
+        "view": "orders",
+        "fields": ["orders.status", "orders.order_count"],
+        "pivots": null,
+        "filters": {},
+        "sorts": ["orders.order_count desc"],
+        "limit": "10",
+        "dynamic_fields": null,
+        "vis_config": {"type": "looker_pie", "value_labels": "legend"}
+      }
+    },
+    {
+      "id": "104",
+      "type": "vis",
+      "title": "Top customers",
+      "query_id": "5004",
+      "query": {
+        "id": "5004",
+        "model": "ecommerce",
+        "view": "orders",
+        "fields": ["customers.name", "orders.order_count", "orders.total_revenue"],
+        "pivots": null,
+        "filters": {"orders.status": "-returned"},
+        "sorts": ["orders.total_revenue desc"],
+        "limit": "25",
+        "dynamic_fields": null,
+        "vis_config": {"type": "looker_grid", "show_row_numbers": true}
+      }
+    },
+    {
+      "id": "105",
+      "type": "vis",
+      "title": "Customers by region",
+      "query_id": "5005",
+      "query": {
+        "id": "5005",
+        "model": "ecommerce",
+        "view": "customers",
+        "fields": ["customers.region", "customers.count"],
+        "pivots": null,
+        "filters": {},
+        "sorts": [],
+        "limit": "500",
+        "dynamic_fields": null,
+        "vis_config": {"type": "looker_map", "map_plot_mode": "points"}
+      }
+    }
+  ],
+  "dashboard_layouts": [
+    {
+      "id": "12",
+      "active": true,
+      "type": "newspaper",
+      "dashboard_layout_components": [
+        {"dashboard_element_id": "106", "row": 0, "column": 0, "width": 24, "height": 2},
+        {"dashboard_element_id": "103", "row": 2, "column": 0, "width": 6, "height": 6},
+        {"dashboard_element_id": "101", "row": 2, "column": 6, "width": 18, "height": 6},
+        {"dashboard_element_id": "107", "row": 8, "column": 12, "width": 12, "height": 6},
+        {"dashboard_element_id": "102", "row": 8, "column": 0, "width": 12, "height": 6},
+        {"dashboard_element_id": "104", "row": 14, "column": 0, "width": 24, "height": 8},
+        {"dashboard_element_id": "105", "row": 22, "column": 0, "width": 24, "height": 8}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "customSQLTables": [
+    {
+      "database": {"connectionType": "postgres", "name": "acme"},
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Custom SQL Query",
+      "query": "SELECT r.order_id,\r\n       r.returned,\r\n       o.region,\r\n       o.order_date\r\nFROM analytics.returns r\r\nJOIN analytics.orders o ON o.order_id = r.order_id"
+    }
+  ],
+  "description": "Company sales dashboard. Owned by Sales Ops; refreshed nightly from analytics.orders.",
+  "embeddedDatasources": [
+    {
+      "fields": [
+        {"__typename": "ColumnField", "dataType": "REAL", "description": "Gross sales in USD, before discounts.", "isHidden": false, "name": "Sales", "role": "MEASURE"},
+        {"__typename": "CalculatedField", "dataType": "REAL", "description": "Profit as a share of sales.", "formula": "// aggregate first, then divide\r\nSUM([Profit])/SUM([Sales])", "isHidden": false, "name": "Profit Ratio", "role": "MEASURE"},
+        {"__typename": "CalculatedField", "dataType": "DATE", "description": null, "formula": "{FIXED [Customer Name] : MIN([Order Date])}", "isHidden": false, "name": "Customer First Order", "role": "DIMENSION"}
+      ],
+      "hasExtracts": false,
+      "name": "Orders (Superstore)",
+      "upstreamTables": [
+        {"database": {"connectionType": "postgres", "name": "acme"}, "fullName": "[analytics].[orders]", "name": "orders", "schema": "analytics"}
+      ]
+    },
+    {
+      "fields": [
+        {"__typename": "CalculatedField", "dataType": "REAL", "description": null, "formula": "[Calculation_7001] / [Calculation_7002]", "isHidden": false, "name": "Return Rate", "role": "MEASURE"}
+      ],
+      "hasExtracts": false,
+      "name": "Returns (Custom SQL)",
+      "upstreamTables": [
+        {"database": {"connectionType": "postgres", "name": "acme"}, "fullName": "[analytics].[returns]", "name": "returns", "schema": "analytics"}
+      ]
+    }
+  ],
+  "luid": "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f809a1b",
+  "name": "Superstore Sales",
+  "projectName": "Sales",
+  "updatedAt": "2025-06-02T18:30:00Z",
+  "upstreamDatasources": [],
+  "upstreamTables": [
+    {"connectionType": "postgres", "database": {"connectionType": "postgres", "name": "acme"}, "fullName": "[analytics].[orders]", "name": "orders", "schema": "analytics"},
+    {"connectionType": "postgres", "database": {"connectionType": "postgres", "name": "acme"}, "fullName": "[analytics].[returns]", "name": "returns", "schema": "analytics"}
+  ]
+}

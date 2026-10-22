@@ -1,0 +1,18 @@
+database_name: Dunder Mifflin
+sqlalchemy_uri: postgresql+psycopg2://dunder:XXXXXXXXXX@warehouse:5432/dunder
+cache_timeout: null
+expose_in_sqllab: true
+allow_run_async: false
+allow_ctas: false
+allow_cvas: false
+allow_dml: false
+allow_csv_upload: false
+extra:
+  metadata_params: {}
+  engine_params: {}
+  metadata_cache_timeout: {}
+  schemas_allowed_for_csv_upload: []
+impersonate_user: false
+configuration_method: sqlalchemy_form
+uuid: 634c3baa-5793-44d0-b119-346fabc5bcd6
+version: 1.0.0

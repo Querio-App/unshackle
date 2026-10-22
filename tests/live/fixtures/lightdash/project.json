@@ -1,0 +1,35 @@
+{
+  "agentSqlScope": null,
+  "colorPaletteUuid": null,
+  "connectionRoute": "single",
+  "createdByUserUuid": "e1422e94-a090-4f97-ad43-30dd1b3975ff",
+  "dbtConnection": {
+    "type": "none"
+  },
+  "dbtVersion": "v1.10",
+  "expiresAt": null,
+  "hasDefaultUserSpaces": false,
+  "name": "Dunder Mifflin",
+  "organizationUuid": "c6e8d893-6189-4512-b301-7ed14f96e14a",
+  "pinnedListUuid": null,
+  "projectUuid": "c3db463b-44c0-4cd7-90e3-bf7ecf4390b2",
+  "provisioningSource": null,
+  "queryTimezone": null,
+  "schedulerFailureContactOverride": null,
+  "schedulerFailureIncludeContact": false,
+  "schedulerFailureNotifyRecipients": false,
+  "schedulerTimezone": "UTC",
+  "slug": "dunder-mifflin",
+  "type": "DEFAULT",
+  "url": "http://localhost:58080",
+  "useProjectTimezoneInFilters": false,
+  "uuid": "c3db463b-44c0-4cd7-90e3-bf7ecf4390b2",
+  "warehouseConnection": {
+    "dbname": "dunder_mifflin",
+    "host": "warehouse",
+    "port": 5432,
+    "schema": "analytics",
+    "sslmode": "disable",
+    "type": "postgres"
+  }
+}

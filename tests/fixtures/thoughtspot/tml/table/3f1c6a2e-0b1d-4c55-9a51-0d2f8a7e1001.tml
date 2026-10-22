@@ -1,0 +1,62 @@
+guid: 3f1c6a2e-0b1d-4c55-9a51-0d2f8a7e1001
+table:
+  name: FCT_ORDERS
+  description: One row per order placed on the web store.
+  db: ANALYTICS
+  schema: PUBLIC
+  db_table: FCT_ORDERS
+  connection:
+    name: Snowflake Prod
+    fqn: 0c7e44b0-5a55-4d0e-bd4e-9a1c2c3d4e50
+  columns:
+  - name: ORDER_ID
+    db_column_name: ORDER_ID
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: ORDER_DATE
+    db_column_name: ORDER_DATE
+    description: Date the order was placed (UTC).
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: DATE}
+  - name: CUSTOMER_ID
+    db_column_name: CUSTOMER_ID
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: STATUS
+    db_column_name: STATUS
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: REGION
+    db_column_name: REGION
+    properties: {column_type: ATTRIBUTE}
+    db_column_properties: {data_type: VARCHAR}
+  - name: AMOUNT
+    db_column_name: AMOUNT
+    properties: {column_type: MEASURE, aggregation: SUM}
+    db_column_properties: {data_type: DOUBLE}
+  - name: DISCOUNT
+    db_column_name: DISCOUNT
+    properties: {column_type: MEASURE, aggregation: SUM}
+    db_column_properties: {data_type: DOUBLE}
+  joins_with:
+  - name: FCT_ORDERS_to_DIM_CUSTOMERS
+    destination:
+      name: DIM_CUSTOMERS
+      fqn: 3f1c6a2e-0b1d-4c55-9a51-0d2f8a7e1002
+    "on": "[FCT_ORDERS::CUSTOMER_ID] = [DIM_CUSTOMERS::CUSTOMER_ID]"
+    type: INNER
+  rls_rules:
+    tables:
+    - name: FCT_ORDERS
+    table_paths:
+    - id: FCT_ORDERS_1
+      table: FCT_ORDERS
+      join_path:
+      - {}
+    rules:
+    - name: Region by group
+      expr: "[FCT_ORDERS_1::REGION] = ts_groups"
+  column_security_rules:
+  - column_name: DISCOUNT
+    group_access:
+    - name: Finance

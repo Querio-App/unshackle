@@ -1,0 +1,10 @@
+[
+  {
+    "id": "3f1e7a52-0c7d-4b8e-9a61-2d5f0b9c1a01",
+    "name": "Sales Analytics",
+    "isReadOnly": false,
+    "isOnDedicatedCapacity": true,
+    "capacityId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+    "type": "Workspace"
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "examplePrompts": [
+    {
+      "prompt": "What were EU sales last quarter?"
+    },
+    {
+      "prompt": "Which channel has the highest margin?"
+    }
+  ]
+}

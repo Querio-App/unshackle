@@ -1,0 +1,67 @@
+table Customer
+	lineageTag: 7b2f5d16-4c8e-4a7b-9d0f-6e5a4b3c2d27
+
+	column CustomerKey
+		dataType: int64
+		isHidden
+		isKey
+		formatString: 0
+		lineageTag: 8c3a6e27-5d9f-4b8c-8e1a-7f6b5c4d3e28
+		summarizeBy: none
+		sourceColumn: CustomerKey
+
+	/// Customer's legal name
+	column Name
+		dataType: string
+		lineageTag: 9d4b7f38-6e0a-4c9d-9f2b-8a7c6d5e4f29
+		summarizeBy: none
+		sourceColumn: Customer Name
+
+	column Region
+		dataType: string
+		lineageTag: 0e5c8a49-7f1b-4d0e-8a3c-9b8d7e6f5a30
+		summarizeBy: none
+		sourceColumn: Region
+
+	column Country
+		dataType: string
+		dataCategory: Country
+		lineageTag: 1f6d9b50-8a2c-4e1f-9b4d-0c9e8f7a6b31
+		summarizeBy: none
+		sourceColumn: Country
+
+	column Segment
+		dataType: string
+		lineageTag: 2a7e0c61-9b3d-4f2a-8c5e-1d0f9a8b7c32
+		summarizeBy: none
+		sourceColumn: Segment
+
+	column Email
+		dataType: string
+		lineageTag: 3b8f1d72-0c4e-4a3b-9d6f-2e1a0b9c8d33
+		summarizeBy: none
+		sourceColumn: EmailAddress
+
+	column 'Account Manager Email'
+		dataType: string
+		isHidden
+		lineageTag: 4c9a2e83-1d5f-4b4c-8e7a-3f2b1c0d9e34
+		summarizeBy: none
+		sourceColumn: AccountManagerEmail
+
+	column 'Region Group' = IF(Customer[Region] = "EU", "Europe", "Rest of world")
+		dataType: string
+		lineageTag: 5d0b3f94-2e6a-4c5d-9f8b-4a3c2d1e0f35
+		summarizeBy: none
+
+	partition Customer = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(Server, Database),
+					dbo_DimCustomer = Source{[Schema="dbo",Item="DimCustomer"]}[Data],
+					#"Renamed Columns" = Table.RenameColumns(dbo_DimCustomer,{{"CustomerName", "Customer Name"}})
+				in
+					#"Renamed Columns"
+
+	annotation PBI_ResultType = Table

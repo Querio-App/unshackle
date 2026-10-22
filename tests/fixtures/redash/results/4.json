@@ -1,0 +1,20 @@
+{
+  "columns": [
+    {
+      "friendly_name": "paper_type",
+      "name": "paper_type",
+      "type": null
+    },
+    {
+      "friendly_name": "orders",
+      "name": "orders",
+      "type": "integer"
+    },
+    {
+      "friendly_name": "units",
+      "name": "units",
+      "type": "integer"
+    }
+  ],
+  "retrieved_at": "2026-10-22T11:02:38.471Z"
+}

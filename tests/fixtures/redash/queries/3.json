@@ -1,0 +1,65 @@
+{
+  "can_edit": true,
+  "created_at": "2026-10-22T11:02:36.708Z",
+  "data_source_id": 1,
+  "description": "",
+  "id": 3,
+  "is_archived": false,
+  "is_draft": false,
+  "is_favorite": false,
+  "is_safe": true,
+  "latest_query_data_id": 3,
+  "name": "Revenue in period",
+  "options": {
+    "parameters": [
+      {
+        "global": false,
+        "locals": [],
+        "name": "purchased",
+        "parentQueryId": null,
+        "title": "Purchased",
+        "type": "date-range",
+        "value": {
+          "end": "2025-07-01",
+          "start": "2025-01-01"
+        }
+      }
+    ]
+  },
+  "query": "SELECT SUM(post_discount_revenue) AS revenue,\n       COUNT(*) AS orders\nFROM orders\nWHERE purchased_at >= '{{ purchased.start }}'\n  AND purchased_at < '{{ purchased.end }}'",
+  "query_hash": "d6c85e49ad6f62f267d24378aba44b9c",
+  "schedule": null,
+  "tags": [],
+  "updated_at": "2026-10-22T11:02:36.755Z",
+  "version": 1,
+  "visualizations": [
+    {
+      "created_at": "2026-10-22T11:02:36.708Z",
+      "description": "",
+      "id": 3,
+      "name": "Table",
+      "options": {},
+      "type": "TABLE",
+      "updated_at": "2026-10-22T11:02:36.708Z"
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.755Z",
+      "description": "",
+      "id": 7,
+      "name": "Revenue",
+      "options": {
+        "counterColName": "revenue",
+        "counterLabel": "Revenue",
+        "rowNumber": 1,
+        "stringDecChar": ".",
+        "stringDecimal": 0,
+        "stringPrefix": "$",
+        "stringThouSep": ",",
+        "targetRowNumber": 1,
+        "tooltipFormat": "0,0.000"
+      },
+      "type": "COUNTER",
+      "updated_at": "2026-10-22T11:02:36.780Z"
+    }
+  ]
+}

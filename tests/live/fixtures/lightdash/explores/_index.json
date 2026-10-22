@@ -1,0 +1,47 @@
+[
+  {
+    "databaseName": "dunder_mifflin",
+    "description": "One delivery per order.",
+    "label": "Shippings",
+    "name": "shippings",
+    "schemaName": "analytics",
+    "tags": [],
+    "warehouseConnectionUuid": null
+  },
+  {
+    "databaseName": "dunder_mifflin",
+    "description": "B2B client accounts.",
+    "label": "Accounts",
+    "name": "accounts",
+    "schemaName": "analytics",
+    "tags": [],
+    "warehouseConnectionUuid": null
+  },
+  {
+    "databaseName": "dunder_mifflin",
+    "description": "Paper product catalog.",
+    "label": "Products",
+    "name": "products",
+    "schemaName": "analytics",
+    "tags": [],
+    "warehouseConnectionUuid": null
+  },
+  {
+    "databaseName": "dunder_mifflin",
+    "description": "Customer reviews of completed orders.",
+    "label": "Reviews",
+    "name": "reviews",
+    "schemaName": "analytics",
+    "tags": [],
+    "warehouseConnectionUuid": null
+  },
+  {
+    "databaseName": "dunder_mifflin",
+    "description": "One row per order placed by a Dunder Mifflin account.",
+    "label": "Orders",
+    "name": "orders",
+    "schemaName": "analytics",
+    "tags": [],
+    "warehouseConnectionUuid": null
+  }
+]

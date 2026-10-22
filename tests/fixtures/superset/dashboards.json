@@ -1,0 +1,12 @@
+[
+  {
+    "changed_on_utc": "2026-10-22T10:46:58.946977+0000",
+    "dashboard_title": "Sales overview",
+    "id": 1,
+    "published": true,
+    "roles": [],
+    "slug": "sales-overview",
+    "url": "/superset/dashboard/sales-overview/",
+    "uuid": "8e7997a9-bd46-4b75-ad2d-4f0f7e50c853"
+  }
+]

@@ -1,0 +1,20 @@
+name: Total revenue
+tableName: orders
+slug: total-revenue
+spaceSlug: sales
+version: 1
+metricQuery:
+  exploreName: orders
+  dimensions: []
+  metrics:
+    - orders_total_revenue
+  filters: {}
+  sorts: []
+  limit: 1
+  tableCalculations: []
+chartConfig:
+  type: big_number
+  config:
+    selectedField: orders_total_revenue
+    label: Revenue (all time)
+    showBigNumberLabel: true

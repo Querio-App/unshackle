@@ -1,0 +1,18 @@
+version: 1
+name: Revenue by region
+description: Completed revenue and average order value by shipping region.
+slug: revenue-by-region
+spaceSlug: sales
+tableName: orders
+metricQuery:
+  exploreName: orders
+  dimensions: [shippings_region]
+  metrics: [orders_completed_revenue, orders_average_order_value, orders_order_count]
+  filters: {}
+  sorts: [{fieldId: orders_completed_revenue, descending: true}]
+  limit: 500
+  tableCalculations: []
+  additionalMetrics: []
+chartConfig:
+  type: table
+  config: {}

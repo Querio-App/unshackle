@@ -1,0 +1,737 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20241.24.0312.0830                               -->
+<workbook original-version='18.1' source-build='2024.1.0 (20241.24.0312.0830)' source-platform='mac' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+  </document-format-change-manifest>
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Target Margin' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='0.15'>
+        <calculation class='tableau' formula='0.15' />
+        <range granularity='0.01' max='0.5' min='0.0' />
+      </column>
+      <column caption='Focus Region' datatype='string' name='[Parameter 2]' param-domain-type='list' role='dimension' type='nominal' value='&quot;West&quot;'>
+        <calculation class='tableau' formula='&quot;West&quot;' />
+        <members>
+          <member value='&quot;Central&quot;' />
+          <member value='&quot;East&quot;' />
+          <member value='&quot;South&quot;' />
+          <member value='&quot;West&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='Orders (Superstore)' inline='true' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='warehouse.acme.internal' name='postgres.1wqk2r10b9d8vt1f6n7yq0gkxl9s'>
+            <connection authentication='username-password' class='postgres' dbname='acme' odbc-native-protocol='' one-time-sql='' port='5432' server='warehouse.acme.internal' sslmode='require' username='tableau_reader' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='postgres.1wqk2r10b9d8vt1f6n7yq0gkxl9s' name='orders' table='[analytics].[orders]' type='table' />
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='postgres.1wqk2r10b9d8vt1f6n7yq0gkxl9s' name='orders' table='[analytics].[orders]' type='table' />
+        <cols>
+          <map key='[Category]' value='[orders].[category]' />
+          <map key='[Customer Name]' value='[orders].[customer_name]' />
+          <map key='[Discount]' value='[orders].[discount]' />
+          <map key='[Order Date]' value='[orders].[order_date]' />
+          <map key='[Order ID]' value='[orders].[order_id]' />
+          <map key='[Profit]' value='[orders].[profit]' />
+          <map key='[Quantity]' value='[orders].[quantity]' />
+          <map key='[Region]' value='[orders].[region]' />
+          <map key='[Regional Manager]' value='[orders].[regional_manager]' />
+          <map key='[Row ID]' value='[orders].[row_id]' />
+          <map key='[Sales]' value='[orders].[sales]' />
+          <map key='[State]' value='[orders].[state]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='capability'>
+            <remote-name />
+            <remote-type>0</remote-type>
+            <parent-name>[orders]</parent-name>
+            <remote-alias />
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>row_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[Row ID]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>row_id</remote-alias>
+            <ordinal>1</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <precision>19</precision>
+            <contains-null>false</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[orders_4A2B7C1D9E0F4A3B8C6D5E4F3A2B1C0D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_id</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Order ID]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>order_id</remote-alias>
+            <ordinal>2</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <width>32</width>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[Order Date]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>order_date</remote-alias>
+            <ordinal>3</ordinal>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>customer_name</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Customer Name]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>customer_name</remote-alias>
+            <ordinal>4</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>state</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[State]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>state</remote-alias>
+            <ordinal>5</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>region</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Region]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>region</remote-alias>
+            <ordinal>6</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>regional_manager</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Regional Manager]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>regional_manager</remote-alias>
+            <ordinal>7</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>category</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Category]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>category</remote-alias>
+            <ordinal>8</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sales</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[Sales]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>sales</remote-alias>
+            <ordinal>9</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <precision>15</precision>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>quantity</remote-name>
+            <remote-type>3</remote-type>
+            <local-name>[Quantity]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>quantity</remote-alias>
+            <ordinal>10</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <precision>10</precision>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[Discount]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>discount</remote-alias>
+            <ordinal>11</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Avg</aggregation>
+            <precision>15</precision>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>profit</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[Profit]</local-name>
+            <parent-name>[orders]</parent-name>
+            <remote-alias>profit</remote-alias>
+            <ordinal>12</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <precision>15</precision>
+            <contains-null>true</contains-null>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='integer' name='[Row ID]' role='dimension' type='ordinal' />
+      <column datatype='real' name='[Sales]' role='measure' type='quantitative'>
+        <desc>
+          <formatted-text>
+            <run>Gross sales in USD, before discounts.</run>
+          </formatted-text>
+        </desc>
+      </column>
+      <column datatype='string' name='[State]' role='dimension' semantic-role='[State].[Name]' type='nominal' />
+      <column caption='Order Count' datatype='integer' name='[Calculation_2223334445556667778]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([Order ID])' />
+      </column>
+      <column caption='Total Sales' datatype='real' name='[Calculation_5911432209381093376]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Sales])' />
+      </column>
+      <column caption='Profit Ratio' datatype='real' default-format='p0.0%' name='[Calculation_1368249927221915648]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='// aggregate first, then divide&#13;&#10;SUM([Profit])/SUM([Sales])' />
+        <desc>
+          <formatted-text>
+            <run>Profit as a share of sales.</run>
+          </formatted-text>
+        </desc>
+      </column>
+      <column caption='Margin %' datatype='real' name='[Calculation_9012345678901234560]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1368249927221915648] * 100' />
+      </column>
+      <column caption='Profit per Order' datatype='real' name='[Calculation_1112223334445556667]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Profit]) / COUNTD([Order ID])' />
+      </column>
+      <column caption='Order Size' datatype='string' name='[Calculation_0831003198374240256]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Sales] &gt;= 500 THEN &quot;Large&quot;&#13;&#10;ELSEIF [Sales] &gt;= 100 THEN &quot;Medium&quot;&#13;&#10;ELSE &quot;Small&quot;&#13;&#10;END' />
+      </column>
+      <column caption='Net Sales' datatype='real' name='[Calculation_2451176542135316480]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Sales] * (1 - IFNULL([Discount], 0))' />
+      </column>
+      <column caption='Order Month' datatype='date' name='[Calculation_7740912383420477440]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='DATETRUNC(&apos;month&apos;, [Order Date])' />
+      </column>
+      <column caption='Customer Count' datatype='integer' name='[Calculation_1650987234091827200]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([Customer Name])' />
+      </column>
+      <column caption='Safe Profit' datatype='real' name='[Calculation_1650987234091827201]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(ZN([Profit]))' />
+      </column>
+      <column caption='Customer First Order' datatype='date' name='[Calculation_4410294812233412608]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='{FIXED [Customer Name] : MIN([Order Date])}' />
+      </column>
+      <column caption='Running Sales' datatype='real' name='[Calculation_8123450098712345600]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='WINDOW_SUM(SUM([Sales]), FIRST(), 0)' />
+      </column>
+      <column caption='Category Label' datatype='string' name='[Calculation_5556667778889990001]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='ATTR([Category])' />
+      </column>
+      <column caption='Above Target' datatype='boolean' name='[Calculation_6612345098712340992]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[Calculation_1368249927221915648] &gt; [Parameters].[Parameter 1]' />
+      </column>
+      <column caption='Regional Manager Filter' datatype='boolean' name='[Calculation_3301928475610293248]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[Regional Manager] = USERNAME()' />
+      </column>
+      <column caption='Manager or Executive' datatype='boolean' name='[Calculation_3301928475610293249]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='ISMEMBEROF(&apos;Executives&apos;) OR [Regional Manager] = USERNAME()' />
+      </column>
+      <column caption='Sales (bin)' datatype='integer' name='[Sales (bin)]' role='dimension' type='ordinal'>
+        <calculation class='bin' decimals='0' formula='[Sales]' peg='0' size='100' />
+      </column>
+      <column caption='Region (group)' datatype='string' name='[Region (group)]' role='dimension' type='nominal'>
+        <calculation class='categorical-bin' column='[Region]' new-bin='true'>
+          <bin default-name='false' value='&quot;Coasts&quot;'>
+            <value>&quot;East&quot;</value>
+            <value>&quot;West&quot;</value>
+          </bin>
+        </calculation>
+      </column>
+      <group caption='Top Customers Set' name='[Top Customers Set]' name-style='unqualified' user:ui-builder='filter-group'>
+        <groupfilter count='20' end='top' function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true'>
+          <groupfilter direction='DESC' expression='SUM([Sales])' function='order' user:ui-marker='order'>
+            <groupfilter function='level-members' level='[Customer Name]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </groupfilter>
+        </groupfilter>
+      </group>
+      <filter class='categorical' column='[Calculation_3301928475610293248]' filter-group='2'>
+        <groupfilter function='member' level='[Calculation_3301928475610293248]' member='true' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <layout dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelTableType.true...column caption='orders' datatype='table' name='[__tableau_internal_object_id__].[orders_4A2B7C1D9E0F4A3B8C6D5E4F3A2B1C0D]' role='measure' type='quantitative' />
+      <object-graph>
+        <objects>
+          <object caption='orders' id='orders_4A2B7C1D9E0F4A3B8C6D5E4F3A2B1C0D'>
+            <properties context=''>
+              <relation connection='postgres.1wqk2r10b9d8vt1f6n7yq0gkxl9s' name='orders' table='[analytics].[orders]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </object-graph>
+    </datasource>
+    <datasource caption='Returns (Custom SQL)' inline='true' name='federated.1n4ekv50xb8c1a17qs2hx0rq6kfu' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='warehouse.acme.internal' name='postgres.0mzq1b61kyk6ma1gp8ts51cp8jvi'>
+            <connection authentication='username-password' class='postgres' dbname='acme' port='5432' server='warehouse.acme.internal' username='tableau_reader' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='postgres.0mzq1b61kyk6ma1gp8ts51cp8jvi' name='Custom SQL Query' type='text'>SELECT r.order_id,&#13;&#10;       r.returned,&#13;&#10;       o.region,&#13;&#10;       o.order_date&#13;&#10;FROM analytics.returns r&#13;&#10;JOIN analytics.orders o ON o.order_id = r.order_id</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='postgres.0mzq1b61kyk6ma1gp8ts51cp8jvi' name='Custom SQL Query' type='text'>SELECT r.order_id,&#13;&#10;       r.returned,&#13;&#10;       o.region,&#13;&#10;       o.order_date&#13;&#10;FROM analytics.returns r&#13;&#10;JOIN analytics.orders o ON o.order_id = r.order_id</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_id</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Order ID]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_id</remote-alias>
+            <ordinal>1</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>returned</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Returned]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>returned</remote-alias>
+            <ordinal>2</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>region</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[Region]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>region</remote-alias>
+            <ordinal>3</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[Order Date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_date</remote-alias>
+            <ordinal>4</ordinal>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Returned Orders' datatype='integer' name='[Calculation_7001]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [Returned] = &apos;Yes&apos; THEN 1 ELSE 0 END)' />
+      </column>
+      <column caption='Order Count' datatype='integer' name='[Calculation_7002]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([Order ID])' />
+      </column>
+      <column caption='Return Rate' datatype='real' default-format='p0.0%' name='[Calculation_7003]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_7001] / [Calculation_7002]' />
+      </column>
+      <layout dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sales Trend'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Monthly sales by category</run>
+          </formatted-text>
+        </title>
+        <caption>
+          <formatted-text>
+            <run>Sales for the East and West regions, by month of order date.</run>
+          </formatted-text>
+        </caption>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0hgpf0j1fdpvv316shikk0mmdlec'>
+            <column datatype='string' name='[Category]' role='dimension' type='nominal' />
+            <column datatype='date' name='[Order Date]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[Region]' role='dimension' type='nominal' />
+            <column datatype='real' name='[Sales]' role='measure' type='quantitative' />
+            <column-instance column='[Category]' derivation='None' name='[none:Category:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Region]' derivation='None' name='[none:Region:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Sales]' derivation='Sum' name='[sum:Sales:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Order Date]' derivation='Month-Trunc' name='[tmn:Order Date:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Region:nk]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[none:Region:nk]' member='&quot;East&quot;' />
+              <groupfilter function='member' level='[none:Region:nk]' member='&quot;West&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Region:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Category:nk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[sum:Sales:qk]</rows>
+        <cols>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[tmn:Order Date:qk]</cols>
+      </table>
+      <simple-id uuid='{5A7B4C3D-2E1F-4A0B-9C8D-7E6F5A4B3C2D}' />
+    </worksheet>
+    <worksheet name='Top Customers by Profit'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0hgpf0j1fdpvv316shikk0mmdlec'>
+            <column caption='Profit Ratio' datatype='real' name='[Calculation_1368249927221915648]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([Profit])/SUM([Sales])' />
+            </column>
+            <column datatype='string' name='[Customer Name]' role='dimension' type='nominal' />
+            <column datatype='real' name='[Profit]' role='measure' type='quantitative' />
+            <column-instance column='[Customer Name]' derivation='None' name='[none:Customer Name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Profit]' derivation='Sum' name='[sum:Profit:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1368249927221915648]' derivation='User' name='[usr:Calculation_1368249927221915648:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Customer Name:nk]'>
+            <groupfilter count='10' end='top' function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true'>
+              <groupfilter direction='DESC' expression='SUM([Profit])' function='order' user:ui-marker='order'>
+                <groupfilter function='level-members' level='[none:Customer Name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+              </groupfilter>
+            </groupfilter>
+          </filter>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Customer Name:nk]' direction='DESC' is-on-innermost-dimension='true' measure-to-sort-by='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[sum:Profit:qk]' shelf='rows' />
+          </shelf-sorts>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <tooltip column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[usr:Calculation_1368249927221915648:qk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Customer Name:nk]</rows>
+        <cols>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[sum:Profit:qk]</cols>
+      </table>
+      <simple-id uuid='{6B8C5D4E-3F20-4B1C-8D9E-8F7A6B5C4D3E}' />
+    </worksheet>
+    <worksheet name='Ventes par Catégorie'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0hgpf0j1fdpvv316shikk0mmdlec'>
+            <column datatype='string' name='[Category]' role='dimension' type='nominal' />
+            <column datatype='real' name='[Sales]' role='measure' type='quantitative' />
+            <column-instance column='[Category]' derivation='None' name='[none:Category:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Sales]' derivation='Sum' name='[sum:Sales:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Pie' />
+            <encodings>
+              <color column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Category:nk]' />
+              <wedge-size column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[sum:Sales:qk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{7C9D6E5F-4031-4C2D-9E0F-9A8B7C6D5E4F}' />
+    </worksheet>
+    <worksheet name='Total Sales KPI'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0hgpf0j1fdpvv316shikk0mmdlec'>
+            <column caption='Total Sales' datatype='real' name='[Calculation_5911432209381093376]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([Sales])' />
+            </column>
+            <column-instance column='[Calculation_5911432209381093376]' derivation='User' name='[usr:Calculation_5911432209381093376:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='mark'>
+            <format attr='mark-labels-show' value='true' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[usr:Calculation_5911432209381093376:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='font-size' value='36' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{8DAE7F60-5142-4D3E-8F10-AB9C8D7E6F50}' />
+    </worksheet>
+    <worksheet name='Sales Map'>
+      <table>
+        <view>
+          <datasources>
+            <datasource name='Parameters' />
+            <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Target Margin' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='0.15'>
+              <calculation class='tableau' formula='0.15' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.0hgpf0j1fdpvv316shikk0mmdlec'>
+            <column caption='Above Target' datatype='boolean' name='[Calculation_6612345098712340992]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='[Calculation_1368249927221915648] &gt; [Parameters].[Parameter 1]' />
+            </column>
+            <column caption='Latitude (generated)' datatype='real' name='[Latitude (generated)]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column caption='Longitude (generated)' datatype='real' name='[Longitude (generated)]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='real' name='[Sales]' role='measure' type='quantitative' />
+            <column datatype='string' name='[State]' role='dimension' semantic-role='[State].[Name]' type='nominal' />
+            <column-instance column='[Calculation_6612345098712340992]' derivation='User' name='[usr:Calculation_6612345098712340992:nk]' pivot='key' type='nominal' />
+            <column-instance column='[State]' derivation='None' name='[none:State:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Sales]' derivation='Sum' name='[sum:Sales:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Multipolygon' />
+            <encodings>
+              <color column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[sum:Sales:qk]' />
+              <lod column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:State:nk]' />
+              <tooltip column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[usr:Calculation_6612345098712340992:nk]' />
+              <geometry column='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[Geometry (generated)]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[Latitude (generated)]</rows>
+        <cols>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[Longitude (generated)]</cols>
+      </table>
+      <simple-id uuid='{9EBF8071-6253-4E4F-9021-BCAD9E8F7061}' />
+    </worksheet>
+    <worksheet name='Running Sales'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0hgpf0j1fdpvv316shikk0mmdlec'>
+            <column caption='Running Sales' datatype='real' name='[Calculation_8123450098712345600]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='WINDOW_SUM(SUM([Sales]), FIRST(), 0)' />
+            </column>
+            <column datatype='date' name='[Order Date]' role='dimension' type='ordinal' />
+            <column-instance column='[Order Date]' derivation='Month-Trunc' name='[tmn:Order Date:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_8123450098712345600]' derivation='User' name='[usr:Calculation_8123450098712345600:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+          </pane>
+        </panes>
+        <rows>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[usr:Calculation_8123450098712345600:qk]</rows>
+        <cols>[federated.0hgpf0j1fdpvv316shikk0mmdlec].[tmn:Order Date:qk]</cols>
+      </table>
+      <simple-id uuid='{AFC09182-7364-4F50-8132-CDBEAF908172}' />
+    </worksheet>
+    <worksheet name='Returns by Region'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Returns (Custom SQL)' name='federated.1n4ekv50xb8c1a17qs2hx0rq6kfu' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1n4ekv50xb8c1a17qs2hx0rq6kfu'>
+            <column caption='Returned Orders' datatype='integer' name='[Calculation_7001]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [Returned] = &apos;Yes&apos; THEN 1 ELSE 0 END)' />
+            </column>
+            <column caption='Return Rate' datatype='real' name='[Calculation_7003]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_7001] / [Calculation_7002]' />
+            </column>
+            <column datatype='string' name='[Region]' role='dimension' type='nominal' />
+            <column-instance column='[Region]' derivation='None' name='[none:Region:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_7001]' derivation='User' name='[usr:Calculation_7001:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_7003]' derivation='User' name='[usr:Calculation_7003:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <tooltip column='[federated.1n4ekv50xb8c1a17qs2hx0rq6kfu].[usr:Calculation_7003:qk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.1n4ekv50xb8c1a17qs2hx0rq6kfu].[usr:Calculation_7001:qk]</rows>
+        <cols>[federated.1n4ekv50xb8c1a17qs2hx0rq6kfu].[none:Region:nk]</cols>
+      </table>
+      <simple-id uuid='{B0D1A293-8475-4061-9243-DECFB0A19283}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Executive Overview'>
+      <style />
+      <size maxheight='900' maxwidth='1200' minheight='900' minwidth='1200' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='Orders (Superstore)' name='federated.0hgpf0j1fdpvv316shikk0mmdlec' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Target Margin' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='0.15'>
+          <calculation class='tableau' formula='0.15' />
+        </column>
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='8000' id='2' type-v2='title' w='60000' x='0' y='0' />
+          <zone h='8000' id='10' mode='checkdropdown' name='Sales Trend' param='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[none:Region:nk]' type-v2='filter' values='relevant' w='20000' x='80000' y='0' />
+          <zone h='8000' id='11' mode='slider' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='20000' x='60000' y='0' />
+          <zone h='8000' id='9' type-v2='text' w='100000' x='0' y='8000'>
+            <formatted-text>
+              <run bold='true'>Executive overview. </run>
+              <run>Numbers are before returns; see the Returns sheet.</run>
+            </formatted-text>
+          </zone>
+          <zone h='40000' id='3' name='Total Sales KPI' w='30000' x='0' y='16000'>
+            <zone-style>
+              <format attr='border-style' value='none' />
+            </zone-style>
+          </zone>
+          <zone h='40000' id='4' name='Sales Trend' w='70000' x='30000' y='16000' />
+          <zone h='44000' id='5' name='Top Customers by Profit' w='50000' x='0' y='56000' />
+          <zone h='44000' id='6' name='Sales Map' w='50000' x='50000' y='56000' />
+          <zone h='4000' id='12' leg-item-layout='horizontal' name='Sales Map' pane-specification-id='1' param='[federated.0hgpf0j1fdpvv316shikk0mmdlec].[sum:Sales:qk]' type-v2='color' w='20000' x='50000' y='96000' />
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1400' minheight='1400' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='21' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='20000' id='22' name='Sales Trend' w='100000' x='0' y='0' />
+              <zone h='20000' id='23' name='Total Sales KPI' w='100000' x='0' y='20000' />
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{C1E2B3A4-9586-4172-A354-EFD0C1B2A394}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' maximized='true' name='Executive Overview'>
+      <viewpoints>
+        <viewpoint name='Sales Trend' />
+        <viewpoint name='Top Customers by Profit' />
+      </viewpoints>
+      <active id='-1' />
+    </window>
+    <window class='worksheet' hidden='true' name='Sales Trend'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+      </cards>
+    </window>
+  </windows>
+  <thumbnails>
+    <thumbnail height='192' name='Sales Trend' width='192'>iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAAACXBIWXMAAA7DAAAOwwHHb6hk</thumbnail>
+  </thumbnails>
+</workbook>

@@ -1,0 +1,109 @@
+guid: 9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001
+model:
+  name: Sales
+  description: Orders joined to customers. Use for revenue, order and customer questions.
+  model_tables:
+  - name: FCT_ORDERS
+    fqn: 3f1c6a2e-0b1d-4c55-9a51-0d2f8a7e1001
+    joins:
+    - with: DIM_CUSTOMERS
+      referencing_join: FCT_ORDERS_to_DIM_CUSTOMERS
+      type: INNER
+      cardinality: MANY_TO_ONE
+  - name: DIM_CUSTOMERS
+    fqn: 3f1c6a2e-0b1d-4c55-9a51-0d2f8a7e1002
+  formulas:
+  - id: formula_Order Count
+    name: Order Count
+    expr: "unique_count ( [FCT_ORDERS::ORDER_ID] )"
+  - id: formula_Average Order Value
+    name: Average Order Value
+    expr: "safe_divide ( [Revenue] , [Order Count] )"
+  - id: formula_Paid Revenue
+    name: Paid Revenue
+    expr: "sum_if ( [FCT_ORDERS::STATUS] = 'paid' , [FCT_ORDERS::AMOUNT] )"
+  - id: formula_Net Revenue
+    name: Net Revenue
+    expr: "[FCT_ORDERS::AMOUNT] - [FCT_ORDERS::DISCOUNT]"
+  - id: formula_Order Size
+    name: Order Size
+    expr: "if ( [FCT_ORDERS::AMOUNT] >= 500 ) then 'Large' else 'Small'"
+  - id: formula_Order Month
+    name: Order Month
+    expr: "start_of_month ( [FCT_ORDERS::ORDER_DATE] )"
+  - id: formula_Region Revenue Share
+    name: Region Revenue Share
+    expr: "sum ( [FCT_ORDERS::AMOUNT] ) / group_aggregate ( sum ( [FCT_ORDERS::AMOUNT] ) , { [FCT_ORDERS::REGION] } , query_filters ( ) )"
+  - id: formula_Running Revenue
+    name: Running Revenue
+    expr: "cumulative_sum ( [Revenue] , [Order Date] )"
+  columns:
+  - name: Order Id
+    column_id: FCT_ORDERS::ORDER_ID
+    properties:
+      column_type: ATTRIBUTE
+      synonyms: [order number]
+  - name: Order Date
+    column_id: FCT_ORDERS::ORDER_DATE
+    properties: {column_type: ATTRIBUTE}
+  - name: Status
+    column_id: FCT_ORDERS::STATUS
+    description: paid, refunded or pending.
+    properties: {column_type: ATTRIBUTE}
+  - name: Region
+    column_id: FCT_ORDERS::REGION
+    description: Sales region of the order.
+    properties:
+      column_type: ATTRIBUTE
+      synonyms: [territory, geo]
+  - name: Revenue
+    column_id: FCT_ORDERS::AMOUNT
+    description: Gross order amount in USD.
+    properties:
+      column_type: MEASURE
+      aggregation: SUM
+      synonyms: [sales, gmv]
+      ai_context: Gross, before refunds and discounts. Use Net Revenue for finance questions.
+  - name: Discount
+    column_id: FCT_ORDERS::DISCOUNT
+    properties: {column_type: MEASURE, aggregation: SUM}
+  - name: Customer Name
+    column_id: DIM_CUSTOMERS::CUSTOMER_NAME
+    properties: {column_type: ATTRIBUTE}
+  - name: Segment
+    column_id: DIM_CUSTOMERS::SEGMENT
+    properties: {column_type: ATTRIBUTE}
+  - name: Country
+    column_id: DIM_CUSTOMERS::COUNTRY
+    properties: {column_type: ATTRIBUTE}
+  - name: Signup Date
+    column_id: DIM_CUSTOMERS::SIGNUP_DATE
+    properties: {column_type: ATTRIBUTE}
+  - name: Customer Count
+    column_id: DIM_CUSTOMERS::CUSTOMER_ID
+    properties: {column_type: MEASURE, aggregation: COUNT_DISTINCT}
+  - name: Order Count
+    formula_id: formula_Order Count
+    properties: {column_type: MEASURE}
+  - name: Average Order Value
+    formula_id: formula_Average Order Value
+    description: Revenue per distinct order.
+    properties: {column_type: MEASURE}
+  - name: Paid Revenue
+    formula_id: formula_Paid Revenue
+    properties: {column_type: MEASURE}
+  - name: Net Revenue
+    formula_id: formula_Net Revenue
+    properties: {column_type: MEASURE, aggregation: SUM}
+  - name: Order Size
+    formula_id: formula_Order Size
+    properties: {column_type: ATTRIBUTE}
+  - name: Order Month
+    formula_id: formula_Order Month
+    properties: {column_type: ATTRIBUTE}
+  - name: Region Revenue Share
+    formula_id: formula_Region Revenue Share
+    properties: {column_type: MEASURE}
+  - name: Running Revenue
+    formula_id: formula_Running Revenue
+    properties: {column_type: MEASURE}

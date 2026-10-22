@@ -1,0 +1,47 @@
+name: Average rating by month
+description: Not on a dashboard, so it migrates as a verified query.
+tableName: reviews
+updatedAt: '2026-10-22T10:28:40.291Z'
+metricQuery:
+  exploreName: reviews
+  dimensions:
+  - reviews_reviewed_at_month
+  metrics:
+  - reviews_average_rating
+  - reviews_review_count
+  filters: {}
+  sorts:
+  - fieldId: reviews_reviewed_at_month
+    descending: false
+  limit: 500
+  metricOverrides: {}
+  tableCalculations: []
+  additionalMetrics: []
+  customDimensions: []
+  timezone: project_timezone
+chartConfig:
+  type: cartesian
+  config:
+    layout:
+      xField: reviews_reviewed_at_month
+      yField:
+      - reviews_average_rating
+    eChartsConfig:
+      series:
+      - type: line
+        encode:
+          xRef:
+            field: reviews_reviewed_at_month
+          yRef:
+            field: reviews_average_rating
+slug: average-rating-by-month
+tableConfig:
+  columnOrder:
+  - reviews_reviewed_at_month
+  - reviews_average_rating
+  - reviews_review_count
+spaceSlug: sales
+version: 1
+contentType: chart
+downloadedAt: '2026-10-22T10:28:44.541Z'
+verification: null

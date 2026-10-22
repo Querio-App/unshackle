@@ -1,0 +1,74 @@
+[
+  {
+    "id": 220,
+    "permission": {
+      "name": "all_datasource_access"
+    },
+    "view_menu": {
+      "name": "all_datasource_access"
+    }
+  },
+  {
+    "id": 221,
+    "permission": {
+      "name": "all_database_access"
+    },
+    "view_menu": {
+      "name": "all_database_access"
+    }
+  },
+  {
+    "id": 232,
+    "permission": {
+      "name": "database_access"
+    },
+    "view_menu": {
+      "name": "[Dunder Mifflin].(id:1)"
+    }
+  },
+  {
+    "id": 233,
+    "permission": {
+      "name": "catalog_access"
+    },
+    "view_menu": {
+      "name": "[Dunder Mifflin].[dunder]"
+    }
+  },
+  {
+    "id": 234,
+    "permission": {
+      "name": "schema_access"
+    },
+    "view_menu": {
+      "name": "[Dunder Mifflin].[dunder].[public]"
+    }
+  },
+  {
+    "id": 235,
+    "permission": {
+      "name": "schema_access"
+    },
+    "view_menu": {
+      "name": "[Dunder Mifflin].[dunder].[information_schema]"
+    }
+  },
+  {
+    "id": 236,
+    "permission": {
+      "name": "datasource_access"
+    },
+    "view_menu": {
+      "name": "[Dunder Mifflin].[orders](id:1)"
+    }
+  },
+  {
+    "id": 237,
+    "permission": {
+      "name": "datasource_access"
+    },
+    "view_menu": {
+      "name": "[Dunder Mifflin].[shipped_orders](id:2)"
+    }
+  }
+]

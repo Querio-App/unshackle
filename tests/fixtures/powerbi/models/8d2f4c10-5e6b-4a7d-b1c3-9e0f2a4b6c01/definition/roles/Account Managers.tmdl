@@ -1,0 +1,6 @@
+role 'Account Managers'
+	modelPermission: read
+
+	tablePermission Customer = [Account Manager Email] = USERPRINCIPALNAME()
+
+	tablePermission Sales = RELATED(Customer[Segment]) <> "Enterprise" || Sales[Channel] = "Partner"

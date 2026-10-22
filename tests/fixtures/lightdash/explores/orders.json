@@ -1,0 +1,52 @@
+{
+  "name": "orders",
+  "label": "Orders",
+  "baseTable": "orders",
+  "targetDatabase": "snowflake",
+  "joinedTables": [
+    {"table": "customers", "sqlOn": "${orders.customer_id} = ${customers.customer_id}", "compiledSqlOn": "(\"orders\".customer_id) = (\"customers\".customer_id)", "type": "left", "relationship": "many-to-one"}
+  ],
+  "tables": {
+    "orders": {
+      "name": "orders",
+      "label": "Orders",
+      "database": "jaffle",
+      "schema": "analytics",
+      "sqlTable": "\"jaffle\".\"analytics\".\"orders\"",
+      "description": "One row per order. Amounts are in USD, net of discounts.",
+      "primaryKey": "order_id",
+      "defaultTimeDimension": {"field": "created_at", "interval": "MONTH"},
+      "dimensions": {
+        "order_id": {"fieldType": "dimension", "type": "number", "name": "order_id", "label": "Order id", "table": "orders", "sql": "${TABLE}.order_id", "hidden": false, "description": "Order key"},
+        "customer_id": {"fieldType": "dimension", "type": "number", "name": "customer_id", "label": "Customer id", "table": "orders", "sql": "${TABLE}.customer_id", "hidden": true},
+        "status": {"fieldType": "dimension", "type": "string", "name": "status", "label": "Status", "table": "orders", "sql": "${TABLE}.status", "hidden": false, "description": "placed, shipped, completed, returned", "aiHint": "Use completed for recognised revenue."},
+        "amount": {"fieldType": "dimension", "type": "number", "name": "amount", "label": "Amount", "table": "orders", "sql": "${TABLE}.amount", "hidden": false, "description": "Order amount in USD"},
+        "order_size": {"fieldType": "dimension", "type": "string", "name": "order_size", "label": "Order size", "table": "orders", "sql": "CASE WHEN ${amount} >= 100 THEN 'large' ELSE 'small' END", "hidden": false, "description": "large when amount >= 100"},
+        "created_at": {"fieldType": "dimension", "type": "timestamp", "name": "created_at", "label": "Created at", "table": "orders", "sql": "${TABLE}.created_at", "hidden": false, "isIntervalBase": true, "description": "When the order was placed"},
+        "created_at_day": {"fieldType": "dimension", "type": "date", "name": "created_at_day", "table": "orders", "sql": "DATE_TRUNC('DAY', ${TABLE}.created_at)", "timeInterval": "DAY", "timeIntervalBaseDimensionName": "created_at"},
+        "created_at_month": {"fieldType": "dimension", "type": "date", "name": "created_at_month", "table": "orders", "sql": "DATE_TRUNC('MONTH', ${TABLE}.created_at)", "timeInterval": "MONTH", "timeIntervalBaseDimensionName": "created_at"}
+      },
+      "metrics": {
+        "total_revenue": {"fieldType": "metric", "type": "sum", "name": "total_revenue", "label": "Total revenue", "table": "orders", "sql": "${TABLE}.amount", "hidden": false, "format": "usd", "description": "Sum of order amounts"},
+        "order_count": {"fieldType": "metric", "type": "count", "name": "order_count", "label": "Orders", "table": "orders", "sql": "${TABLE}.order_id", "hidden": false},
+        "completed_revenue": {"fieldType": "metric", "type": "sum", "name": "completed_revenue", "label": "Completed revenue", "table": "orders", "sql": "${TABLE}.amount", "hidden": false, "description": "Revenue from completed orders",
+          "filters": [{"id": "f1", "target": {"fieldRef": "status"}, "operator": "equals", "values": ["completed"]}]},
+        "eu_revenue": {"fieldType": "metric", "type": "sum", "name": "eu_revenue", "label": "EU revenue", "table": "orders", "sql": "${TABLE}.amount", "hidden": false,
+          "filters": [{"id": "f2", "target": {"fieldRef": "customers.region"}, "operator": "equals", "values": ["EU"]}]},
+        "average_order_value": {"fieldType": "metric", "type": "number", "name": "average_order_value", "label": "AOV", "table": "orders", "sql": "${total_revenue} / NULLIF(${order_count}, 0)", "hidden": false, "description": "Revenue per order"},
+        "revenue_per_customer": {"fieldType": "metric", "type": "number", "name": "revenue_per_customer", "label": "Revenue per customer", "table": "orders", "sql": "${total_revenue} / NULLIF(${customers.customer_count}, 0)", "hidden": false},
+        "p90_order_amount": {"fieldType": "metric", "type": "percentile", "name": "p90_order_amount", "label": "P90 order amount", "table": "orders", "sql": "${TABLE}.amount", "percentile": 90, "hidden": false},
+        "repeat_order_rate": {"fieldType": "metric", "type": "number", "name": "repeat_order_rate", "label": "Repeat order rate", "table": "orders", "sql": "SUM(CASE WHEN ${TABLE}.order_rank > 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)", "hidden": false}
+      }
+    },
+    "customers": {
+      "name": "customers",
+      "label": "Customers",
+      "database": "jaffle",
+      "schema": "analytics",
+      "sqlTable": "\"jaffle\".\"analytics\".\"customers\"",
+      "dimensions": {},
+      "metrics": {}
+    }
+  }
+}

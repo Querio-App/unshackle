@@ -1,0 +1,331 @@
+{
+  "baseTable": "accounts",
+  "dbtModelIdentity": {
+    "modelName": "accounts",
+    "packageName": "dunder_mifflin",
+    "sourceName": null,
+    "sourceUuid": null,
+    "uniqueId": "model.dunder_mifflin.accounts"
+  },
+  "joinedTables": [],
+  "label": "Accounts",
+  "name": "accounts",
+  "spotlight": {
+    "categories": [],
+    "visibility": "show"
+  },
+  "sqlPath": "accounts.sql",
+  "tables": {
+    "accounts": {
+      "database": "dunder_mifflin",
+      "dbtModelUniqueId": "model.dunder_mifflin.accounts",
+      "dbtPackageName": "dunder_mifflin",
+      "description": "B2B client accounts.",
+      "dimensions": {
+        "account_id": {
+          "compiledSql": "\"accounts\".account_id",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "isIntervalBase": false,
+          "label": "Account id",
+          "name": "account_id",
+          "sql": "${TABLE}.account_id",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "type": "number"
+        },
+        "account_manager": {
+          "compiledSql": "\"accounts\".account_manager",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 2,
+          "isIntervalBase": false,
+          "label": "Account manager",
+          "name": "account_manager",
+          "sql": "${TABLE}.account_manager",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "type": "string"
+        },
+        "account_name": {
+          "compiledSql": "\"accounts\".account_name",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 1,
+          "isIntervalBase": false,
+          "label": "Account name",
+          "name": "account_name",
+          "sql": "${TABLE}.account_name",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "type": "string"
+        },
+        "business_size": {
+          "compiledSql": "\"accounts\".business_size",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 4,
+          "isIntervalBase": false,
+          "label": "Business size",
+          "name": "business_size",
+          "sql": "${TABLE}.business_size",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "type": "number"
+        },
+        "created_at": {
+          "compiledSql": "\"accounts\".created_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": true,
+          "label": "Created at",
+          "name": "created_at",
+          "sql": "${TABLE}.created_at",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "created_at_day": {
+          "compiledSql": "DATE_TRUNC('DAY', \"accounts\".created_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Created at"
+          ],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Created at day",
+          "name": "created_at_day",
+          "sql": "DATE_TRUNC('DAY', ${TABLE}.created_at)",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timeInterval": "DAY",
+          "timeIntervalBaseDimensionName": "created_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "created_at_month": {
+          "compiledSql": "DATE_TRUNC('MONTH', \"accounts\".created_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Created at"
+          ],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Created at month",
+          "name": "created_at_month",
+          "sql": "DATE_TRUNC('MONTH', ${TABLE}.created_at)",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timeInterval": "MONTH",
+          "timeIntervalBaseDimensionName": "created_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "created_at_quarter": {
+          "compiledSql": "DATE_TRUNC('QUARTER', \"accounts\".created_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Created at"
+          ],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Created at quarter",
+          "name": "created_at_quarter",
+          "sql": "DATE_TRUNC('QUARTER', ${TABLE}.created_at)",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timeInterval": "QUARTER",
+          "timeIntervalBaseDimensionName": "created_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "created_at_raw": {
+          "compiledSql": "\"accounts\".created_at",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Created at"
+          ],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Created at raw",
+          "name": "created_at_raw",
+          "sql": "${TABLE}.created_at",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timeInterval": "RAW",
+          "timeIntervalBaseDimensionName": "created_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "timestamp"
+        },
+        "created_at_week": {
+          "compiledSql": "DATE_TRUNC('WEEK', \"accounts\".created_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Created at"
+          ],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Created at week",
+          "name": "created_at_week",
+          "sql": "DATE_TRUNC('WEEK', ${TABLE}.created_at)",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timeInterval": "WEEK",
+          "timeIntervalBaseDimensionName": "created_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "created_at_year": {
+          "compiledSql": "DATE_TRUNC('YEAR', \"accounts\".created_at)",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [
+            "Created at"
+          ],
+          "hidden": false,
+          "index": 5,
+          "isIntervalBase": false,
+          "label": "Created at year",
+          "name": "created_at_year",
+          "sql": "DATE_TRUNC('YEAR', ${TABLE}.created_at)",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "timeInterval": "YEAR",
+          "timeIntervalBaseDimensionName": "created_at",
+          "timeIntervalBaseDimensionType": "timestamp",
+          "timestampDomain": "naive",
+          "type": "date"
+        },
+        "payment_cycle": {
+          "compiledSql": "\"accounts\".payment_cycle",
+          "description": "",
+          "fieldType": "dimension",
+          "groups": [],
+          "hidden": false,
+          "index": 3,
+          "isIntervalBase": false,
+          "label": "Payment cycle",
+          "name": "payment_cycle",
+          "sql": "${TABLE}.payment_cycle",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "type": "string"
+        }
+      },
+      "groupDetails": {},
+      "label": "Accounts",
+      "lineageGraph": {
+        "accounts": []
+      },
+      "metrics": {
+        "account_count": {
+          "compiledSql": "COUNT(DISTINCT \"accounts\".account_id)",
+          "compiledValueSql": "\"accounts\".account_id",
+          "description": "Count distinct of Account id",
+          "dimensionReference": "accounts_account_id",
+          "fieldType": "metric",
+          "filters": [],
+          "groups": [],
+          "hidden": false,
+          "index": 0,
+          "label": "Account count",
+          "name": "account_count",
+          "spotlight": {
+            "categories": [],
+            "visibility": "show"
+          },
+          "sql": "${TABLE}.account_id",
+          "table": "accounts",
+          "tableLabel": "Accounts",
+          "tablesReferences": [
+            "accounts"
+          ],
+          "type": "count_distinct"
+        }
+      },
+      "name": "accounts",
+      "orderFieldsBy": "LABEL",
+      "primaryKey": [
+        "account_id"
+      ],
+      "requiredFilters": [],
+      "schema": "analytics",
+      "sqlPath": "accounts.sql",
+      "sqlTable": "\"dunder_mifflin\".\"analytics\".\"accounts\"",
+      "ymlPath": "models/schema.yml"
+    }
+  },
+  "tags": [],
+  "targetDatabase": "postgres",
+  "warehouseConnection": {
+    "startOfWeek": null,
+    "warehouseConnectionUuid": null,
+    "warehouseType": "postgres"
+  },
+  "warehouseConnectionUuid": null,
+  "ymlPath": "models/schema.yml"
+}

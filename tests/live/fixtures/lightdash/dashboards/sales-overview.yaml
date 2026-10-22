@@ -1,0 +1,61 @@
+name: Sales overview
+description: Dunder Mifflin sales, H1 2025.
+updatedAt: '2026-10-22T10:28:41.712Z'
+tiles:
+- x: 0
+  y: 0
+  h: 3
+  w: 36
+  type: markdown
+  properties:
+    title: About
+    content: Synthetic Dunder Mifflin data for the unshackle live test.
+    hideFrame: false
+  tabSlug: null
+- x: 0
+  y: 3
+  h: 6
+  w: 12
+  type: saved_chart
+  properties:
+    title: Total revenue
+    hideTitle: false
+    chartSlug: total-revenue
+    chartName: Total revenue
+  tabSlug: null
+  tileSlug: total-revenue
+- x: 12
+  y: 3
+  h: 6
+  w: 24
+  type: saved_chart
+  properties:
+    title: Monthly revenue
+    hideTitle: false
+    chartSlug: monthly-revenue
+    chartName: Monthly revenue
+  tabSlug: null
+  tileSlug: monthly-revenue
+- x: 0
+  y: 9
+  h: 6
+  w: 36
+  type: saved_chart
+  properties:
+    title: Revenue by region
+    hideTitle: false
+    chartSlug: revenue-by-region
+    chartName: Revenue by region
+  tabSlug: null
+  tileSlug: revenue-by-region
+filters:
+  metrics: []
+  dimensions: []
+  tableCalculations: []
+tabs: []
+slug: sales-overview
+spaceSlug: sales
+version: 1
+contentType: dashboard
+downloadedAt: '2026-10-22T10:28:44.027Z'
+verification: null

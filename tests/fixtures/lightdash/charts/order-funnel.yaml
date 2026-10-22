@@ -1,0 +1,29 @@
+name: Order funnel
+tableName: orders
+slug: order-funnel
+spaceSlug: sales
+version: 1
+metricQuery:
+  exploreName: orders
+  dimensions:
+    - orders_status
+  metrics:
+    - orders_order_count
+  filters: {}
+  sorts: []
+  limit: 10
+  tableCalculations:
+    - name: step_conversion
+      displayName: Step conversion
+      type: number
+      template:
+        type: percent_of_previous_value
+        fieldId: orders_order_count
+chartConfig:
+  type: funnel
+  config:
+    fieldId: orders_order_count
+    dataInput: row
+    labels:
+      position: inside
+      showValue: true

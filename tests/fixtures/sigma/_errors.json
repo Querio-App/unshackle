@@ -1,0 +1,6 @@
+[
+  {
+    "item": "workbook wb-exec element el-map",
+    "message": "no SQL: Maps are not supported by the SQL endpoint"
+  }
+]

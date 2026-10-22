@@ -1,0 +1,628 @@
+{
+  "can_edit": true,
+  "created_at": "2026-10-22T11:02:36.769Z",
+  "dashboard_filters_enabled": false,
+  "id": 1,
+  "is_archived": false,
+  "is_draft": false,
+  "is_favorite": false,
+  "layout": [],
+  "name": "Sales overview",
+  "options": {
+    "globalParamOrder": [
+      "status",
+      "purchased"
+    ]
+  },
+  "slug": "sales-overview",
+  "tags": [
+    "sales"
+  ],
+  "updated_at": "2026-10-22T11:02:36.810Z",
+  "user_id": 1,
+  "version": 2,
+  "widgets": [
+    {
+      "created_at": "2026-10-22T11:02:36.776Z",
+      "dashboard_id": 1,
+      "id": 1,
+      "options": {
+        "isHidden": false,
+        "parameterMappings": {},
+        "position": {
+          "autoHeight": false,
+          "col": 0,
+          "maxSizeX": 6,
+          "maxSizeY": 1000,
+          "minSizeX": 1,
+          "minSizeY": 1,
+          "row": 0,
+          "sizeX": 6,
+          "sizeY": 2
+        }
+      },
+      "text": "## Sales overview\nRevenue is **post-discount**. Status filters the region and paper type widgets.",
+      "updated_at": "2026-10-22T11:02:36.776Z",
+      "width": 1
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.780Z",
+      "dashboard_id": 1,
+      "id": 2,
+      "options": {
+        "isHidden": false,
+        "parameterMappings": {
+          "purchased": {
+            "mapTo": "purchased",
+            "name": "purchased",
+            "title": "",
+            "type": "dashboard-level",
+            "value": null
+          }
+        },
+        "position": {
+          "autoHeight": false,
+          "col": 0,
+          "maxSizeX": 6,
+          "maxSizeY": 1000,
+          "minSizeX": 1,
+          "minSizeY": 1,
+          "row": 2,
+          "sizeX": 2,
+          "sizeY": 5
+        }
+      },
+      "text": "",
+      "updated_at": "2026-10-22T11:02:36.780Z",
+      "visualization": {
+        "created_at": "2026-10-22T11:02:36.755Z",
+        "description": "",
+        "id": 7,
+        "name": "Revenue",
+        "options": {
+          "counterColName": "revenue",
+          "counterLabel": "Revenue",
+          "rowNumber": 1,
+          "stringDecChar": ".",
+          "stringDecimal": 0,
+          "stringPrefix": "$",
+          "stringThouSep": ",",
+          "targetRowNumber": 1,
+          "tooltipFormat": "0,0.000"
+        },
+        "query": {
+          "created_at": "2026-10-22T11:02:36.708Z",
+          "data_source_id": 1,
+          "description": "",
+          "id": 3,
+          "is_archived": false,
+          "is_draft": false,
+          "is_safe": true,
+          "latest_query_data_id": 3,
+          "name": "Revenue in period",
+          "options": {
+            "parameters": [
+              {
+                "global": false,
+                "locals": [],
+                "name": "purchased",
+                "parentQueryId": null,
+                "title": "Purchased",
+                "type": "date-range",
+                "value": {
+                  "end": "2025-07-01",
+                  "start": "2025-01-01"
+                }
+              }
+            ]
+          },
+          "query": "SELECT SUM(post_discount_revenue) AS revenue,\n       COUNT(*) AS orders\nFROM orders\nWHERE purchased_at >= '{{ purchased.start }}'\n  AND purchased_at < '{{ purchased.end }}'",
+          "query_hash": "d6c85e49ad6f62f267d24378aba44b9c",
+          "schedule": null,
+          "tags": [],
+          "updated_at": "2026-10-22T11:02:36.755Z",
+          "version": 1
+        },
+        "type": "COUNTER",
+        "updated_at": "2026-10-22T11:02:36.780Z"
+      },
+      "width": 1
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.785Z",
+      "dashboard_id": 1,
+      "id": 3,
+      "options": {
+        "isHidden": false,
+        "parameterMappings": {},
+        "position": {
+          "autoHeight": false,
+          "col": 2,
+          "maxSizeX": 6,
+          "maxSizeY": 1000,
+          "minSizeX": 1,
+          "minSizeY": 1,
+          "row": 2,
+          "sizeX": 4,
+          "sizeY": 8
+        }
+      },
+      "text": "",
+      "updated_at": "2026-10-22T11:02:36.785Z",
+      "visualization": {
+        "created_at": "2026-10-22T11:02:36.744Z",
+        "description": "",
+        "id": 5,
+        "name": "Revenue trend",
+        "options": {
+          "alignYAxesAtZero": false,
+          "coefficient": 1,
+          "color_scheme": "Redash",
+          "columnMapping": {
+            "month": "x",
+            "revenue": "y"
+          },
+          "dateTimeFormat": "DD/MM/YY HH:mm",
+          "direction": {
+            "type": "counterclockwise"
+          },
+          "enableLink": false,
+          "error_y": {
+            "type": "data",
+            "visible": true
+          },
+          "globalSeriesType": "line",
+          "legend": {
+            "enabled": true,
+            "placement": "auto",
+            "traceorder": "normal"
+          },
+          "lineShape": "linear",
+          "linkFormat": "",
+          "linkOpenNewTab": true,
+          "missingValuesAsZero": true,
+          "numberFormat": "0,0[.]00000",
+          "percentFormat": "0[.]00%",
+          "piesort": true,
+          "series": {
+            "error_y": {
+              "type": "data",
+              "visible": true
+            },
+            "stacking": null
+          },
+          "seriesOptions": {
+            "revenue": {
+              "index": 0,
+              "name": "Revenue",
+              "type": "line",
+              "yAxis": 0,
+              "zIndex": 0
+            }
+          },
+          "showDataLabels": false,
+          "sizemode": "diameter",
+          "sortX": true,
+          "textFormat": "",
+          "valuesOptions": {},
+          "xAxis": {
+            "labels": {
+              "enabled": true
+            },
+            "type": "datetime"
+          },
+          "yAxis": [
+            {
+              "type": "linear"
+            },
+            {
+              "opposite": true,
+              "type": "linear"
+            }
+          ]
+        },
+        "query": {
+          "created_at": "2026-10-22T11:02:36.660Z",
+          "data_source_id": 1,
+          "description": "Post-discount revenue per purchase month.",
+          "id": 1,
+          "is_archived": false,
+          "is_draft": false,
+          "is_safe": true,
+          "latest_query_data_id": 1,
+          "name": "Monthly revenue",
+          "options": {
+            "parameters": []
+          },
+          "query": "SELECT date_trunc('month', purchased_at) AS month,\n       SUM(post_discount_revenue) AS revenue\nFROM orders\nGROUP BY 1\nORDER BY 1",
+          "query_hash": "93051315587bc409755c9ccade126775",
+          "schedule": null,
+          "tags": [
+            "finance"
+          ],
+          "updated_at": "2026-10-22T11:02:36.744Z",
+          "version": 1
+        },
+        "type": "CHART",
+        "updated_at": "2026-10-22T11:02:36.785Z"
+      },
+      "width": 1
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.791Z",
+      "dashboard_id": 1,
+      "id": 4,
+      "options": {
+        "isHidden": false,
+        "parameterMappings": {
+          "status": {
+            "mapTo": "status",
+            "name": "status",
+            "title": "",
+            "type": "dashboard-level",
+            "value": null
+          }
+        },
+        "position": {
+          "autoHeight": false,
+          "col": 0,
+          "maxSizeX": 6,
+          "maxSizeY": 1000,
+          "minSizeX": 1,
+          "minSizeY": 1,
+          "row": 10,
+          "sizeX": 3,
+          "sizeY": 8
+        }
+      },
+      "text": "",
+      "updated_at": "2026-10-22T11:02:36.791Z",
+      "visualization": {
+        "created_at": "2026-10-22T11:02:36.750Z",
+        "description": "",
+        "id": 6,
+        "name": "Revenue by region and mode",
+        "options": {
+          "alignYAxesAtZero": false,
+          "coefficient": 1,
+          "color_scheme": "Redash",
+          "columnMapping": {
+            "mode": "series",
+            "region": "x",
+            "revenue": "y"
+          },
+          "dateTimeFormat": "DD/MM/YY HH:mm",
+          "direction": {
+            "type": "counterclockwise"
+          },
+          "enableLink": false,
+          "error_y": {
+            "type": "data",
+            "visible": true
+          },
+          "globalSeriesType": "column",
+          "legend": {
+            "enabled": true,
+            "placement": "auto",
+            "traceorder": "normal"
+          },
+          "lineShape": "linear",
+          "linkFormat": "",
+          "linkOpenNewTab": true,
+          "missingValuesAsZero": true,
+          "numberFormat": "0,0[.]00000",
+          "percentFormat": "0[.]00%",
+          "piesort": true,
+          "series": {
+            "error_y": {
+              "type": "data",
+              "visible": true
+            },
+            "stacking": null
+          },
+          "seriesOptions": {},
+          "showDataLabels": false,
+          "sizemode": "diameter",
+          "sortX": true,
+          "textFormat": "",
+          "valuesOptions": {},
+          "xAxis": {
+            "labels": {
+              "enabled": true
+            },
+            "type": "-"
+          },
+          "yAxis": [
+            {
+              "type": "linear"
+            },
+            {
+              "opposite": true,
+              "type": "linear"
+            }
+          ]
+        },
+        "query": {
+          "created_at": "2026-10-22T11:02:36.689Z",
+          "data_source_id": 1,
+          "description": "Revenue and orders per shipping region for one order status.",
+          "id": 2,
+          "is_archived": false,
+          "is_draft": false,
+          "is_safe": false,
+          "latest_query_data_id": 2,
+          "name": "Revenue by region",
+          "options": {
+            "parameters": [
+              {
+                "global": false,
+                "locals": [],
+                "name": "status",
+                "parentQueryId": null,
+                "title": "Status",
+                "type": "text",
+                "value": "COMPLETED"
+              }
+            ]
+          },
+          "query": "SELECT s.region,\n       s.mode,\n       SUM(o.post_discount_revenue) AS revenue\nFROM orders o\nJOIN shippings s ON s.order_id = o.id\nWHERE o.status = '{{ status }}'\nGROUP BY 1, 2\nORDER BY 1, 2",
+          "query_hash": "8aae73e20a20f3de9fe42cecda7b2713",
+          "schedule": null,
+          "tags": [
+            "sales"
+          ],
+          "updated_at": "2026-10-22T11:02:36.750Z",
+          "version": 1
+        },
+        "type": "CHART",
+        "updated_at": "2026-10-22T11:02:36.791Z"
+      },
+      "width": 1
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.796Z",
+      "dashboard_id": 1,
+      "id": 5,
+      "options": {
+        "isHidden": false,
+        "parameterMappings": {
+          "status": {
+            "mapTo": "status",
+            "name": "status",
+            "title": "",
+            "type": "dashboard-level",
+            "value": null
+          }
+        },
+        "position": {
+          "autoHeight": false,
+          "col": 3,
+          "maxSizeX": 6,
+          "maxSizeY": 1000,
+          "minSizeX": 1,
+          "minSizeY": 1,
+          "row": 10,
+          "sizeX": 3,
+          "sizeY": 8
+        }
+      },
+      "text": "",
+      "updated_at": "2026-10-22T11:02:36.796Z",
+      "visualization": {
+        "created_at": "2026-10-22T11:02:36.760Z",
+        "description": "",
+        "id": 8,
+        "name": "Order share",
+        "options": {
+          "alignYAxesAtZero": false,
+          "coefficient": 1,
+          "color_scheme": "Redash",
+          "columnMapping": {
+            "orders": "y",
+            "paper_type": "x"
+          },
+          "dateTimeFormat": "DD/MM/YY HH:mm",
+          "direction": {
+            "type": "counterclockwise"
+          },
+          "enableLink": false,
+          "error_y": {
+            "type": "data",
+            "visible": true
+          },
+          "globalSeriesType": "pie",
+          "legend": {
+            "enabled": true,
+            "placement": "auto",
+            "traceorder": "normal"
+          },
+          "lineShape": "linear",
+          "linkFormat": "",
+          "linkOpenNewTab": true,
+          "missingValuesAsZero": true,
+          "numberFormat": "0,0[.]00000",
+          "percentFormat": "0[.]00%",
+          "piesort": true,
+          "series": {
+            "error_y": {
+              "type": "data",
+              "visible": true
+            },
+            "stacking": null
+          },
+          "seriesOptions": {
+            "orders": {
+              "index": 0,
+              "type": "pie",
+              "yAxis": 0,
+              "zIndex": 0
+            }
+          },
+          "showDataLabels": true,
+          "sizemode": "diameter",
+          "sortX": true,
+          "textFormat": "",
+          "valuesOptions": {},
+          "xAxis": {
+            "labels": {
+              "enabled": true
+            },
+            "type": "-"
+          },
+          "yAxis": [
+            {
+              "type": "linear"
+            },
+            {
+              "opposite": true,
+              "type": "linear"
+            }
+          ]
+        },
+        "query": {
+          "created_at": "2026-10-22T11:02:36.726Z",
+          "data_source_id": 1,
+          "description": "",
+          "id": 4,
+          "is_archived": false,
+          "is_draft": false,
+          "is_safe": false,
+          "latest_query_data_id": 4,
+          "name": "Orders by paper type",
+          "options": {
+            "parameters": [
+              {
+                "global": false,
+                "locals": [],
+                "name": "status",
+                "parentQueryId": null,
+                "title": "Status",
+                "type": "text",
+                "value": "COMPLETED"
+              }
+            ]
+          },
+          "query": "SELECT p.paper_type,\n       COUNT(*) AS orders,\n       SUM(o.quantity) AS units\nFROM orders o\nJOIN products p ON p.id = o.product_id\nWHERE o.status = '{{ status }}'\nGROUP BY 1\nORDER BY 2 DESC",
+          "query_hash": "5c5eefd259e4ea9610e37717ff8cd0f2",
+          "schedule": null,
+          "tags": [
+            "sales"
+          ],
+          "updated_at": "2026-10-22T11:02:36.760Z",
+          "version": 1
+        },
+        "type": "CHART",
+        "updated_at": "2026-10-22T11:02:36.796Z"
+      },
+      "width": 1
+    },
+    {
+      "created_at": "2026-10-22T11:02:36.802Z",
+      "dashboard_id": 1,
+      "id": 6,
+      "options": {
+        "isHidden": false,
+        "parameterMappings": {
+          "status": {
+            "mapTo": "status",
+            "name": "status",
+            "title": "",
+            "type": "dashboard-level",
+            "value": null
+          }
+        },
+        "position": {
+          "autoHeight": false,
+          "col": 0,
+          "maxSizeX": 6,
+          "maxSizeY": 1000,
+          "minSizeX": 1,
+          "minSizeY": 1,
+          "row": 18,
+          "sizeX": 6,
+          "sizeY": 6
+        }
+      },
+      "text": "",
+      "updated_at": "2026-10-22T11:02:36.802Z",
+      "visualization": {
+        "created_at": "2026-10-22T11:02:36.726Z",
+        "description": "",
+        "id": 4,
+        "name": "Table",
+        "options": {
+          "columns": [
+            {
+              "alignContent": "left",
+              "allowSearch": false,
+              "displayAs": "string",
+              "name": "paper_type",
+              "order": 100000,
+              "title": "Paper type",
+              "type": "string",
+              "visible": true
+            },
+            {
+              "alignContent": "right",
+              "allowSearch": false,
+              "displayAs": "number",
+              "name": "orders",
+              "numberFormat": "0,0",
+              "order": 100001,
+              "title": "Orders",
+              "type": "integer",
+              "visible": true
+            },
+            {
+              "alignContent": "right",
+              "allowSearch": false,
+              "displayAs": "number",
+              "name": "units",
+              "numberFormat": "0,0",
+              "order": 100002,
+              "title": "Units",
+              "type": "integer",
+              "visible": true
+            }
+          ],
+          "itemsPerPage": 25
+        },
+        "query": {
+          "created_at": "2026-10-22T11:02:36.726Z",
+          "data_source_id": 1,
+          "description": "",
+          "id": 4,
+          "is_archived": false,
+          "is_draft": false,
+          "is_safe": false,
+          "latest_query_data_id": 4,
+          "name": "Orders by paper type",
+          "options": {
+            "parameters": [
+              {
+                "global": false,
+                "locals": [],
+                "name": "status",
+                "parentQueryId": null,
+                "title": "Status",
+                "type": "text",
+                "value": "COMPLETED"
+              }
+            ]
+          },
+          "query": "SELECT p.paper_type,\n       COUNT(*) AS orders,\n       SUM(o.quantity) AS units\nFROM orders o\nJOIN products p ON p.id = o.product_id\nWHERE o.status = '{{ status }}'\nGROUP BY 1\nORDER BY 2 DESC",
+          "query_hash": "5c5eefd259e4ea9610e37717ff8cd0f2",
+          "schedule": null,
+          "tags": [
+            "sales"
+          ],
+          "updated_at": "2026-10-22T11:02:36.760Z",
+          "version": 1
+        },
+        "type": "TABLE",
+        "updated_at": "2026-10-22T11:02:36.802Z"
+      },
+      "width": 1
+    }
+  ]
+}

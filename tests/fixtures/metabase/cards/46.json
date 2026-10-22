@@ -1,0 +1,120 @@
+{
+  "archived": false,
+  "archived_directly": false,
+  "average_query_time": null,
+  "cache_invalidated_at": null,
+  "cache_ttl": null,
+  "can_delete": false,
+  "can_manage_db": true,
+  "can_restore": false,
+  "can_write": true,
+  "card_schema": 24,
+  "collection": {
+    "archive_operation_id": null,
+    "archived": false,
+    "archived_directly": null,
+    "authority_level": null,
+    "created_at": "2026-10-22T10:21:33.851738Z",
+    "description": null,
+    "entity_id": "1_6ltq7WPzVJPPbI6Rbv3",
+    "id": 5,
+    "is_personal": false,
+    "is_remote_synced": false,
+    "is_sample": false,
+    "location": "/",
+    "name": "Sales",
+    "namespace": null,
+    "personal_owner_id": null,
+    "slug": "sales",
+    "type": null
+  },
+  "collection_id": 5,
+  "collection_position": null,
+  "collection_preview": true,
+  "created_at": "2026-10-22T10:21:34.696308Z",
+  "creator_id": 2,
+  "dashboard": null,
+  "dashboard_count": 0,
+  "dashboard_id": null,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "SELECT shipping_region, COUNT(*) AS orders\nFROM {{#44-order-facts}} AS f\nGROUP BY shipping_region\nORDER BY shipping_region",
+        "template-tags": [
+          {
+            "card-id": 44,
+            "display-name": "Order facts",
+            "id": "6b8b4567-0000-4000-8000-000000000005",
+            "name": "#44-order-facts",
+            "type": "card"
+          }
+        ]
+      }
+    ]
+  },
+  "description": null,
+  "dimension_mappings": null,
+  "dimensions": null,
+  "display": "bar",
+  "document_id": null,
+  "embedding_params": null,
+  "embedding_type": null,
+  "enable_embedding": false,
+  "entity_id": "BnBBJ6H_Ib_O_108tHRC3",
+  "id": 46,
+  "initially_published_at": null,
+  "is_remote_synced": false,
+  "last_query_start": null,
+  "last_used_at": "2026-10-22T10:21:34.696308Z",
+  "legacy_query": null,
+  "metabase_version": "v0.64.1 (7010f27)",
+  "metabot_chart_id": null,
+  "metabot_conversation_id": null,
+  "moderation_reviews": [],
+  "name": "Orders by region from the model",
+  "param_fields": {},
+  "parameter_mappings": [],
+  "parameter_usage_count": 0,
+  "parameters": [],
+  "public_uuid": null,
+  "public_uuid_prefix": null,
+  "query_type": "native",
+  "result_metadata": [
+    {
+      "base_type": "type/Text",
+      "database_type": "text",
+      "display_name": "shipping_region",
+      "field_ref": [
+        "field",
+        "shipping_region",
+        {
+          "base-type": "type/Text"
+        }
+      ],
+      "name": "shipping_region"
+    },
+    {
+      "base_type": "type/BigInteger",
+      "database_type": "int8",
+      "display_name": "orders",
+      "field_ref": [
+        "field",
+        "orders",
+        {
+          "base-type": "type/BigInteger"
+        }
+      ],
+      "name": "orders"
+    }
+  ],
+  "source_card_id": null,
+  "table_id": null,
+  "type": "question",
+  "updated_at": "2026-10-22T10:21:34.696308Z",
+  "view_count": 0,
+  "visualization_settings": {}
+}

@@ -1,0 +1,13 @@
+[
+  {"id": "c-intro", "staticId": "s1", "cellType": "MARKDOWN", "label": "Intro",
+   "contents": {"markdownCell": {"source": "# Revenue overview\n\n**Revenue** is `amount_usd` summed over orders that were not returned."}}},
+  {"id": "c-orders", "staticId": "s2", "cellType": "SQL", "label": "orders_in_scope",
+   "contents": {"sqlCell": {"source": "select order_id, region, created_at, amount_usd\nfrom analytics.fct_orders o\njoin analytics.dim_customers c using (customer_id)\nwhere status <> 'returned'\n  and c.region = '{{ region }}'\n  and o.created_at >= {{ start_date }}", "dataConnectionId": "conn-snowflake"}}},
+  {"id": "c-monthly", "staticId": "s3", "cellType": "SQL", "label": "monthly_revenue",
+   "contents": {"sqlCell": {"source": "select date_trunc('month', created_at) as month, region, sum(amount_usd) as revenue\nfrom orders_in_scope\ngroup by 1, 2", "dataConnectionId": null}}},
+  {"id": "c-py", "staticId": "s4", "cellType": "CODE", "label": "Growth",
+   "contents": {"codeCell": {"source": "growth = monthly_revenue.sort_values('month')\ngrowth['mom'] = growth.groupby('region')['revenue'].pct_change()"}}},
+  {"id": "c-chart", "staticId": "s5", "cellType": "CHART", "label": "Monthly revenue", "contents": null},
+  {"id": "c-kpi", "staticId": "s6", "cellType": "SINGLE_VALUE", "label": "Total revenue", "contents": null},
+  {"id": "c-growth-chart", "staticId": "s7", "cellType": "CHART", "label": "MoM growth", "contents": null}
+]

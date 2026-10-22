@@ -1,0 +1,16 @@
+[
+  {
+    "archived": false,
+    "collection_id": null,
+    "content": "o.status = 'COMPLETED'",
+    "created_at": "2026-10-22T10:21:34.506868Z",
+    "creator_id": 2,
+    "description": null,
+    "entity_id": "itnmYsLU8waYXj-8hR63W",
+    "id": 1,
+    "is_remote_synced": null,
+    "name": "completed only",
+    "template_tags": {},
+    "updated_at": "2026-10-22T10:21:34.506868Z"
+  }
+]

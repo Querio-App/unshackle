@@ -1,0 +1,39 @@
+slice_name: Monthly revenue
+description: null
+certified_by: null
+certification_details: null
+viz_type: echarts_timeseries_line
+params:
+  datasource: 1__table
+  viz_type: echarts_timeseries_line
+  x_axis: purchased_at
+  time_grain_sqla: P1M
+  metrics:
+  - revenue
+  groupby: []
+  adhoc_filters:
+  - clause: WHERE
+    subject: purchased_at
+    operator: TEMPORAL_RANGE
+    comparator: No filter
+    expressionType: SIMPLE
+  row_limit: 10000
+query_context: '{"datasource": {"id": 1, "type": "table"}, "force": false, "queries":
+  [{"filters": [{"col": "purchased_at", "op": "TEMPORAL_RANGE", "val": "No filter"}],
+  "extras": {"having": "", "where": ""}, "applied_time_extras": {}, "annotation_layers":
+  [], "row_limit": 10000, "series_limit": 0, "order_desc": true, "url_params": {},
+  "custom_params": {}, "custom_form_data": {}, "time_offsets": [], "post_processing":
+  [{"operation": "pivot", "options": {"index": ["purchased_at"], "columns": [], "aggregates":
+  {"revenue": {"operator": "mean"}}, "drop_missing_columns": false}}, {"operation":
+  "flatten"}], "columns": [{"columnType": "BASE_AXIS", "sqlExpression": "purchased_at",
+  "label": "purchased_at", "expressionType": "SQL", "timeGrain": "P1M"}], "metrics":
+  ["revenue"], "orderby": [["revenue", false]]}], "form_data": {"datasource": "1__table",
+  "viz_type": "echarts_timeseries_line", "x_axis": "purchased_at", "time_grain_sqla":
+  "P1M", "metrics": ["revenue"], "groupby": [], "adhoc_filters": [{"clause": "WHERE",
+  "subject": "purchased_at", "operator": "TEMPORAL_RANGE", "comparator": "No filter",
+  "expressionType": "SIMPLE"}], "row_limit": 10000}, "result_format": "json", "result_type":
+  "full"}'
+cache_timeout: null
+uuid: ca0108cf-5744-43f8-9ab3-75dff08917d0
+version: 1.0.0
+dataset_uuid: 2e575f21-b5e2-4e39-a3eb-c2a918e2358c

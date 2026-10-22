@@ -1,0 +1,25 @@
+[
+  {
+    "metadata_permission_details": {
+      "9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001": {
+        "metadata_id": "9b8e1d4a-77c2-4e0f-8f7a-5e2b1c0d2001",
+        "metadata_name": "Sales",
+        "metadata_type": "LOGICAL_TABLE",
+        "principal_permission_info": [
+          {
+            "principal_type": "USER_GROUP",
+            "principal_permissions": [
+              {"principal_id": "g-all", "principal_name": "All", "principal_type": "USER_GROUP", "permission": "READ_ONLY"}
+            ]
+          },
+          {
+            "principal_type": "USER",
+            "principal_permissions": [
+              {"principal_id": "u-an", "principal_name": "analyst", "principal_type": "USER", "permission": "MODIFY"}
+            ]
+          }
+        ]
+      }
+    }
+  }
+]
