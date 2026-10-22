@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="assets/banner.svg" alt="unshackle" width="760">
+  <img src="https://raw.githubusercontent.com/unshackle-data/unshackle/main/assets/banner.svg" alt="unshackle" width="760">
 </h1>
 
 `unshackle` is a command-line tool for moving definitions out of a BI tool and into
