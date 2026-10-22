@@ -1,26 +1,20 @@
 """Bootstrap a fresh Redash with the Dunder Mifflin content, through its API.
 
-Run after `docker-compose -p unshackle-rd up -d`: creates the metadata tables and the admin
-(`manage.py` in the server container; the API key is read from Redash's own Postgres), the
+Called by tests/live/test_redash_live.py once the stack is up and the warehouse loaded: creates
+the metadata tables and the admin (`manage.py` in the server container; the API key is read from
+Redash's own Postgres), the
 warehouse data source, a Sales group with view-only access, a snippet, four queries with
 line, column, counter, table and pie visualizations, and one dashboard with a text widget, a
 `status` parameter shared by two widgets and a date-range parameter. Returns {"key", "ids"}.
-
-    python tests/live_redash/bootstrap.py http://localhost:5055
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
-SERVER = "unshackle-rd-server"
-METADATA = "unshackle-rd-metadata"
 CHART = {  # what Redash's chart editor saves (viz-lib chart/getOptions.ts defaults)
     "sortX": True, "legend": {"enabled": True, "placement": "auto", "traceorder": "normal"},
     "xAxis": {"type": "-", "labels": {"enabled": True}}, "yAxis": [{"type": "linear"}, {"type": "linear", "opposite": True}],
@@ -37,8 +31,8 @@ QUERIES = [
      "query": "SELECT date_trunc('month', purchased_at) AS month,\n       SUM(post_discount_revenue) AS revenue\n"
               "FROM orders\nGROUP BY 1\nORDER BY 1", "parameters": [], "tags": ["finance"]},
     {"name": "Revenue by region", "description": "Revenue and orders per shipping region for one order status.",
-     "query": "SELECT s.region,\n       s.mode,\n       SUM(o.post_discount_revenue) AS revenue\nFROM orders o\n"
-              "JOIN shippings s ON s.order_id = o.id\nWHERE o.status = '{{ status }}'\nGROUP BY 1, 2\nORDER BY 1, 2",
+     "query": "SELECT s.shipping_region,\n       s.shipping_mode,\n       SUM(o.post_discount_revenue) AS revenue\nFROM orders o\n"
+              "JOIN shippings s ON s.shipping_id = o.shipping_id\nWHERE o.status = '{{ status }}'\nGROUP BY 1, 2\nORDER BY 1, 2",
      "parameters": [STATUS], "tags": ["sales"]},
     {"name": "Revenue in period", "description": "",
      "query": "SELECT SUM(post_discount_revenue) AS revenue,\n       COUNT(*) AS orders\nFROM orders\n"
@@ -48,17 +42,16 @@ QUERIES = [
      "tags": []},
     {"name": "Orders by paper type", "description": "",
      "query": "SELECT p.paper_type,\n       COUNT(*) AS orders,\n       SUM(o.quantity) AS units\nFROM orders o\n"
-              "JOIN products p ON p.id = o.product_id\nWHERE o.status = '{{ status }}'\nGROUP BY 1\nORDER BY 2 DESC",
+              "JOIN products p ON p.product_id = o.product_id\nWHERE o.status = '{{ status }}'\nGROUP BY 1\nORDER BY 2 DESC",
      "parameters": [STATUS], "tags": ["sales"]},
 ]
 
 
-def bootstrap_server(email: str = "admin@example.com", password: str = "unshackle-admin") -> str:
-    """Metadata tables and the admin user; returns the admin's API key."""
-    run = lambda *cmd: subprocess.run(["docker", "exec", *cmd], check=True, capture_output=True, text=True).stdout  # noqa: E731
-    run(SERVER, "/app/manage.py", "database", "create_tables")
-    run(SERVER, "/app/manage.py", "users", "create_root", email, "Admin", "--password", password)
-    return run(METADATA, "psql", "-U", "redash", "-tAc", f"SELECT api_key FROM users WHERE email = '{email}'").strip()
+def bootstrap_server(exec_in: Callable[..., str], email: str = "admin@example.com", password: str = "unshackle-admin") -> str:
+    """Metadata tables and the admin user; returns the admin's API key. exec_in(service, *cmd) runs cmd in a compose service."""
+    exec_in("server", "/app/manage.py", "database", "create_tables")
+    exec_in("server", "/app/manage.py", "users", "create_root", email, "Admin", "--password", password)
+    return exec_in("metadata", "psql", "-U", "redash", "-tAc", f"SELECT api_key FROM users WHERE email = '{email}'").strip()
 
 
 def wait(base: str, timeout: float = 300) -> None:
@@ -91,9 +84,9 @@ def run(http: httpx.Client, query_id: int, parameters: dict[str, Any], timeout: 
     return res["query_result"]
 
 
-def main(base: str) -> dict[str, Any]:
+def main(base: str, exec_in: Callable[..., str], warehouse_password: str) -> dict[str, Any]:
     wait(base)
-    key = bootstrap_server()
+    key = bootstrap_server(exec_in)
     http = httpx.Client(base_url=base, headers={"Authorization": f"Key {key}"}, timeout=60)
 
     def call(method: str, path: str, body: Any = None) -> Any:
@@ -102,7 +95,7 @@ def main(base: str) -> dict[str, Any]:
         return r.json() if r.content else None
 
     ds = call("POST", "/api/data_sources", {"name": "Dunder Mifflin", "type": "pg", "options": {
-        "host": "warehouse", "port": 5432, "user": "dunder", "password": "dunder", "dbname": "dunder"}})
+        "host": "warehouse", "port": 5432, "user": "unshackle", "password": warehouse_password, "dbname": "dunder_mifflin"}})
     sales = call("POST", "/api/groups", {"name": "Sales"})
     call("POST", f"/api/groups/{sales['id']}/data_sources", {"data_source_id": ds["id"]})
     call("POST", f"/api/groups/{sales['id']}/data_sources/{ds['id']}", {"view_only": True})
@@ -131,7 +124,7 @@ def main(base: str) -> dict[str, Any]:
         "seriesOptions": {"revenue": {"type": "line", "yAxis": 0, "zIndex": 0, "index": 0, "name": "Revenue"}}})
     add_viz("Revenue by region", "CHART", "Revenue by region and mode", {
         **CHART, "globalSeriesType": "column", "xAxis": {"type": "-", "labels": {"enabled": True}},
-        "columnMapping": {"region": "x", "revenue": "y", "mode": "series"}, "seriesOptions": {}})
+        "columnMapping": {"shipping_region": "x", "revenue": "y", "shipping_mode": "series"}, "seriesOptions": {}})
     add_viz("Revenue in period", "COUNTER", "Revenue", {
         "counterLabel": "Revenue", "counterColName": "revenue", "rowNumber": 1, "targetRowNumber": 1, "stringDecimal": 0,
         "stringDecChar": ".", "stringThouSep": ",", "tooltipFormat": "0,0.000", "stringPrefix": "$"})
@@ -180,6 +173,3 @@ def main(base: str) -> dict[str, Any]:
     call("GET", f"/api/dashboards/{dash['id']}")
     return {"key": key, "ids": ids, "data_source": ds["id"]}
 
-
-if __name__ == "__main__":
-    print(json.dumps(main(sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5055"), indent=2))

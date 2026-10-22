@@ -4,7 +4,7 @@ unshackle CLI run end to end against them.
 A tool's live test does:
 
     with Stack("lightdash") as stack:       # docker-compose up (warehouse + tool), down -v on exit
-        stack.load_csvs()                    # tests/live/data/dunder_mifflin/*.csv -> warehouse
+        stack.load_data()                    # tests/live/data/dunder_mifflin/*.parquet -> warehouse
         ...bootstrap the tool and create content through its API...
         run_unshackle(repo, "extract", "lightdash", env=...)
         write_case(repo, ...)                # migration/parity/*.yaml (skills/verify format)
@@ -17,14 +17,15 @@ remote service. Set UNSHACKLE_LIVE_KEEP=1 to leave the containers up after a run
 from __future__ import annotations
 
 import csv
+import importlib.util
 import os
-import re
 import secrets
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable
 
 import httpx
@@ -34,11 +35,6 @@ LIVE = Path(__file__).parent
 DATA = LIVE / "data"
 ENABLED = os.environ.get("UNSHACKLE_LIVE") == "1"
 SKIP_REASON = "live test: set UNSHACKLE_LIVE=1 (needs Docker and docker-compose; see tests/live/README.md)"
-
-INT = re.compile(r"^-?\d+$")
-NUM = re.compile(r"^-?\d+\.\d+$")
-TS = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$")
-DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def compose_cmd() -> list[str]:
@@ -102,6 +98,7 @@ class Stack:
         return self.compose("logs", "--no-color", "--tail", str(tail), service, check=False).stdout
 
     def __enter__(self) -> "Stack":
+        self.down()  # start clean, even after a run with UNSHACKLE_LIVE_KEEP=1
         try:
             self.compose("up", "-d", "--wait", "warehouse")
             self.compose("up", "-d")
@@ -117,39 +114,67 @@ class Stack:
     def down(self) -> None:
         self.compose("down", "-v", "--remove-orphans", check=False)
 
-    def load_csvs(self, schema: str = "public") -> dict[str, int]:
-        """Load every tests/live/data/<dataset>/*.csv into <schema>.<file stem>; column types are inferred."""
+    @property
+    def dsn(self) -> str:
+        return f"host=localhost port={self.pg_port} dbname={self.dataset} user=unshackle password={self.password}"
+
+    def load_data(self, schema: str = "public") -> dict[str, int]:
+        """Load every tests/live/data/<dataset>/*.parquet into <schema>.<file stem>, then add the keys in KEYS."""
+        import duckdb
         import psycopg
 
         counts: dict[str, int] = {}
-        dsn = f"host=localhost port={self.pg_port} dbname={self.dataset} user=unshackle password={self.password}"
-        conn = wait_for(lambda: psycopg.connect(dsn, autocommit=True), "warehouse", 60)
+        conn = wait_for(lambda: psycopg.connect(self.dsn, autocommit=True), "warehouse", 60)
         with conn:
-            for path in sorted((DATA / self.dataset).glob("*.csv")):
-                with path.open(newline="") as f:
-                    rows = list(csv.reader(f))
-                header, body = rows[0], rows[1:]
-                types = [_pg_type([r[i] for r in body]) for i in range(len(header))]
+            conn.execute(f'create schema if not exists "{schema}"')
+            for path in sorted((DATA / self.dataset).glob("*.parquet")):
+                rel = duckdb.read_parquet(str(path))
                 table = f'"{schema}"."{path.stem}"'
-                cols = ", ".join(f'"{h}" {t}' for h, t in zip(header, types))
-                conn.execute(f"create schema if not exists \"{schema}\"")
+                cols = ", ".join(f'"{c}" {_pg_type(str(t))}' for c, t in zip(rel.columns, rel.types))
                 conn.execute(f"drop table if exists {table} cascade")
                 conn.execute(f"create table {table} ({cols})")
+                rows = rel.fetchall()
                 with conn.cursor().copy(f"copy {table} from stdin") as copy:
-                    for r in body:
-                        copy.write_row([v if v != "" else None for v in r])
-                counts[path.stem] = len(body)
+                    for row in rows:
+                        copy.write_row(row)
+                counts[path.stem] = len(rows)
+            keys = KEYS.get(self.dataset, {})
+            for table, pk in keys.get("primary", {}).items():
+                conn.execute(f'alter table "{schema}"."{table}" add primary key ("{pk}")')
+            for table, col, ref in keys.get("foreign", []):
+                conn.execute(f'alter table "{schema}"."{table}" add foreign key ("{col}") '
+                             f'references "{schema}"."{ref}" ("{keys["primary"][ref]}")')
         return counts
 
 
-def _pg_type(values: list[str]) -> str:
-    vals = [v for v in values if v != ""]
-    for pattern, typ in ((INT, "bigint"), (NUM, "numeric"), (TS, "timestamp"), (DATE, "date")):
-        if vals and all(pattern.match(v) for v in vals):
-            return typ
-    if vals and all(v.lower() in ("true", "false") for v in vals):
-        return "boolean"
-    return "text"
+# Parquet has no keys. Tools that join through foreign keys (Metabase's implicit joins) need them.
+# orders.shipping_id is not a foreign key: some orders have no shipping row.
+KEYS: dict[str, dict[str, Any]] = {
+    "dunder_mifflin": {
+        "primary": {"accounts": "account_id", "products": "product_id", "orders": "order_id",
+                    "shippings": "shipping_id", "reviews": "review_id"},
+        "foreign": [("orders", "account_id", "accounts"), ("orders", "product_id", "products"), ("reviews", "order_id", "orders")],
+    },
+}
+
+
+def _pg_type(duck: str) -> str:
+    """Postgres type for a DuckDB (Parquet) column type."""
+    if duck.startswith("DECIMAL"):
+        return duck.replace("DECIMAL", "numeric")
+    types = {"VARCHAR": "text", "INTEGER": "integer", "BIGINT": "bigint", "SMALLINT": "smallint", "DOUBLE": "double precision",
+             "FLOAT": "real", "BOOLEAN": "boolean", "DATE": "date", "TIMESTAMP": "timestamp", "TIMESTAMP WITH TIME ZONE": "timestamptz"}
+    if duck not in types:
+        raise ValueError(f"no Postgres type for Parquet column type {duck}")
+    return types[duck]
+
+
+def bootstrap_module(tool: str) -> ModuleType:
+    """tests/live/<tool>/bootstrap.py, imported under a name of its own (each tool has one)."""
+    spec = importlib.util.spec_from_file_location(f"{tool}_bootstrap", LIVE / tool / "bootstrap.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def run_unshackle(repo: Path, *args: str, env: dict[str, str] | None = None, check: bool = True) -> str:

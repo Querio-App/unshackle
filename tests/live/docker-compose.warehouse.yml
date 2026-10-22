@@ -1,5 +1,5 @@
-# The warehouse every live test shares: Postgres, loaded from tests/live/data/<dataset>/*.csv
-# by harness.load_csvs(). Layer a tool's compose file on top:
+# The warehouse every live test shares: Postgres, loaded from tests/live/data/<dataset>/*.parquet
+# by harness.Stack.load_data(). Layer a tool's compose file on top:
 #   docker-compose -p unshackle-live-<tool> -f tests/live/docker-compose.warehouse.yml -f tests/live/<tool>/docker-compose.yml up -d
 # The password is generated per run by the harness (UNSHACKLE_LIVE_PG_PASSWORD).
 services:
