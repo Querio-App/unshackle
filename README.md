@@ -1,12 +1,15 @@
-# unshackle
+<h1 align="center">
+  <img src="assets/banner.svg" alt="unshackle" width="760">
+</h1>
 
 `unshackle` is a command-line tool for moving definitions out of a BI tool and into
 files in a Git repository. It extracts the original definitions, translates what
 it can, and lists what still needs work. You can run it without a coding agent.
 
 It currently reads Looker, Lightdash, Omni, Hex, Sigma, ThoughtSpot, Power BI,
-Tableau, Metabase, Apache Superset, and Redash. The generated files include table descriptions, metrics, queries,
-dashboards, and permissions when the source provides them.
+Tableau, Metabase, Apache Superset, and Redash. The generated files include
+table descriptions, metrics, queries, dashboards, and permissions when the
+source provides them.
 
 ## Try it without connecting a BI tool
 
