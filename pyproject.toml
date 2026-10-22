@@ -2,7 +2,7 @@
 name = "unshackle"
 version = "0.1.0"
 description = "Unshackle your BI tool: extract metrics, dashboards and permissions from Looker, Tableau, Power BI, Lightdash, Omni, Hex, Sigma and ThoughtSpot into open formats in a Git repo you own."
-readme = "README.md"
+dynamic = ["readme"]
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,7 +22,7 @@ dev = ["pytest>=8", "lkml>=1.3", "altair>=5.4", "pandas>=2.2", "sqlalchemy>=2.0"
 unshackle = "unshackle.cli:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-fancy-pypi-readme>=24"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -36,3 +36,14 @@ packages = ["src/unshackle"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = ["live: runs a real BI tool in Docker; skipped unless UNSHACKLE_LIVE=1 (tests/live/README.md)"]
+
+# GitHub renders the banner from its relative path; PyPI needs an absolute URL.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = 'src="assets/'
+replacement = 'src="https://raw.githubusercontent.com/unshackle-analytics/unshackle/main/assets/'
