@@ -189,7 +189,7 @@ def test_parse_pbir_report(tmp_path: Path):
     assert set(t) == {"kpiTotalSales", "kpiAov", "colByRegion", "lineMonthly", "textNote"}
     kpi = t["kpiTotalSales"]
     assert kpi.kind == "kpi" and kpi.encodings["text"].field == "total_sales" and kpi.title == "Total Sales"
-    assert "SUM(SalesAmount) AS total_sales" in kpi.sql and "(:channel IS NULL OR Channel = :channel)" in kpi.sql
+    assert "SUM(SalesAmount) AS total_sales" in kpi.sql and "(Channel = :channel OR :channel IS NULL)" in kpi.sql
     assert "SUM(SalesAmount) / NULLIF(COUNT(*), 0) AS avg_order_value" in t["kpiAov"].sql
     col = t["colByRegion"]
     assert (col.mark, col.title) == ("bar", "Sales by region")

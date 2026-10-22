@@ -448,7 +448,7 @@ def test_new_sources_detect_postgres(tmp_path: Path, tool: str):
     assert get_source(tool).parse(_seed(tmp_path, tool)).warehouse == "postgres"
 
 
-@pytest.mark.parametrize("tool", ["metabase", "superset"])
+@pytest.mark.parametrize("tool", ["metabase", "superset", "powerbi"])
 def test_optional_filter_binds_are_typed_before_the_null_check(tmp_path: Path, tool: str):
     """`(:p IS NULL OR col = :p)` fails on Postgres with server-side binding (psycopg 3): the type of
     :p can't be determined from `IS NULL`. The comparison comes first so the parameter takes the column's type."""
@@ -460,4 +460,4 @@ def test_optional_filter_binds_are_typed_before_the_null_check(tmp_path: Path, t
     assert optional
     for sql in optional:
         assert not re.search(r"\(:\w+ IS NULL OR", sql), sql
-        assert re.search(r"= :(\w+) OR :\1 IS NULL\)", sql), sql
+        assert re.search(r":(\w+)(?: AS DATE\))? OR :\1 IS NULL\)", sql), sql
