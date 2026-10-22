@@ -1,24 +1,22 @@
 """Bootstrap a fresh Metabase (docker-compose.yml here) and create the test content.
 
-    python tests/live_metabase/bootstrap.py http://localhost:3300   # prints METABASE_API_KEY=...
+Called by tests/live/test_metabase_live.py once the warehouse is loaded.
 
 Creates: the admin user, an API key in the Administrators group, the Postgres warehouse
 connection, "Sales" and "Sales/Finance" collections, a snippet, 4 native questions (template
 tags, a field filter, the snippet, a card reference), 3 query-builder questions (one combo),
 1 model, 3 metrics, an "Analysts" group and a two-tab dashboard with two filters.
 Everything goes through the HTTP API, so it doubles as a check of the shapes
-unshackle reads. Idempotent only on a fresh instance (docker-compose down -v first).
+unshackle reads. Idempotent only on a fresh instance.
 """
 
 from __future__ import annotations
 
-import sys
 import time
 
 import httpx
 
 ADMIN = {"email": "admin@example.com", "password": "Unshackle-test-1!", "first_name": "Ada", "last_name": "Admin"}
-WAREHOUSE = {"host": "warehouse", "port": 5432, "dbname": "dunder", "user": "dunder", "password": "dunder", "ssl": False}
 
 
 def wait_up(base: str, timeout: float = 300) -> None:
@@ -69,8 +67,9 @@ def setup(base: str) -> str:
     return key["unmasked_key"]
 
 
-def add_warehouse(api: Api) -> tuple[int, dict]:
-    db = api.post("/api/database", {"engine": "postgres", "name": "Dunder Mifflin", "details": WAREHOUSE, "is_full_sync": True})
+def add_warehouse(api: Api, password: str) -> tuple[int, dict]:
+    details = {"host": "warehouse", "port": 5432, "dbname": "dunder_mifflin", "user": "unshackle", "password": password, "ssl": False}
+    db = api.post("/api/database", {"engine": "postgres", "name": "Dunder Mifflin", "details": details, "is_full_sync": True})
     for _ in range(100):
         meta = api.get(f"/api/database/{db['id']}/metadata")
         tables = {t["name"]: t for t in meta["tables"]}
@@ -103,13 +102,13 @@ def create_content(api: Api, db: int, tables: dict) -> dict[str, int]:
 
     card("Revenue by paper type", "question", "pie", {"type": "native", "native": {"query": (
         "SELECT p.paper_type, SUM(o.post_discount_revenue) AS revenue\n"
-        "FROM orders o JOIN products p ON p.id = o.product_id\n"
+        "FROM orders o JOIN products p ON p.product_id = o.product_id\n"
         "WHERE o.status = 'COMPLETED'\nGROUP BY p.paper_type\nORDER BY revenue DESC"), "template-tags": {}}},
         {"pie.dimension": "paper_type", "pie.metric": "revenue"}, desc="Completed revenue split by paper type.")
     card("Orders by status for a region", "question", "bar", {"type": "native", "native": {"query": (
         "SELECT o.status, COUNT(*) AS orders\n"
-        "FROM orders o JOIN shippings s ON s.order_id = o.id\n"
-        "WHERE s.region = {{region}}\n"
+        "FROM orders o JOIN shippings s ON s.shipping_id = o.shipping_id\n"
+        "WHERE s.shipping_region = {{region}}\n"
         "[[AND o.purchased_at >= {{since}}]]\n"
         "GROUP BY o.status\nORDER BY o.status"),
         "template-tags": {
@@ -129,22 +128,22 @@ def create_content(api: Api, db: int, tables: dict) -> dict[str, int]:
         "order-by": [["desc", ["aggregation", 0]]]}},
         {"graph.dimensions": ["account_manager"], "graph.metrics": ["sum"]})
     card("Order facts", "model", "table", {"type": "native", "native": {"query": (
-        "SELECT o.id AS order_id, o.account_id, o.status, o.quantity, o.post_discount_revenue,\n"
-        "       o.purchased_at, s.mode AS shipping_mode, s.region AS shipping_region\n"
-        "FROM orders o JOIN shippings s ON s.order_id = o.id"), "template-tags": {}}},
+        "SELECT o.order_id, o.account_id, o.status, o.quantity, o.post_discount_revenue,\n"
+        "       o.purchased_at, s.shipping_mode, s.shipping_region\n"
+        "FROM orders o JOIN shippings s ON s.shipping_id = o.shipping_id"), "template-tags": {}}},
         desc="One row per order with its shipping details.")
     snippet = api.post("/api/native-query-snippet", {"name": "completed only", "content": "o.status = 'COMPLETED'"})
     card("Completed revenue by shipping mode", "question", "bar", {"type": "native", "native": {"query": (
-        "SELECT shippings.mode, SUM(o.post_discount_revenue) AS revenue\n"
-        "FROM orders o JOIN shippings ON shippings.order_id = o.id\n"
+        "SELECT shippings.shipping_mode, SUM(o.post_discount_revenue) AS revenue\n"
+        "FROM orders o JOIN shippings ON shippings.shipping_id = o.shipping_id\n"
         "WHERE {{snippet: completed only}} AND {{mode}}\n"
-        "GROUP BY shippings.mode\nORDER BY shippings.mode"),
+        "GROUP BY shippings.shipping_mode\nORDER BY shippings.shipping_mode"),
         "template-tags": {
             "snippet: completed only": {"id": "6b8b4567-0000-4000-8000-000000000003", "name": "snippet: completed only",
                                         "display-name": "Snippet: completed only", "type": "snippet", "snippet-name": "completed only",
                                         "snippet-id": snippet["id"]},
             "mode": {"id": "6b8b4567-0000-4000-8000-000000000004", "name": "mode", "display-name": "Shipping mode",
-                     "type": "dimension", "dimension": f("shippings", "mode"), "widget-type": "string/="},
+                     "type": "dimension", "dimension": f("shippings", "shipping_mode"), "widget-type": "string/="},
         }}})
     card("Orders by region from the model", "question", "bar", {"type": "native", "native": {"query": (
         f"SELECT shipping_region, COUNT(*) AS orders\nFROM {{{{#{ids['Order facts']}-order-facts}}}} AS f\n"
@@ -211,16 +210,11 @@ def create_content(api: Api, db: int, tables: dict) -> dict[str, int]:
     return ids
 
 
-def main(base: str) -> dict[str, object]:
+def main(base: str, warehouse_password: str) -> dict[str, object]:
     wait_up(base)
     key = setup(base)
     api = Api(base, {"X-API-Key": key})
-    db, tables = add_warehouse(api)
+    db, tables = add_warehouse(api, warehouse_password)
     ids = create_content(api, db, tables)
     return {"key": key, "database": db, "ids": ids}
 
-
-if __name__ == "__main__":
-    out = main(sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3300")
-    print(f"METABASE_API_KEY={out['key']}")
-    print(out["ids"])

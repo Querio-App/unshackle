@@ -1,71 +1,46 @@
-"""Live check against a real Metabase: Docker up, bootstrap, extract, build, verify.
+"""Metabase, live: Metabase v0.64.1 in Docker over the Dunder Mifflin warehouse.
 
-Skipped unless UNSHACKLE_LIVE_METABASE=1. Needs docker plus docker-compose (or `docker compose`),
-and a Postgres driver in this venv (`pip install psycopg2-binary`). Uses host ports 3300
-(Metabase) and 56432 (Postgres) and containers named unshackle-mb-*; it starts from a clean
-state (`down -v`) and tears down afterwards unless UNSHACKLE_LIVE_KEEP=1.
+1. warehouse + Metabase up; the dataset loaded (harness.Stack.load_data)
+2. bootstrap (tests/live/metabase/bootstrap.py): admin, API key, the warehouse connection and the content
+3. `unshackle init / extract / build metabase` in a temp repo
+4. parity: what Metabase itself returns (POST /api/card/{id}/query/csv with format_rows=false)
+   against the migrated notebook tiles and the generated Ossie metric expression; `unshackle verify`
 
-Parity: the source side is what Metabase itself returns (POST /api/card/{id}/query/csv with
-format_rows=false); the target side runs the migrated notebook tiles and the generated Ossie
-metric expression on the same Postgres.
+Needs Docker and docker-compose. See tests/live/README.md.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import httpx
 import pytest
 import yaml
+from harness import ENABLED, SKIP_REASON, Stack, bootstrap_module, run_unshackle
 
-HERE = Path(__file__).parent
-BASE = "http://localhost:3300"
-WAREHOUSE = "postgresql+psycopg2://dunder:dunder@localhost:56432/dunder"
+pytestmark = [pytest.mark.live, pytest.mark.skipif(not ENABLED, reason=SKIP_REASON)]
 
-pytestmark = pytest.mark.skipif(os.environ.get("UNSHACKLE_LIVE_METABASE") != "1", reason="set UNSHACKLE_LIVE_METABASE=1 to run")
-
-
-def _compose(*args: str) -> None:
-    cmd = ["docker-compose"] if shutil.which("docker-compose") else ["docker", "compose"]
-    subprocess.run([*cmd, "-p", "unshackle-mb", "-f", str(HERE / "docker-compose.yml"), *args], check=True, capture_output=True)
+BASE = f"http://localhost:{os.environ.get('UNSHACKLE_LIVE_METABASE_PORT', '3300')}"
 
 
-@pytest.fixture(scope="module")
-def metabase():
-    pytest.importorskip("psycopg2")
-    sys.path.insert(0, str(HERE))
-    import bootstrap
-
-    _compose("down", "-v")
-    _compose("up", "-d")
-    try:
-        yield bootstrap.main(BASE)
-    finally:
-        if os.environ.get("UNSHACKLE_LIVE_KEEP") != "1":
-            _compose("down", "-v")
+def test_metabase_end_to_end(tmp_path: Path):
+    with Stack("metabase") as stack:
+        assert stack.load_data()
+        metabase = bootstrap_module("metabase").main(BASE, stack.password)
+        _extract_build_verify(metabase, stack, tmp_path)
 
 
-def _cli(repo: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
-    run = subprocess.run([sys.executable, "-m", "unshackle.cli", *args, "--repo", str(repo)], env={**os.environ, **env},
-                         capture_output=True, text=True, timeout=600)
-    print(run.stdout, run.stderr)
-    return run
-
-
-def test_extract_build_verify(metabase, tmp_path: Path):
-    env = {"METABASE_URL": BASE, "METABASE_API_KEY": metabase["key"], "UNSHACKLE_WAREHOUSE_URL": WAREHOUSE}
+def _extract_build_verify(metabase: dict, stack: Stack, tmp_path: Path) -> None:
+    env = {"METABASE_URL": BASE, "METABASE_API_KEY": metabase["key"]}
     repo = tmp_path / "repo"
     ids = metabase["ids"]
-    assert _cli(repo, env, "init").returncode == 0
-    assert _cli(repo, env, "extract", "metabase", "--only", f"dashboard:{ids['Sales overview']}",
-                "--only", f"card:{ids['Completed orders']}").returncode == 0
+    run_unshackle(repo, "init", env=env)
+    run_unshackle(repo, "extract", "metabase", "--only", f"dashboard:{ids['Sales overview']}",
+                  "--only", f"card:{ids['Completed orders']}", env=env)
     assert (repo / "migration/raw/metabase/_errors.json").read_text().strip() == "[]"
-    assert _cli(repo, env, "build", "metabase").returncode == 0
+    print(run_unshackle(repo, "build", "metabase", env=env))
     assert (repo / "notebooks/sales-overview.ipynb").exists()
 
     data = repo / "migration/parity/data"
@@ -106,7 +81,7 @@ def test_extract_build_verify(metabase, tmp_path: Path):
     ]
     for i, case in enumerate(cases):
         (repo / "migration/parity" / f"{i}.yaml").write_text(yaml.safe_dump(case, sort_keys=False))
-    run = _cli(repo, env, "verify")
-    lines = [line for line in run.stdout.splitlines() if line.strip()]
-    assert run.returncode == 0, run.stdout + run.stderr
-    assert len(lines) == len(cases) and all(line.startswith("pass") for line in lines)
+    out = run_unshackle(repo, "verify", env={"UNSHACKLE_WAREHOUSE_URL": stack.warehouse_url}, check=False)
+    print(out)
+    results = json.loads((repo / "migration/parity/results.json").read_text())
+    assert len(results) == len(cases) and all(r["status"] == "pass" for r in results), out

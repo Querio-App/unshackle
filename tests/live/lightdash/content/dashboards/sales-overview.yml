@@ -1,6 +1,6 @@
 version: 1
 name: Sales overview
-description: Dunder Mifflin sales, H1 2025.
+description: Dunder Mifflin sales.
 slug: sales-overview
 spaceSlug: sales
 tabs: []
@@ -15,7 +15,7 @@ tiles:
     h: 3
     properties:
       title: About
-      content: Synthetic Dunder Mifflin data for the unshackle live test.
+      content: Fictional Dunder Mifflin data for the unshackle live test.
   - type: saved_chart
     x: 0
     y: 3

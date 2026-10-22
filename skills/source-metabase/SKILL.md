@@ -66,11 +66,11 @@ Fingerprints, creator/editor details and database connection details are dropped
 | database tables and fields (display names, descriptions, `type/PK`, `type/FK` with `fk_target_field_id`) | `catalog/` tables; semantic models (with primary and foreign entities) for the tables metrics read and their FK targets |
 | metric card: one `count / sum / avg / distinct / min / max / median` over a column of its `source-table`, optional filters `= != < > <= >= between is-null not-null and or` on the same table | measure + simple metric with a `filter` (`{{ Dimension('orders__status') }} = 'COMPLETED'`); `!=` keeps NULLs like Metabase (`x <> 'a' OR x IS NULL`) |
 | any other metric (custom expression, joined column, segment, multi-stage, built on a model) | TODO metric in `semantic/<table>.ossie.yaml` (`custom_extensions`) with the compiled SQL as `source_expression`, plus `queries/<metric>.sql` (`metric: true`) |
-| native question | `queries/<name>.sql`: text/number/date tags -> `:tag` binds (listed in the description with defaults); `[[ ... ]]` blocks kept when their tags have a default, else dropped (noted); field filters `{{x}}` -> `(:x IS NULL OR "schema"."table"."col" = :x)` for `=`-type widgets; `{{snippet: x}}` inlined; `{{#id-name}}` -> the card's SQL as a subquery |
+| native question | `queries/<name>.sql`: text/number/date tags -> `:tag` binds (listed in the description with defaults); `[[ ... ]]` blocks kept when their tags have a default, else dropped (noted); field filters `{{x}}` -> `("schema"."table"."col" = :x OR :x IS NULL)` for `=`-type widgets; `{{snippet: x}}` inlined; `{{#id-name}}` -> the card's SQL as a subquery |
 | query-builder question not on a dashboard | `queries/<name>.sql` with Metabase's compiled SQL |
 | model (native or query builder) | `queries/<name>.sql` (TODO: materialize as a SQL model) + a semantic model named after it, dimensions from `result_metadata` |
 | dashboard | `notebooks/<slug>.ipynb`; cells in grid order (row, then col); tabs become `## Tab` headings |
-| dashboard filter `string/=`, `category`, `id` on a query-builder card field | `:slug` bind, written `(:slug IS NULL OR <column> = :slug)` into Metabase's compiled SQL (empty filter = no filter, as in Metabase); default from the parameter |
+| dashboard filter `string/=`, `category`, `id` on a query-builder card field | `:slug` bind, written `(<column> = :slug OR :slug IS NULL)` into Metabase's compiled SQL (empty filter = no filter, as in Metabase); default from the parameter |
 | dashboard filter on a native template tag | the tile's `{{tag}}` becomes `:slug`; unmapped tags use the card's default |
 | display `bar`, `line`, `area`, `scatter`, `row` (bar, axes swapped), `pie`, `combo` | mark + encodings from `graph.dimensions` / `graph.metrics` (or breakout/aggregation columns when unset); second dimension -> `color` (+ `xOffset` unless stacked); several metrics on line/area/combo -> layers, `axis: right` -> dual axis |
 | `scalar`, `smartscalar`, `progress`, `gauge` | KPI (text) on `scalar.field` or the first metric |
@@ -100,7 +100,7 @@ from `result_metadata` (`lib/desired-column-alias`).
 - **String filters other than `=`** (`contains`, `starts-with`) and field filters with
   those widgets: write the predicate (`col ILIKE '%' || :x || '%'`).
 - **Optional `[[ ... ]]` clauses without a default**: dropped, which is what Metabase
-  runs when the filter is empty. Add `(:x IS NULL OR ...)` if the notebook needs the filter.
+  runs when the filter is empty. Add `(... = :x OR :x IS NULL)` if the notebook needs the filter.
 - **Charts**: `funnel`, `waterfall`, `map`, `sankey`, `boxplot`,
   `progress`/`gauge` goals, `smartscalar` comparisons, 100% stacked bars, pivot tables
   and dashcard `series` (other cards overlaid) are TODOs on the tile. Pivot with

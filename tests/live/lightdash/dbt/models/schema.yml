@@ -13,7 +13,7 @@ models:
           sql_on: ${orders.product_id} = ${products.product_id}
           relationship: many-to-one
         - join: shippings
-          sql_on: ${orders.order_id} = ${shippings.order_id}
+          sql_on: ${orders.shipping_id} = ${shippings.shipping_id}
           relationship: one-to-one
       metrics:
         average_order_value:
@@ -25,7 +25,7 @@ models:
       - name: order_id
         meta:
           dimension:
-            type: number
+            type: string
           metrics:
             order_count:
               type: count_distinct
@@ -33,12 +33,17 @@ models:
       - name: account_id
         meta:
           dimension:
-            type: number
+            type: string
             hidden: true
       - name: product_id
         meta:
           dimension:
-            type: number
+            type: string
+            hidden: true
+      - name: shipping_id
+        meta:
+          dimension:
+            type: string
             hidden: true
       - name: status
         description: COMPLETED, CANCELLED or RETURNED
@@ -78,19 +83,23 @@ models:
               label: Completed revenue
               filters:
                 - status: COMPLETED
+      - name: days_to_close
+        meta:
+          dimension:
+            type: number
       - name: purchased_at
         meta:
           dimension:
-            type: timestamp
+            type: date
             time_intervals: [DAY, WEEK, MONTH, QUARTER, YEAR]
       - name: cancelled_at
         meta:
           dimension:
-            type: timestamp
+            type: date
       - name: returned_at
         meta:
           dimension:
-            type: timestamp
+            type: date
 
   - name: accounts
     description: B2B client accounts.
@@ -100,7 +109,7 @@ models:
       - name: account_id
         meta:
           dimension:
-            type: number
+            type: string
           metrics:
             account_count:
               type: count_distinct
@@ -120,10 +129,6 @@ models:
         meta:
           dimension:
             type: number
-      - name: created_at
-        meta:
-          dimension:
-            type: timestamp
 
   - name: products
     description: Paper product catalog.
@@ -133,7 +138,7 @@ models:
       - name: product_id
         meta:
           dimension:
-            type: number
+            type: string
       - name: product_name
         meta:
           dimension:
@@ -148,35 +153,34 @@ models:
             type: number
 
   - name: shippings
-    description: One delivery per order.
+    description: Deliveries; an order has at most one.
     meta:
       primary_key: shipping_id
     columns:
       - name: shipping_id
         meta:
           dimension:
-            type: number
-      - name: order_id
-        meta:
-          dimension:
-            type: number
-            hidden: true
+            type: string
       - name: shipping_mode
         meta:
           dimension:
             type: string
-      - name: region
+      - name: shipping_region
         meta:
           dimension:
             type: string
-      - name: city
+      - name: shipping_city
         meta:
           dimension:
             type: string
-      - name: state
+      - name: shipping_state
         meta:
           dimension:
             type: string
+      - name: shipping_cost
+        meta:
+          dimension:
+            type: number
       - name: days_to_ship
         meta:
           dimension:
@@ -184,10 +188,6 @@ models:
           metrics:
             average_days_to_ship:
               type: average
-      - name: shipped_at
-        meta:
-          dimension:
-            type: timestamp
 
   - name: reviews
     description: Customer reviews of completed orders.
@@ -201,14 +201,14 @@ models:
       - name: review_id
         meta:
           dimension:
-            type: number
+            type: string
           metrics:
             review_count:
               type: count_distinct
       - name: order_id
         meta:
           dimension:
-            type: number
+            type: string
             hidden: true
       - name: rating
         meta:

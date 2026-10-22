@@ -229,7 +229,7 @@ enum: `0` Sum, `1` Avg, `2` Count (Distinct), `3` Min, `4` Max, `5` Count (non-n
 Tile SQL is generated from the measure's DAX (same rules as the metrics, pushed into
 `CASE WHEN` for CALCULATE filters) when every field is on the measure's table or on a
 table it reaches through one active many-to-one relationship. Visual/page/report
-`Categorical` filters become `WHERE` clauses; slicers become `(:p IS NULL OR col = :p)`
+`Categorical` filters become `WHERE` clauses; slicers become `(col = :p OR :p IS NULL)`
 (dates: `:p_from` / `:p_to`). TopN, relative-date and measure (Values) filters are TODOs:
 `order by .. limit n`, a pinned date window, `having`. Time-intelligence measures have no
 single-query SQL: query the metric (`mf query`) or write the window by hand.

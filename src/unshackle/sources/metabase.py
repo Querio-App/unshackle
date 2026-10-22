@@ -213,7 +213,7 @@ class SqlRenderer:
             return "1 = 1"
         ref = ".".join(f'"{p}"' for p in col if p)
         if name in binds:
-            return f"(:{binds[name]} IS NULL OR {ref} = :{binds[name]})"  # an empty filter is `1 = 1` in Metabase
+            return f"({ref} = :{binds[name]} OR :{binds[name]} IS NULL)"  # an empty filter is `1 = 1` in Metabase
         default = (values or {}).get(name, t.get("default")) if values is not None else t.get("default")
         if values is not None:
             if default in (None, []):
@@ -221,7 +221,7 @@ class SqlRenderer:
             vals = _list(default)
             return f"{ref} = {sql_literal(vals[0])}" if len(vals) == 1 else f"{ref} IN ({', '.join(sql_literal(v) for v in vals)})"
         b = _bind(name)
-        return f"(:{b} IS NULL OR {ref} = :{b})"
+        return f"({ref} = :{b} OR :{b} IS NULL)"
 
 
 # ------------------------------------------------------------ source
@@ -773,7 +773,7 @@ class MetabaseSource(Source):
             lit = f"'{SENTINEL}{bind}'"
             col = re.compile(rf'((?:"[^"]+"\.)*"[^"]+"|[\w.]+)\s*=\s*{re.escape(lit)}')
             if col.search(sql):
-                sql = col.sub(lambda mm: f"(:{bind} IS NULL OR {mm.group(1)} = :{bind})", sql)
+                sql = col.sub(lambda mm: f"({mm.group(1)} = :{bind} OR :{bind} IS NULL)", sql)
             elif lit in sql:
                 todos.append(f"dashboard filter {bind} compiled to an expression unshackle can't bind; replace {lit} in the SQL with :{bind}")
             else:

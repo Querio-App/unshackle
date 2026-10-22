@@ -76,7 +76,7 @@ Superset masks database passwords in exports; unshackle also drops `encrypted_ex
 | metric `A / B`, `A / NULLIF(B, 0)`, `1.0 * A / ...`, `CAST(A AS ...) / B` with A and B simple aggregates | ratio metric; sides that match another metric reuse it, others become `<metric>_numerator` / `_denominator` metrics |
 | virtual dataset (SQL) | `queries/<name>.sql` (TODO: materialize as a SQL model) + a semantic model named after it |
 | dashboard | `notebooks/<slug>.ipynb`; the `position` tree in order: each ROW (with its COLUMNs) is a row of cells, TABs and HEADERs become `## ` headings, MARKDOWN becomes markdown cells |
-| native filter `filter_select` | `:name` bind, written `(:name IS NULL OR col = :name)` into Superset's compiled SQL for the charts in its scope (`chartsInScope`, else `scope.rootPath` minus `excluded`) whose dataset has the column; empty filter = no filter, as in Superset; default from `defaultDataMask.filterState.value` |
+| native filter `filter_select` | `:name` bind, written `(col = :name OR :name IS NULL)` into Superset's compiled SQL for the charts in its scope (`chartsInScope`, else `scope.rootPath` minus `excluded`) whose dataset has the column; empty filter = no filter, as in Superset; default from `defaultDataMask.filterState.value` |
 | `echarts_timeseries_bar` / `_line` / `_smooth` / `_step` / `_scatter`, `echarts_area` | bar / line / point / area: `x_axis` -> x (temporal with `time_grain_sqla`, which the SQL already truncates), first metric -> y, first `groupby` -> color (+ `xOffset` when bars aren't stacked), `orientation: horizontal` swaps the axes; several line metrics -> layers |
 | `mixed_timeseries` | layers from `metrics` (`seriesType`) and `metrics_b` (`seriesTypeB`), dual axis with `yAxisIndexB: 1` |
 | `pie` | arc: `metric` -> theta, `groupby` -> color |
@@ -172,6 +172,6 @@ them with `columns:`.
   `GET /api/v1/security/csrf_token/`, sent as `X-CSRFToken` with the session cookie and
   a `Referer`.
 - The 6.x Docker images ship without database drivers: add `psycopg2-binary` (or your
-  warehouse's driver) to the image, as `tests/live_superset/Dockerfile` does.
+  warehouse's driver) to the image, as `tests/live/superset/Dockerfile` does.
 - No ZIP import yet: extract needs API access. Importing a Superset export ZIP someone
   downloads by hand is a planned follow-up.

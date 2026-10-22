@@ -11,8 +11,8 @@ from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources.metabase import MetabaseSource, _clause, _native, _stages
 
-FIXTURES = Path(__file__).parent / "fixtures" / "metabase"  # extracted from Metabase v0.64.1 (tests/live_metabase)
-STATUS = '(:status IS NULL OR "public"."orders"."status" = :status)'
+FIXTURES = Path(__file__).parent / "fixtures" / "metabase"  # extracted from Metabase v0.64.1 (tests/live/test_metabase_live.py)
+STATUS = '("public"."orders"."status" = :status OR :status IS NULL)'
 
 
 def repo_with_fixtures(tmp_path: Path) -> Path:
@@ -61,7 +61,7 @@ def test_parse_native_questions_and_models(tmp_path: Path):
     assert "WHERE s.region = :region" in region.sql and "{{" not in region.sql and "since" not in region.sql
     assert "Parameters: :region (text, default 'West')" in region.description and "optional clause dropped" in region.description
     mode = qs["Completed revenue by shipping mode"]  # snippet inlined, field filter is optional like in Metabase
-    assert "WHERE o.status = 'COMPLETED' AND (:mode IS NULL OR \"public\".\"shippings\".\"mode\" = :mode)" in mode.sql
+    assert "WHERE o.status = 'COMPLETED' AND (\"public\".\"shippings\".\"mode\" = :mode OR :mode IS NULL)" in mode.sql
     from_model = qs["Orders by region from the model"]  # {{#44-order-facts}} -> the model's SQL as a subquery
     assert "FROM (\nSELECT o.id AS order_id" in from_model.sql and ") AS f" in from_model.sql and not from_model.todo
     facts = qs["Order facts"]

@@ -141,7 +141,7 @@ target:
 keys: [region, mode]
 ```
 
-`tests/live_redash/` runs this end to end against Redash in Docker.
+`tests/live/test_redash_live.py` runs this end to end against Redash in Docker.
 
 ## Gotchas
 

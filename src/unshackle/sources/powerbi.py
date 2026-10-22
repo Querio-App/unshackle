@@ -2543,9 +2543,9 @@ class _Parser:
             if not all(joinable(t) for t in r.tables):
                 continue
             if kind == "date":
-                where.append(lambda q, f=f, p=param: f"(:{p}_from IS NULL OR {self._field_sql(pm, f, q)} >= CAST(:{p}_from AS DATE)) AND (:{p}_to IS NULL OR {self._field_sql(pm, f, q)} < CAST(:{p}_to AS DATE))")
+                where.append(lambda q, f=f, p=param: f"({self._field_sql(pm, f, q)} >= CAST(:{p}_from AS DATE) OR :{p}_from IS NULL) AND ({self._field_sql(pm, f, q)} < CAST(:{p}_to AS DATE) OR :{p}_to IS NULL)")
             else:
-                where.append(lambda q, f=f, p=param: f"(:{p} IS NULL OR {self._field_sql(pm, f, q)} = :{p})")
+                where.append(lambda q, f=f, p=param: f"({self._field_sql(pm, f, q)} = :{p} OR :{p} IS NULL)")
         tables = [base] + list(joins)
         q: Any = _Recorder() if len(tables) == 1 else _Qualified({t: _alias(t) for t in tables})
         select = [f"{self._field_sql(pm, f, q)} AS {a}" for a, f in dims] + [f"{self._field_sql(pm, f, q)} AS {a}" for a, f in vals]

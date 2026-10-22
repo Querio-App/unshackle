@@ -446,3 +446,18 @@ def test_semantic_yaml_sources_do_not_pick_the_first_time_column(tmp_path: Path)
 @pytest.mark.parametrize("tool", ["metabase", "superset", "redash"])
 def test_new_sources_detect_postgres(tmp_path: Path, tool: str):
     assert get_source(tool).parse(_seed(tmp_path, tool)).warehouse == "postgres"
+
+
+@pytest.mark.parametrize("tool", ["metabase", "superset", "powerbi"])
+def test_optional_filter_binds_are_typed_before_the_null_check(tmp_path: Path, tool: str):
+    """`(:p IS NULL OR col = :p)` fails on Postgres with server-side binding (psycopg 3): the type of
+    :p can't be determined from `IS NULL`. The comparison comes first so the parameter takes the column's type."""
+    import re
+
+    b = get_source(tool).parse(_seed(tmp_path, tool))
+    sqls = [t.sql for d in b.dashboards for t in d.tiles] + [q.sql for q in b.queries]
+    optional = [s for s in sqls if "IS NULL" in s and re.search(r":\w+ IS NULL", s)]
+    assert optional
+    for sql in optional:
+        assert not re.search(r"\(:\w+ IS NULL OR", sql), sql
+        assert re.search(r":(\w+)(?: AS DATE\))? OR :\1 IS NULL\)", sql), sql

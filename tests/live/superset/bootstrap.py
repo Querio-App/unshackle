@@ -1,6 +1,6 @@
 """Create the test content in a fresh Superset (docker-compose.yml here).
 
-    python tests/live_superset/bootstrap.py http://localhost:8188   # prints the ids
+Called by tests/live/test_superset_live.py once the warehouse is loaded.
 
 Creates: the Postgres warehouse connection, a physical dataset (public.orders) with a
 calculated column and five metrics (sum, count, a ratio, a CASE WHEN filter, one that
@@ -9,20 +9,18 @@ big number, table, and a pie saved without a query_context, as older charts are)
 dashboard with a markdown block and a native select filter, a "Sales" role with access
 to orders, and one row-level security rule. Everything goes through the HTTP API, with
 the query_context each chart would get from the Superset frontend. Idempotent only on a
-fresh instance (docker-compose down -v first).
+fresh instance.
 """
 
 from __future__ import annotations
 
 import json
 import re
-import sys
 import time
 
 import httpx
 
 ADMIN = {"username": "admin", "password": "Unshackle-test-1!"}
-WAREHOUSE_URI = "postgresql+psycopg2://dunder:dunder@warehouse:5432/dunder"
 
 
 def wait_up(base: str, timeout: float = 300) -> None:
@@ -100,10 +98,11 @@ def axis(col: str, grain: str | None = None) -> dict:
     return {**out, "timeGrain": grain} if grain else out
 
 
-def create_content(api: Api) -> dict[str, int]:
+def create_content(api: Api, warehouse_password: str) -> dict[str, int]:
     ids: dict[str, int] = {}
+    uri = f"postgresql+psycopg2://unshackle:{warehouse_password}@warehouse:5432/dunder_mifflin"
     db = ids["database"] = api.post("/api/v1/database/", {
-        "database_name": "Dunder Mifflin", "sqlalchemy_uri": WAREHOUSE_URI, "expose_in_sqllab": True})["id"]
+        "database_name": "Dunder Mifflin", "sqlalchemy_uri": uri, "expose_in_sqllab": True})["id"]
 
     orders = ids["orders"] = dataset(api, db, "public", "orders")
     update_dataset(api, orders, [
@@ -121,18 +120,18 @@ def create_content(api: Api) -> dict[str, int]:
         main_dttm_col="purchased_at", description="One row per order.")
 
     shipped = ids["shipped_orders"] = dataset(api, db, "public", "shipped_orders", sql=(
-        "SELECT o.id, o.status, o.post_discount_revenue, o.purchased_at, s.region, s.mode\n"
-        "FROM orders o\nJOIN shippings s ON s.order_id = o.id"))
+        "SELECT o.order_id, o.status, o.post_discount_revenue, o.purchased_at, s.shipping_region, s.shipping_mode\n"
+        "FROM orders o\nJOIN shippings s ON s.shipping_id = o.shipping_id"))
     update_dataset(api, shipped, [
         {"metric_name": "shipped_revenue", "verbose_name": "Shipped revenue", "expression": "SUM(post_discount_revenue)"},
     ], [], description="Orders with their shipping region and mode.")
 
     ids["Revenue by region"] = chart(api, "Revenue by region", "echarts_timeseries_bar", shipped, {
-        "x_axis": "region", "metrics": ["shipped_revenue"], "groupby": ["mode"], "orientation": "vertical",
+        "x_axis": "shipping_region", "metrics": ["shipped_revenue"], "groupby": ["shipping_mode"], "orientation": "vertical",
         "adhoc_filters": [], "row_limit": 10000, "order_desc": True, "stack": "Stack"},
-        [{"columns": [axis("region"), "mode"], "metrics": ["shipped_revenue"], "orderby": [["shipped_revenue", False]],
-          "series_columns": ["mode"],
-          "post_processing": [{"operation": "pivot", "options": {"index": ["region"], "columns": ["mode"],
+        [{"columns": [axis("shipping_region"), "shipping_mode"], "metrics": ["shipped_revenue"], "orderby": [["shipped_revenue", False]],
+          "series_columns": ["shipping_mode"],
+          "post_processing": [{"operation": "pivot", "options": {"index": ["shipping_region"], "columns": ["shipping_mode"],
                                                                   "aggregates": {"shipped_revenue": {"operator": "mean"}},
                                                                   "drop_missing_columns": False}}, {"operation": "flatten"}]}])
     ids["Monthly revenue"] = chart(api, "Monthly revenue", "echarts_timeseries_line", orders, {
@@ -227,10 +226,7 @@ def create_content(api: Api) -> dict[str, int]:
     return ids
 
 
-def main(base: str) -> dict[str, int]:
+def main(base: str, warehouse_password: str) -> dict[str, int]:
     wait_up(base)
-    return create_content(Api(base))
+    return create_content(Api(base), warehouse_password)
 
-
-if __name__ == "__main__":
-    print(json.dumps(main(sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8188")))

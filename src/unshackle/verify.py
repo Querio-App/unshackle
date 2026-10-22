@@ -83,6 +83,16 @@ def _to_num(x):
     return out
 
 
+def _blank_is_null(df):
+    """A CSV export writes an empty string and NULL the same way, so compare them as equal."""
+    import pandas as pd
+
+    for c in df.columns:
+        if df[c].dtype == object or pd.api.types.is_string_dtype(df[c].dtype):
+            df[c] = df[c].mask(df[c].map(lambda v: isinstance(v, str) and not v.strip()))
+    return df
+
+
 def _sortable(df, cols):
     key = df[cols].copy()
     for c in cols:
@@ -105,7 +115,7 @@ def compare(
     Every source column must be compared: map renamed ones with `columns`
     ({source name: target name}) or list deliberate gaps in `ignore`.
     """
-    a, b = _norm(source), _norm(target)
+    a, b = _blank_is_null(_norm(source)), _blank_is_null(_norm(target))
     if columns:
         a = a.rename(columns={snake(k): snake(v) for k, v in columns.items()})
     for col in ignore or []:

@@ -1,6 +1,6 @@
 """Lightdash, live: self-hosted Lightdash in Docker over the Dunder Mifflin warehouse.
 
-1. warehouse + Lightdash up; CSVs loaded; the dbt project (tests/live/lightdash/dbt) run
+1. warehouse + Lightdash up; the dataset loaded; the dbt project (tests/live/lightdash/dbt) run
    with a local dbt-postgres, then deployed with the Lightdash CLI (`lightdash deploy`)
 2. admin user, organization, personal access token and project created through the API
 3. charts and a dashboard uploaded as code (tests/live/lightdash/content)
@@ -132,7 +132,7 @@ def test_lightdash_end_to_end(tmp_path: Path):
     from test_ossie import _check
 
     with Stack("lightdash") as stack:
-        assert stack.load_csvs()
+        assert stack.load_data()
         dbt, dbt_env = _dbt(stack)
         target = tmp_path / "dbt-target"
         dbt_env["DBT_LOG_PATH"] = str(tmp_path / "dbt-logs")
