@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "FCA_Core_Report"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "a04fe960-a47a-4cb2-813c-637e8166f2c6"
+  }
+}
