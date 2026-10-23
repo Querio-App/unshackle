@@ -33,6 +33,9 @@ def render_all(bundle: Bundle, target: Target) -> dict[str, tuple[str, bool]]:
     if layout.is_dbt:
         for rel, content in semantic.render(bundle, layout, getattr(target, "taken_types", {})).items():
             out[rel] = (content, False)
+        for sm in bundle.semantic_models:
+            if sm.sql:  # a model defined by a query: MetricFlow refs it as a dbt model
+                out[layout.rel("sql_models", f"{sm.table.split('.')[-1]}.sql")] = (f"-- {sm.source_ref or bundle.tool}\n{sm.sql.strip()}\n", False)
         ignore = target.read(".dbtignore") or ""
         if DBTIGNORE not in ignore.splitlines():
             # dbt reads every YAML file under models/ as properties and rejects Ossie's `metrics`

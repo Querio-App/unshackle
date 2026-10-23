@@ -39,11 +39,11 @@ def test_parse_tables_and_semantic_models(tmp_path: Path):
     assert [c.name for c in tables["orders"].columns][:3] == ["row_id", "order_id", "order_date"]
     assert _by_name(tables["orders"].columns)["sales"].description == "Gross sales in USD, before discounts."
     models = _by_name(b.semantic_models)
-    assert set(models) == {"orders", "returns_custom_sql", "sales_targets"}
+    assert set(models) == {"orders", "returns_custom_sql", "sales_targets", "customer_name_lod"}
     orders = models["orders"]
     assert orders.table == "analytics.orders"
     assert orders.default_time_dimension == ""  # several time columns, none declared: no guess
-    assert [(e.name, e.type, e.expr) for e in orders.entities] == [("orders", "primary", "row_id")]
+    assert [(e.name, e.type, e.expr) for e in orders.entities] == [("orders", "primary", "row_id"), ("customer_name", "foreign", "")]
     dims = _by_name(orders.dimensions)
     assert dims["order_date"].type == "time" and dims["region"].type == "categorical"
     assert dims["order_size"].expr == "case when sales >= 500 then 'Large' when sales >= 100 then 'Medium' else 'Small' end"
@@ -78,16 +78,20 @@ def test_parse_metrics_and_todos(tmp_path: Path):
     assert "WINDOW_SUM" in rs.todo and "translate-metrics" in rs.todo
     assert rs.source_language == "tableau" and rs.source_expression.startswith("WINDOW_SUM(")
     dims = _by_name(_by_name(b.semantic_models)["orders"].dimensions)
-    lod = dims["customer_first_order"]
-    assert "FIXED LOD" in lod.todo and lod.source_expression == "{FIXED [Customer Name] : MIN([Order Date])}"
+    assert "customer_first_order" not in dims
+    # {FIXED [Customer Name] : MIN([Order Date])}: a SQL model at that grain, related to orders on customer_name
+    lod = _by_name(b.semantic_models)["customer_name_lod"]
+    assert lod.sql == "select customer_name, min(order_date) as customer_first_order\nfrom analytics.orders\ngroup by 1"
+    assert [(e.name, e.type) for e in lod.entities] == [("customer_name", "primary")]
+    first = _by_name(lod.dimensions)["customer_first_order"]
+    assert (first.type, first.time_granularity, first.todo) == ("time", "day", "")
     assert "parameter" in dims["above_target"].todo and "[Target Margin]" in dims["above_target"].todo
     assert dims["above_target"].source_expression == "[Profit Ratio] > [Parameters].[Target Margin]"
     assert "ATTR()" in dims["category_label"].todo
     assert "floor(sales / 100) * 100" in dims["sales_bin"].todo
     assert "case when region in ('East', 'West') then 'Coasts' else region end" in dims["region_group"].todo
     assert "set" in dims["top_customers_set"].todo
-    lodq = _by_name(b.queries)["Customer First Order (FIXED LOD)"]
-    assert lodq.sql.startswith("select customer_name, min(order_date) as customer_first_order\nfrom analytics.orders")
+    assert not any("FIXED" in q.name for q in b.queries)
 
 
 def test_parse_row_filters_permissions_knowledge(tmp_path: Path):
@@ -97,7 +101,8 @@ def test_parse_row_filters_permissions_knowledge(tmp_path: Path):
     assert (mgr.table, mgr.predicate, mgr.groups) == ("analytics.orders", "regional_manager = {{ user.email }}", ["*"])
     assert "USERNAME()" in mgr.todo and "(datasource filter)" in mgr.source_ref
     exec_ = rf["manager_or_executive"]
-    assert exec_.predicate == "" and "ISMEMBEROF('Executives')" in exec_.todo
+    assert exec_.predicate == "'Executives' in ({{ user.groups }}) or regional_manager = {{ user.email }}"
+    assert exec_.groups == ["*"] and "{{ user.groups }}" in exec_.todo
     perms = {(p.principal, p.action, p.resource_id, p.effect) for p in b.permissions}
     assert ("group:Sales Leadership", "view", "executive-overview", "permit") in perms
     assert ("group:Sales Leadership", "edit", "executive-overview", "permit") in perms
@@ -182,10 +187,12 @@ def test_build_and_run_notebook(tmp_path: Path):
     assert metrics["profit_ratio"]["type_params"] == {"numerator": "profit", "denominator": "sales"}
     text = (tmp_path / "models/semantic/orders.yml").read_text()
     assert "running_sales" not in metrics and todo_for(text, "metric", "running_sales")
-    assert "[tableau] {FIXED" in todo_for(text, "dimension", "customer_first_order")
+    assert not todo_for(text, "dimension", "customer_first_order")
+    lod = yaml.safe_load((tmp_path / "models/semantic/customer_name_lod.yml").read_text())["semantic_models"][0]
+    assert lod["model"] == "ref('customer_name_lod')" and lod["dimensions"][0]["name"] == "customer_first_order"
+    assert "min(order_date) as customer_first_order" in (tmp_path / "models/unshackle/customer_name_lod.sql").read_text()
     assert (tmp_path / "models/semantic/returns_custom_sql.yml").exists()
     assert (tmp_path / "catalog/warehouse/analytics/orders.yml").exists()
-    assert (tmp_path / "queries/customer-first-order-fixed-lod.sql").exists()
     assert (tmp_path / "knowledge/superstore-sales-glossary.md").exists()
     rows = yaml.safe_load((tmp_path / "policies/row_filters.tableau.yml").read_text())["row_filters"]
     assert any(r["predicate"] == "regional_manager = {{ user.email }}" for r in rows)
@@ -450,7 +457,7 @@ def test_same_table_in_two_workbooks_merges(tmp_path: Path):
     other = twb.replace("formula='SUM([Sales])'", "formula='SUM([Sales]) * 0.9'", 1)
     (store.root / "workbooks" / "wb-copy.twb").write_text(other, encoding="utf-8")
     b = TableauSource().parse(RawStore(tmp_path, "tableau"))
-    assert sorted(sm.name for sm in b.semantic_models) == ["orders", "returns_custom_sql", "sales_targets"]
+    assert sorted(sm.name for sm in b.semantic_models) == ["customer_name_lod", "orders", "returns_custom_sql", "sales_targets"]
     assert [m.name for m in b.metrics].count("total_sales") == 1
     assert any("different formula" in w.message and "Total Sales" in w.item for w in b.warnings)
     assert {d.slug for d in b.dashboards} >= {"executive-overview", "wb-copy-executive-overview"}

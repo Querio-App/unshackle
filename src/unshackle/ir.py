@@ -47,6 +47,7 @@ class Entity:
     name: str
     type: Literal["primary", "foreign", "unique", "natural"] = "primary"
     expr: str = ""
+    join_type: str = ""  # foreign entities from a source join: how the source joins (inner, left, ...)
 
 
 @dataclass
@@ -87,6 +88,9 @@ class SemanticModel:
     datasource: str = ""
     source_ref: str = ""
     todo: str = ""
+    # A query the model reads instead of a table (Ossie writes it as the dataset source; in dbt
+    # projects it is written as the SQL model `table` names).
+    sql: str = ""
 
 
 @dataclass
