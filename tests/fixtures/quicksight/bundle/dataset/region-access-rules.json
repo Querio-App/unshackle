@@ -1,13 +1,17 @@
 {
-  "resourceType": "dataSet",
+  "resourceType": "dataset",
+  "tags": [
+    {
+      "key": "project",
+      "value": "unshackle-live"
+    }
+  ],
   "dataSetId": "region-access-rules",
   "name": "Region access rules",
-  "importMode": "DIRECT_QUERY",
-  "useAs": "RLS_RULES",
   "physicalTableMap": {
     "rules-pt": {
       "relationalTable": {
-        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin-athena",
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
         "catalog": "AwsDataCatalog",
         "schema": "dunder_mifflin",
         "name": "region_access_rules",
@@ -36,21 +40,27 @@
       }
     }
   },
+  "importMode": "DIRECT_QUERY",
+  "dataSetUsageConfiguration": {
+    "disableUseAsDirectQuerySource": false,
+    "disableUseAsImportedSource": false
+  },
   "permissions": [
     {
-      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/jhalpert",
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:user/default/jhalpert",
       "actions": [
-        "quicksight:DescribeDataSet",
-        "quicksight:DescribeDataSetPermissions",
-        "quicksight:PassDataSet",
-        "quicksight:DescribeIngestion",
         "quicksight:ListIngestions",
-        "quicksight:UpdateDataSet",
         "quicksight:DeleteDataSet",
-        "quicksight:CreateIngestion",
+        "quicksight:UpdateDataSetPermissions",
         "quicksight:CancelIngestion",
-        "quicksight:UpdateDataSetPermissions"
+        "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:CreateIngestion"
       ]
     }
-  ]
+  ],
+  "useAs": "RLS_RULES"
 }

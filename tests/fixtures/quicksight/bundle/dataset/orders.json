@@ -1,12 +1,73 @@
 {
-  "resourceType": "dataSet",
+  "resourceType": "dataset",
+  "tags": [
+    {
+      "key": "project",
+      "value": "unshackle-live"
+    }
+  ],
   "dataSetId": "orders",
   "name": "Orders",
-  "importMode": "DIRECT_QUERY",
   "physicalTableMap": {
+    "accounts-pt": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "accounts",
+        "inputColumns": [
+          {
+            "name": "account_id",
+            "type": "STRING"
+          },
+          {
+            "name": "account_name",
+            "type": "STRING"
+          },
+          {
+            "name": "business_size",
+            "type": "INTEGER"
+          },
+          {
+            "name": "payment_cycle",
+            "type": "STRING"
+          },
+          {
+            "name": "account_manager",
+            "type": "STRING"
+          }
+        ]
+      }
+    },
+    "products-pt": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "products",
+        "inputColumns": [
+          {
+            "name": "product_id",
+            "type": "STRING"
+          },
+          {
+            "name": "product_name",
+            "type": "STRING"
+          },
+          {
+            "name": "paper_type",
+            "type": "STRING"
+          },
+          {
+            "name": "price",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    },
     "orders-pt": {
       "relationalTable": {
-        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin-athena",
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
         "catalog": "AwsDataCatalog",
         "schema": "dunder_mifflin",
         "name": "orders",
@@ -73,118 +134,25 @@
           }
         ]
       }
-    },
-    "accounts-pt": {
-      "relationalTable": {
-        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin-athena",
-        "catalog": "AwsDataCatalog",
-        "schema": "dunder_mifflin",
-        "name": "accounts",
-        "inputColumns": [
-          {
-            "name": "account_id",
-            "type": "STRING"
-          },
-          {
-            "name": "account_name",
-            "type": "STRING"
-          },
-          {
-            "name": "business_size",
-            "type": "INTEGER"
-          },
-          {
-            "name": "payment_cycle",
-            "type": "STRING"
-          },
-          {
-            "name": "account_manager",
-            "type": "STRING"
-          }
-        ]
-      }
-    },
-    "products-pt": {
-      "relationalTable": {
-        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin-athena",
-        "catalog": "AwsDataCatalog",
-        "schema": "dunder_mifflin",
-        "name": "products",
-        "inputColumns": [
-          {
-            "name": "product_id",
-            "type": "STRING"
-          },
-          {
-            "name": "product_name",
-            "type": "STRING"
-          },
-          {
-            "name": "paper_type",
-            "type": "STRING"
-          },
-          {
-            "name": "price",
-            "type": "DECIMAL"
-          }
-        ]
-      }
     }
   },
   "logicalTableMap": {
-    "orders-lt": {
-      "alias": "orders",
-      "source": {
-        "physicalTableId": "orders-pt"
-      }
-    },
     "accounts-lt": {
       "alias": "accounts",
+      "dataTransforms": [
+        {
+          "renameColumnOperation": {
+            "columnName": "account_id",
+            "newColumnName": "account_id[accounts]"
+          }
+        }
+      ],
       "source": {
         "physicalTableId": "accounts-pt"
       }
     },
-    "products-lt": {
-      "alias": "products",
-      "source": {
-        "physicalTableId": "products-pt"
-      },
-      "dataTransforms": [
-        {
-          "renameColumnOperation": {
-            "columnName": "price",
-            "newColumnName": "unit_price"
-          }
-        }
-      ]
-    },
-    "orders-accounts": {
-      "alias": "Orders and accounts",
-      "source": {
-        "joinInstruction": {
-          "leftOperand": "orders-lt",
-          "rightOperand": "accounts-lt",
-          "type": "LEFT",
-          "rightJoinKeyProperties": {
-            "uniqueKey": true
-          },
-          "onClause": "{account_id} = {account_id[accounts]}"
-        }
-      }
-    },
     "orders-joined": {
       "alias": "Orders, accounts and products",
-      "source": {
-        "joinInstruction": {
-          "leftOperand": "orders-accounts",
-          "rightOperand": "products-lt",
-          "type": "LEFT",
-          "rightJoinKeyProperties": {
-            "uniqueKey": true
-          },
-          "onClause": "{product_id} = {product_id[products]}"
-        }
-      },
       "dataTransforms": [
         {
           "createColumnsOperation": {
@@ -193,17 +161,35 @@
                 "columnName": "order_size",
                 "columnId": "c-order-size",
                 "expression": "ifelse({quantity} >= 100, 'large', 'small')"
-              },
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
               {
                 "columnName": "purchase_month",
                 "columnId": "c-purchase-month",
                 "expression": "truncDate('MM', {purchased_at})"
-              },
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
               {
                 "columnName": "account_label",
                 "columnId": "c-account-label",
                 "expression": "concat({account_name}, ' (', toString({business_size}), ')')"
-              },
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
               {
                 "columnName": "revenue_per_unit_price",
                 "columnId": "c-rev-per-price",
@@ -220,7 +206,9 @@
         },
         {
           "filterOperation": {
-            "conditionExpression": "{status} <> 'TEST'"
+            "conditionExpression": "{status} <> 'TEST'",
+            "enabled": false,
+            "inverse": false
           }
         },
         {
@@ -252,9 +240,61 @@
             ]
           }
         }
-      ]
+      ],
+      "source": {
+        "joinInstruction": {
+          "leftOperand": "orders-accounts",
+          "rightOperand": "products-lt",
+          "rightJoinKeyProperties": {
+            "uniqueKey": true
+          },
+          "type": "LEFT",
+          "onClause": "{product_id} = {product_id[products]}"
+        }
+      }
+    },
+    "products-lt": {
+      "alias": "products",
+      "dataTransforms": [
+        {
+          "renameColumnOperation": {
+            "columnName": "product_id",
+            "newColumnName": "product_id[products]"
+          }
+        },
+        {
+          "renameColumnOperation": {
+            "columnName": "price",
+            "newColumnName": "unit_price"
+          }
+        }
+      ],
+      "source": {
+        "physicalTableId": "products-pt"
+      }
+    },
+    "orders-lt": {
+      "alias": "orders",
+      "source": {
+        "physicalTableId": "orders-pt"
+      }
+    },
+    "orders-accounts": {
+      "alias": "Orders and accounts",
+      "source": {
+        "joinInstruction": {
+          "leftOperand": "orders-lt",
+          "rightOperand": "accounts-lt",
+          "rightJoinKeyProperties": {
+            "uniqueKey": true
+          },
+          "type": "LEFT",
+          "onClause": "{account_id} = {account_id[accounts]}"
+        }
+      }
     }
   },
+  "importMode": "DIRECT_QUERY",
   "fieldFolders": {
     "Revenue": {
       "description": "Order revenue before and after discounts",
@@ -264,17 +304,6 @@
       ]
     }
   },
-  "columnLevelPermissionRules": [
-    {
-      "principals": [
-        "arn:aws:quicksight:us-east-1:111122223333:group/default/Finance"
-      ],
-      "columnNames": [
-        "order_contact_name",
-        "order_contact_email"
-      ]
-    }
-  ],
   "rowLevelPermissionTagConfiguration": {
     "status": "ENABLED",
     "tagRules": [
@@ -285,30 +314,45 @@
       }
     ]
   },
+  "columnLevelPermissionRules": [
+    {
+      "principals": [
+        "arn:aws:quicksight:us-east-1:123456789012:group/default/Finance"
+      ],
+      "columnNames": [
+        "order_contact_name",
+        "order_contact_email"
+      ]
+    }
+  ],
+  "dataSetUsageConfiguration": {
+    "disableUseAsDirectQuerySource": false,
+    "disableUseAsImportedSource": false
+  },
   "permissions": [
     {
-      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/jhalpert",
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:group/default/Analysts",
       "actions": [
-        "quicksight:DescribeDataSet",
-        "quicksight:DescribeDataSetPermissions",
-        "quicksight:PassDataSet",
-        "quicksight:DescribeIngestion",
         "quicksight:ListIngestions",
-        "quicksight:UpdateDataSet",
-        "quicksight:DeleteDataSet",
-        "quicksight:CreateIngestion",
-        "quicksight:CancelIngestion",
-        "quicksight:UpdateDataSetPermissions"
+        "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeIngestion"
       ]
     },
     {
-      "principal": "arn:aws:quicksight:us-east-1:111122223333:group/default/Analysts",
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:user/default/jhalpert",
       "actions": [
-        "quicksight:DescribeDataSet",
-        "quicksight:DescribeDataSetPermissions",
+        "quicksight:ListIngestions",
+        "quicksight:DeleteDataSet",
+        "quicksight:UpdateDataSetPermissions",
+        "quicksight:CancelIngestion",
         "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DescribeDataSet",
         "quicksight:DescribeIngestion",
-        "quicksight:ListIngestions"
+        "quicksight:CreateIngestion"
       ]
     }
   ]

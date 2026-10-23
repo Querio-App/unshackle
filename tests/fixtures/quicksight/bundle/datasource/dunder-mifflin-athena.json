@@ -1,5 +1,11 @@
 {
-  "resourceType": "dataSource",
+  "resourceType": "datasource",
+  "tags": [
+    {
+      "key": "project",
+      "value": "unshackle-live"
+    }
+  ],
   "dataSourceId": "dunder-mifflin-athena",
   "name": "Dunder Mifflin (Athena)",
   "type": "ATHENA",
@@ -8,13 +14,27 @@
       "workGroup": "primary"
     }
   },
+  "sslProperties": {
+    "disableSsl": false
+  },
   "permissions": [
     {
-      "principal": "arn:aws:quicksight:us-east-1:111122223333:group/default/Analysts",
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:group/default/Analysts",
       "actions": [
-        "quicksight:DescribeDataSource",
+        "quicksight:PassDataSource",
         "quicksight:DescribeDataSourcePermissions",
-        "quicksight:PassDataSource"
+        "quicksight:DescribeDataSource"
+      ]
+    },
+    {
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:user/default/jhalpert",
+      "actions": [
+        "quicksight:PassDataSource",
+        "quicksight:DescribeDataSourcePermissions",
+        "quicksight:UpdateDataSource",
+        "quicksight:UpdateDataSourcePermissions",
+        "quicksight:DescribeDataSource",
+        "quicksight:DeleteDataSource"
       ]
     }
   ]

@@ -436,7 +436,10 @@ class _Parser:
         if kind == "field":
             return Ref(value[1:-1].strip())
         if kind == "param":
-            return Param(value[2:-1].strip())
+            name = value[2:-1].strip()
+            if name.lower() == "visualdimensions":  # the export writes $visualDimensions as ${visualDimensions}
+                return Word("$visualDimensions")
+            return Param(name)
         if kind == "ident":
             if self.peek()[1] == "(":
                 return Call(value.lower(), self.args(")"))
@@ -1082,10 +1085,23 @@ def _title(visual: dict[str, Any]) -> str:
 
 
 def _plain(markup: str) -> str:
+    """Text box / rich text markup -> plain text. The export indents the markup (a line break and spaces around each
+    tag) and keeps a typed space next to a tag as &nbsp;, so line breaks in the markup are layout, not text."""
     import html
 
-    text = re.sub(r"<br\s*/?>|</p>|</li>", "\n", str(markup or ""))
-    return html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
+    text = re.sub(r"\n\s*", "", str(markup or ""))
+    text = re.sub(r"<br\s*/?>|</p>|</li>", "\n", text)
+    return html.unescape(re.sub(r"<[^>]+>", "", text)).replace("\xa0", " ").strip()
+
+
+def _timestamp(value: Any) -> str:
+    """A Timestamp member as 'YYYY-MM-DD HH:MM:SS': the asset bundle writes epoch milliseconds (1735689600000),
+    the Describe* API an ISO string ('2025-01-01T00:00:00Z' or '2025-01-01 00:00:00+00:00')."""
+    from datetime import datetime, timezone
+
+    if isinstance(value, (int, float)) or re.fullmatch(r"-?\d{9,}", str(value)):
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return str(value).replace("T", " ").rstrip("Z").split("+")[0][:19]
 
 
 def _px(value: Any) -> float:
@@ -1596,9 +1612,11 @@ class QuickSightSource(Source):
             static = ((spec.get("DefaultValues") or {}).get("StaticValues")) or []
             if spec.get("ParameterValueType") == "MULTI_VALUED":
                 multi.add(pname)
-            default = static[0] if len(static) == 1 else (static or None)
             fkind = {"DateTimeParameterDeclaration": "date", "IntegerParameterDeclaration": "number",
                      "DecimalParameterDeclaration": "number"}.get(ptype, "value")
+            if fkind == "date":
+                static = [_timestamp(v) for v in static]
+            default = static[0] if len(static) == 1 else (static or None)
             dash.filters.append(DashboardFilter(bind, f"parameter {pname}", default, fkind))  # type: ignore[arg-type]
         controls: dict[str, str] = {}  # filter id -> control title
         for sheet in d.get("Sheets") or []:
@@ -2023,6 +2041,8 @@ def _filter_sql(ftype: str, spec: dict[str, Any], col: str, ctx: _Ctx, field_nam
         kind, conf = _one(spec.get("Configuration"))
         null = str(conf.get("NullOption") or null)
         op = str(conf.get("MatchOperator") or "EQUALS")
+        if kind == "FilterListConfiguration":  # a list of values: QuickSight only allows CONTAINS (include) / DOES_NOT_CONTAIN (exclude)
+            op = {"CONTAINS": "EQUALS", "DOES_NOT_CONTAIN": "DOES_NOT_EQUAL"}.get(op, op)
         if conf.get("ParameterName"):
             if op != "EQUALS":
                 raise Untranslatable(f"{op} against a parameter")
@@ -2079,8 +2099,7 @@ def _filter_sql(ftype: str, spec: dict[str, Any], col: str, ctx: _Ctx, field_nam
             elif v.get("StaticValue") is not None:
                 value = v["StaticValue"]
                 if timed:
-                    ts = str(value).replace("T", " ").rstrip("Z").split("+")[0][:19]
-                    parts.append(f"{target} {o} TIMESTAMP {_str(ts)}")
+                    parts.append(f"{target} {o} TIMESTAMP {_str(_timestamp(value))}")
                 else:
                     parts.append(f"{target} {o} {value}")
         if not parts:

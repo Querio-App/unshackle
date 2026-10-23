@@ -20,7 +20,8 @@
   `QUICKSIGHT_JSON`) with `Describe*` calls as a fallback, `unshackle import quicksight
   <file.qs>`, tile SQL generated from datasets, calculated fields and filter groups,
   permissions, column-level security and row-level security. Install with
-  `unshackle[quicksight]`. Fixtures follow the service model; the live test hasn't run yet.
+  `unshackle[quicksight]`. Fixtures are a real export; the live test checks the migrated
+  SQL on Athena.
 - Heat maps: tiles can use the `rect` mark.
 
 ## 0.1.0

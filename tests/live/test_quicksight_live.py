@@ -4,8 +4,9 @@ Unlike the Docker-based live tests this one needs an AWS account (see tests/live
 
 1. the Dunder Mifflin Parquet files (plus a small RLS rules table) uploaded to S3 and registered as Glue tables
    through Athena DDL: Athena is the QuickSight data source, in direct query mode (no SPICE)
-2. QuickSight content created through the API from the offline fixture (tests/fixtures/quicksight/bundle):
-   CreateDataSource, CreateDataSet x3, CreateAnalysis and CreateDashboard with `Definition`, groups for its permissions
+2. QuickSight content created through the API from the offline fixture (tests/fixtures/quicksight/bundle, itself a
+   real export): CreateDataSource, CreateDataSet x3, CreateAnalysis and CreateDashboard with `Definition`, groups for
+   its permissions; every asset tagged project=unshackle-live
 3. `unshackle init / extract --only dashboard:... --only analysis:... / build quicksight` in a temp repo: the extract
    runs the real asset bundle export (StartAssetBundleExportJob, QUICKSIGHT_JSON)
 4. parity with `unshackle verify` on Athena (PyAthena's SQLAlchemy dialect). Source numbers: reference SQL over the same
@@ -13,9 +14,8 @@ Unlike the Docker-based live tests this one needs an AWS account (see tests/live
    visual's data without the Pixel Perfect add-on. With QUICKSIGHT_LIVE_SNAPSHOTS=1 (needs that add-on and capacity
    pricing for anonymous users) the table visual is also compared with QuickSight's own CSV (StartDashboardSnapshotJob).
 
-Skipped unless UNSHACKLE_LIVE=1 and QUICKSIGHT_ACCOUNT_ID are set. It has not run yet: no account was available
-when it was written. QUICKSIGHT_LIVE_SAVE_FIXTURE=1 copies the real bundle to tests/live/fixtures/quicksight/, which
-should replace the hand-written fixture.
+Skipped unless UNSHACKLE_LIVE=1, QUICKSIGHT_ACCOUNT_ID, QUICKSIGHT_LIVE_BUCKET and QUICKSIGHT_LIVE_OWNER are set.
+QUICKSIGHT_LIVE_SAVE_FIXTURE=1 writes the new export over tests/fixtures/quicksight/bundle (example account and owner).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from urllib.parse import quote
 
 import pytest
 import yaml
-from harness import DATA, ENABLED, LIVE, SKIP_REASON, run_unshackle, wait_for, write_case
+from harness import DATA, ENABLED, SKIP_REASON, run_unshackle, wait_for, write_case
 
 ACCOUNT = os.environ.get("QUICKSIGHT_ACCOUNT_ID", "")
 REGION = os.environ.get("QUICKSIGHT_REGION", "us-east-1")
@@ -43,6 +43,8 @@ OWNER = os.environ.get("QUICKSIGHT_LIVE_OWNER", "")  # arn:aws:quicksight:<ident
 DATABASE = "dunder_mifflin"  # the fixture's schema
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "quicksight" / "bundle"
 GROUPS = ("Sales", "Analysts", "Finance")  # principals the fixture shares with
+TAG = {"Key": "project", "Value": "unshackle-live"}  # on every QuickSight asset the test creates
+FIXTURE_ACCOUNT, FIXTURE_USER = "123456789012", "jhalpert"  # what the saved fixture has instead of the account and owner
 
 pytestmark = [
     pytest.mark.live,
@@ -156,7 +158,7 @@ class _Aws:
             kind = path.parent.name
             if kind not in ops:
                 continue
-            text = path.read_text().replace("111122223333", ACCOUNT).replace(":us-east-1:", f":{REGION}:")
+            text = path.read_text().replace(FIXTURE_ACCOUNT, ACCOUNT).replace(":us-east-1:", f":{REGION}:")
             raw = json.loads(text)
             raw.pop("resourceType", None)
             doc = _to_model(raw, model.operation_model(ops[kind]).input_shape)
@@ -170,6 +172,7 @@ class _Aws:
             for rule in doc.get("ColumnLevelPermissionRules") or []:
                 rule["Principals"] = [re.sub(r"^arn:aws:quicksight:[^:]+:", f"arn:aws:quicksight:{IDENTITY_REGION}:", p)
                                       for p in rule["Principals"]]
+            doc["Tags"] = [t for t in doc.get("Tags") or [] if t.get("Key") != "project"] + [TAG]
             if kind == "datasource":
                 doc["DataSourceParameters"] = {"AthenaParameters": {"WorkGroup": WORKGROUP}}
             out[kind].append(doc)
@@ -263,11 +266,7 @@ def _extract_build_verify(aws: _Aws, tmp_path: Path) -> None:
     assert json.loads((raw / "_errors.json").read_text()) == []
     assert list(raw.glob("bundle/**/*.json")), "the asset bundle export didn't run"
     if os.environ.get("QUICKSIGHT_LIVE_SAVE_FIXTURE") == "1":
-        dest = LIVE / "fixtures" / "quicksight"
-        shutil.rmtree(dest, ignore_errors=True)
-        shutil.copytree(raw / "bundle", dest / "bundle")
-        for p in dest.rglob("*.json"):
-            p.write_text(p.read_text().replace(ACCOUNT, "111122223333"))
+        _save_fixture(raw / "bundle")
     print(run_unshackle(repo, "build", "quicksight", env=env))
 
     from conftest import notebook_source
@@ -318,11 +317,28 @@ def _extract_build_verify(aws: _Aws, tmp_path: Path) -> None:
 # ------------------------------------------------------------------ helpers
 
 
+def _save_fixture(bundle: Path) -> None:
+    """The real export -> tests/fixtures/quicksight/bundle: example account and owner, pretty-printed, keys as exported."""
+    owner = OWNER.rsplit("/", 1)[-1]
+    shutil.rmtree(FIXTURE, ignore_errors=True)
+    for src in sorted(bundle.rglob("*.json")):
+        text = src.read_text().replace(ACCOUNT, FIXTURE_ACCOUNT).replace(f"/{owner}\"", f"/{FIXTURE_USER}\"")
+        dest = FIXTURE / src.relative_to(bundle)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n")
+
+
 def _to_model(value: Any, shape: Any) -> Any:
-    """Fixture JSON (camelCase) -> the service model's member names."""
+    """Fixture JSON (camelCase) -> the service model's member names. Keys the export has but the model doesn't
+    (FilterOperation's `enabled` and `inverse`) can't be sent back, so they are dropped; timestamps, which the export
+    writes in epoch milliseconds, go back as datetimes."""
+    if shape.type_name == "timestamp" and isinstance(value, int):
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
     if shape.type_name == "structure":
         members = {k.lower(): (k, s) for k, s in shape.members.items()}
-        return {members[k.lower()][0]: _to_model(v, members[k.lower()][1]) for k, v in value.items()}
+        return {members[k.lower()][0]: _to_model(v, members[k.lower()][1]) for k, v in value.items() if k.lower() in members}
     if shape.type_name == "list":
         return [_to_model(v, shape.member) for v in value]
     if shape.type_name == "map":

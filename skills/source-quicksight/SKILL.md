@@ -13,8 +13,9 @@ with `ExportFormat: QUICKSIGHT_JSON`, `IncludeAllDependencies`, `IncludePermissi
 has no API that compiles a visual's SQL, so unshackle **generates tile SQL** from the
 dataset definition (joins, calculated fields) and the visual's field wells and filters.
 
-The parser was built against the QuickSight API model in botocore; it has not yet been
-run against a live account's export (see `tests/live/test_quicksight_live.py`).
+The parser is tested against a real asset bundle exported from a live account
+(`tests/fixtures/quicksight/`, produced by `tests/live/test_quicksight_live.py`), and reads
+only members that exist in botocore's QuickSight API model.
 
 ## Access
 
@@ -223,9 +224,20 @@ columns: {Revenue: revenue, "Average order value": average_order_value}
 
 - Direct query and SPICE datasets parse the same; numbers from SPICE are as of the last
   refresh, so pin parity to data older than the refresh.
-- The asset bundle's folder names and key casing aren't documented; unshackle reads
-  assets by `resourceType` and matches keys case-insensitively to the service model.
-- QuickSight names a joined column that already exists on the left `name[<right table
-  alias>]`; that's how `OnClause` refers to it. unshackle drops the suffix in the right
-  table's model.
+- The asset bundle has one folder per asset type (`dashboard/`, `analysis/`, `dataset/`,
+  `datasource/`) and one minified JSON file per asset with camelCase keys, some irregular
+  (`kpivisual`, `xaxisLocation`). unshackle reads assets by `resourceType` and matches keys
+  case-insensitively to the service model.
+- The export writes timestamps as epoch milliseconds, drops the braces around plain field
+  names in calculated fields (`status = 'X'`), writes `${visualDimensions}`, and indents
+  text box markup. unshackle reads all of these.
+- A dataset `filterOperation` in the export carries `enabled: false` (a member the API
+  doesn't have) even when QuickSight applies the filter, so the flag can't tell an active
+  filter from one switched off in the console. unshackle applies every dataset filter (and
+  lists it in the model's TODO); check them against the dataset in QuickSight.
+- A join whose right table has a column with the same name as one on the left needs a
+  `RenameColumnOperation` to `name[<right table alias>]` on the right table; that's how
+  `OnClause` refers to it. unshackle drops the suffix in the right table's model.
+- A filter list (`FilterListConfiguration`, the checkbox list) only takes `CONTAINS` (keep
+  the listed values) and `DOES_NOT_CONTAIN` (drop them): `IN` / `NOT IN`, not substrings.
 - Export jobs and their download URLs expire; re-run extract rather than reusing a URL.

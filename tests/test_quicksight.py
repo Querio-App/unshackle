@@ -22,12 +22,13 @@ from unshackle.sources.quicksight import (
     unpack_bundle,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures" / "quicksight"  # follows the service model; see its README
+FIXTURES = Path(__file__).parent / "fixtures" / "quicksight"  # a real asset bundle export; see its README
 RAW = Path("migration/raw/quicksight")
 DATA = Path(__file__).parent / "live" / "data" / "dunder_mifflin"
-ACCOUNT = "111122223333"
-CREATE = {"dataset": "CreateDataSet", "datasource": "CreateDataSource", "dashboard": "CreateDashboard",
-          "analysis": "CreateAnalysis", "theme": "CreateTheme"}
+ACCOUNT = "123456789012"
+CREATE = {"dataset": "CreateDataSet", "datasource": "CreateDataSource", "dashboard": "CreateDashboard", "analysis": "CreateAnalysis"}
+# Keys the asset bundle has that botocore's model doesn't: shape -> members (sent back to QuickSight, they are dropped).
+EXPORT_ONLY = {"FilterOperation": {"enabled", "inverse"}}
 STATUS = "(t1.status = :status_param OR :status_param IS NULL)"
 
 
@@ -70,11 +71,18 @@ def _model():
 
 
 def _to_model(value, shape, path="$"):
-    """Keys matched case-insensitively to the shape's members; fails on a key the model doesn't have."""
+    """Keys matched case-insensitively to the shape's members; fails on a key the model doesn't have (but EXPORT_ONLY).
+    Timestamps in epoch milliseconds, as the export writes them, become datetimes."""
+    if shape.type_name == "timestamp" and isinstance(value, int):
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
     if shape.type_name == "structure":
         members = {k.lower(): (k, s) for k, s in shape.members.items()}
         out = {}
         for k, v in value.items():
+            if k in EXPORT_ONLY.get(shape.name, ()):
+                continue
             assert k.lower() in members, f"{path}.{k} is not a member of {shape.name}"
             name, s = members[k.lower()]
             out[name] = _to_model(v, s, f"{path}.{name}")
@@ -104,14 +112,17 @@ def test_parser_reads_only_service_model_members():
 
 
 def test_fixture_follows_service_model():
-    """Every fixture file is a valid Create* request once its keys take the model's casing, and normalize() gives
-    the model's names for every member the parser reads."""
+    """Every file of the real export is a valid Create* request once its keys take the model's casing (the export has
+    a few irregular ones: `kpivisual`, `xaxisLocation`), and normalize() gives the model's names for every member the
+    parser reads."""
     from botocore.validate import ParamValidator
 
     model = _model()
     read = {m for members in SHAPES.values() for m in members}
     files = sorted((FIXTURES / "bundle").rglob("*.json"))
-    assert len(files) == 7
+    assert [str(p.relative_to(FIXTURES / "bundle")) for p in files] == [
+        "analysis/sales-analysis.json", "dashboard/sales-overview.json", "dataset/orders.json", "dataset/region-access-rules.json",
+        "dataset/shipped-orders.json", "datasource/dunder-mifflin-athena.json"]
     for path in files:
         raw = json.loads(path.read_text())
         assert raw.pop("resourceType")
@@ -160,6 +171,8 @@ def test_expressions_deterministic():
     assert (lac.sql, lac.kind) == ("sum(revenue) over (partition by account_id, region)", "window")
     assert translate("avgOver({revenue}, [{account_id}], PRE_AGG)").sql == "avg(revenue) over (partition by account_id)"
     assert translate("1 - sum({a}) / sum({b})").sql == "(1 - 1.0 * sum(a) / nullif(sum(b), 0))"
+    # the export drops the braces around plain field names: countIf({order_id}, status = 'COMPLETED')
+    assert translate("countIf({order_id}, status = 'COMPLETED')").sql == "count(case when status = 'COMPLETED' then order_id end)"
 
 
 @pytest.mark.parametrize("expr, why", [
@@ -169,6 +182,7 @@ def test_expressions_deterministic():
     ("rank([sum({revenue}) DESC])", "table calculation"),
     ("sumOver(sum({revenue}), [$visualDimensions])", "POST_AGG_FILTER"),
     ("sum({revenue}, [$visualDimensions])", "$visualDimensions"),
+    ("sum({revenue}) / max(sum({revenue}, [${visualDimensions}]))", "$visualDimensions"),  # as the export writes it
     ("countOver({order_id}, [{status}], PRE_FILTER)", "PRE_FILTER"),
     ("sumOver({revenue}, [{account}])", "POST_AGG_FILTER"),
     ("truncDate('WK', {d})", "Sunday"),
@@ -458,14 +472,14 @@ def test_import_qs_bundle(tmp_path: Path):
     qs.write_bytes(fixture_qs())
     store = RawStore(tmp_path / "repo", "quicksight")
     files = _manual.run(QuickSightSource(), store, [qs])
-    assert "bundle/dashboard/sales-overview.json" in files and len(files) == 7
+    assert "bundle/dashboard/sales-overview.json" in files and len(files) == 6
     meta = store.get_json("_import.json")
     assert meta["origin"] == "manual" and any("IncludePermissions" in g for g in meta["gaps"])
     b = QuickSightSource().parse(store)
     assert {d.slug for d in b.dashboards} == {"sales-overview", "sales-analysis"}
     folder = tmp_path / "unzipped"
     shutil.copytree(FIXTURES / "bundle", folder)
-    assert len(_manual.run(QuickSightSource(), store, [folder])) == 7
+    assert len(_manual.run(QuickSightSource(), store, [folder])) == 6
 
 
 def test_import_rejects_other_files(tmp_path: Path):
@@ -491,8 +505,6 @@ def test_api_layout_parses_like_the_bundle(tmp_path: Path):
     repo = tmp_path / "api"
     for path in sorted((FIXTURES / "bundle").rglob("*.json")):
         kind = path.parent.name
-        if kind == "theme":
-            continue
         raw = json.loads(path.read_text())
         raw.pop("resourceType")
         doc = _to_model(raw, model.operation_model(CREATE[kind]).input_shape)
@@ -501,7 +513,7 @@ def test_api_layout_parses_like_the_bundle(tmp_path: Path):
             doc["Arn"] = f"arn:aws:quicksight:us-east-1:{ACCOUNT}:{kind}/{rid}"
         out = repo / RAW / "api" / kind / path.name
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(doc))
+        out.write_text(json.dumps(doc, default=str))  # as extract writes Describe* responses: timestamps as ISO strings
     api = QuickSightSource().parse(RawStore(repo, "quicksight"))
     _, bundle = parse(tmp_path / "b")
     assert api.to_json() == bundle.to_json()
@@ -616,6 +628,7 @@ def test_extract_falls_back_to_describe_calls(tmp_path: Path):
         stub.add_response("describe_data_set_permissions", p, {"AwsAccountId": ACCOUNT, "DataSetId": did})
     source = api("datasource", "dunder-mifflin-athena")
     p = perms(source)
+    source.pop("Tags")
     stub.add_response("describe_data_source", {"DataSource": {"Arn": _arn("datasource", "dunder-mifflin-athena"), **source}},
                       {"AwsAccountId": ACCOUNT, "DataSourceId": "dunder-mifflin-athena"})
     stub.add_client_error("describe_data_source_permissions", "AccessDeniedException", "no", 401,
@@ -685,3 +698,54 @@ def test_row_level_security_in_the_semantic_model_configuration(tmp_path: Path):
     edit(repo, "dataset/shipped-orders.json", move)
     b = QuickSightSource().parse(RawStore(repo, "quicksight"))
     assert next(r for r in b.row_filters if r.name == "shipped_orders_region_access_rules").predicate.startswith("(shipping_region in (")
+
+
+# ------------------------------------------------------------------ what the real export looks like
+
+
+def test_export_timestamps_and_text_boxes():
+    """The bundle writes Timestamp members as epoch milliseconds and indents text box markup."""
+    from unshackle.sources.quicksight import _plain, _timestamp
+
+    assert _timestamp(1735689600000) == _timestamp("1735689600000") == "2025-01-01 00:00:00"
+    assert _timestamp("2025-01-01T00:00:00Z") == _timestamp("2025-01-01 00:00:00+00:00") == "2025-01-01 00:00:00"
+    assert _plain("<text-box>\n  Revenue is\u00a0\n  <b>post-discount</b>\n  . Done.<br/>Next\n</text-box>") == \
+        "Revenue is post-discount. Done.\nNext"
+
+
+def test_datetime_parameter_default_from_the_export(tmp_path: Path):
+    repo = repo_with_fixtures(tmp_path)
+    edit(repo, "dashboard/sales-overview.json", lambda d: d["definition"]["parameterDeclarations"].append(
+        {"dateTimeParameterDeclaration": {"name": "Since", "defaultValues": {"staticValues": [1735689600000]}}}))
+    b = QuickSightSource().parse(RawStore(repo, "quicksight"))
+    d = next(x for x in b.dashboards if x.slug == "sales-overview")
+    assert ("since", "2025-01-01 00:00:00", "date") in [(f.name, f.default, f.kind) for f in d.filters]
+
+
+def test_filter_list_operators(tmp_path: Path):
+    """A FilterListConfiguration only takes CONTAINS (keep the listed values) and DOES_NOT_CONTAIN (drop them):
+    equality, not substrings. The fixture's select-all list with a control is CONTAINS and binds the control."""
+    raw = json.loads((FIXTURES / "bundle/dashboard/sales-overview.json").read_text())
+    conf = next(fg for fg in raw["definition"]["filterGroups"] if fg["filterGroupId"] == "fg-mode")["filters"][0]["categoryFilter"]
+    assert conf["configuration"]["filterListConfiguration"]["matchOperator"] == "CONTAINS"
+    repo = repo_with_fixtures(tmp_path)
+
+    def exclude(d):
+        for fg in d["definition"]["filterGroups"]:
+            if fg["filterGroupId"] == "fg-mode":
+                fg["filters"][0]["categoryFilter"]["configuration"]["filterListConfiguration"].update(
+                    matchOperator="DOES_NOT_CONTAIN", categoryValues=["Same Day"], selectAllOptions=None)
+        for sheet in d["definition"]["sheets"]:
+            sheet["filterControls"] = []
+    edit(repo, "dashboard/sales-overview.json", exclude)
+    b = QuickSightSource().parse(RawStore(repo, "quicksight"))
+    bar = next(t for d in b.dashboards if d.slug == "sales-overview" for t in d.tiles if t.id == "revenue_by_region")
+    assert "shipping_mode NOT IN ('Same Day')" in bar.sql and "LIKE" not in bar.sql
+
+
+def test_dataset_filter_marked_disabled_in_the_export_still_applies():
+    """The export adds `enabled: false` (not in the API model) to a FilterOperation created through the API, yet
+    QuickSight applies it (a SPICE ingestion of such a dataset keeps only the matching rows). parse() ignores the flag."""
+    raw = json.loads((FIXTURES / "bundle/dataset/orders.json").read_text())
+    ops = raw["logicalTableMap"]["orders-joined"]["dataTransforms"]
+    assert {"conditionExpression": "{status} <> 'TEST'", "enabled": False, "inverse": False} in [o.get("filterOperation") for o in ops]
