@@ -19,6 +19,7 @@ parse() prefers raw LookML. Without it, it rebuilds views from the explore JSON
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,9 @@ from unshackle.sources.base import Inventory, Source
 
 REF = re.compile(r"\$\{([^}]+)\}")
 LIQUID = re.compile(r"\{%|\{\{")
+CONSTANT = re.compile(r"@\{(\w+)\}")
+_IDENT = r"""(?:[\w$-]+|`[^`(){};']+`|"[^"(){};']+"|\[[^\[\](){};']+\])"""
+TABLE_NAME = re.compile(rf"\s*{_IDENT}(?:\s*\.\s*{_IDENT})*\s*")  # a.b.c, `p-1.d.t`, "My Schema"."T"
 USER_ATTR = re.compile(r"\{\{\s*_user_attributes\[['\"](\w+)['\"]\]\s*\}\}")
 SIMPLE_IDENT = re.compile(r"^[A-Za-z_][\w]*$")
 AGG_FN = re.compile(r"\b(sum|count|avg|min|max|median|percentile_cont|approx_\w+)\s*\(", re.I)
@@ -299,6 +303,76 @@ def _usage_by_content(rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[
     return out
 
 
+def _constants(docs: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """`constant:` values from manifest.lkml, with constants that use other constants expanded."""
+    out: dict[str, str] = {}
+    for path in sorted(docs, key=lambda p: (p.count("/"), p)):
+        if Path(path).name == "manifest.lkml":
+            for c in docs[path].get("constants", []):
+                out.setdefault(c["name"], str(c.get("value", "")))
+    for _ in range(5):
+        out = {k: CONSTANT.sub(lambda m: out.get(m.group(1), m.group(0)), v) for k, v in out.items()}
+    return out
+
+
+def _substitute(x: Any, constants: dict[str, str]) -> Any:
+    """Replace `@{name}` in every string of a parsed LookML file, as Looker does before evaluating."""
+    if isinstance(x, str):
+        return CONSTANT.sub(lambda m: constants.get(m.group(1), m.group(0)), x) if "@{" in x else x
+    if isinstance(x, list):
+        return [_substitute(y, constants) for y in x]
+    if isinstance(x, dict):
+        return {k: _substitute(v, constants) for k, v in x.items()}
+    return x
+
+
+def _include_regex(pattern: str, from_path: str) -> re.Pattern | None:
+    """An `include:` pattern as a regex over project paths. `*` stays in one folder, `**` crosses
+    folders, a missing `.lkml` suffix is implied, and paths without a leading `/` are relative."""
+    pattern = pattern.strip()
+    if not pattern or pattern.startswith("//"):  # another project's files
+        return None
+    path = pattern[1:] if pattern.startswith("/") else posixpath.normpath(posixpath.join(posixpath.dirname(from_path), pattern))
+    out = ""
+    for part in re.split(r"(\*\*/|\*\*|\*|\?)", path):
+        out += {"**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}.get(part, re.escape(part))
+    return re.compile(out + ("" if path.endswith((".lkml", ".lookml")) else r"(?:\.lkml|\.lookml)?"))
+
+
+def _include_closure(model_path: str, docs: dict[str, dict[str, Any]]) -> list[str]:
+    """Every file a model includes, directly or through included files, in include order."""
+    out: list[str] = []
+    todo = [model_path]
+    while todo:
+        path = todo.pop(0)
+        for pattern in docs[path].get("includes", []):
+            rx = _include_regex(pattern, path)
+            for other in sorted(docs) if rx else []:
+                if rx.fullmatch(other) and other != model_path and other not in out:
+                    out.append(other)
+                    todo.append(other)
+    return out
+
+
+def _plain_table(sql_table_name: str) -> str:
+    """The table name, or "" when sql_table_name is SQL (a subquery, Liquid, an undefined constant)."""
+    return _strip_ident(sql_table_name) if TABLE_NAME.fullmatch(sql_table_name or "") else ""
+
+
+def _source(field: dict[str, Any]) -> str:
+    """What a person needs to translate a field by hand: its SQL, else its definition (case:, sql_latitude, ...)."""
+    if field.get("sql"):
+        return field["sql"]
+    skip = ("name", "label", "description", "hidden", "view_label", "group_label", "drill_fields", "link", "html", "tags")
+    return json.dumps({k: v for k, v in field.items() if k not in skip}, default=str)
+
+
+def _label(field: dict[str, Any]) -> str:
+    """A field's label; "" for a Liquid label (it depends on the user or the query, so the name is used)."""
+    label = str(field.get("label") or "")
+    return "" if LIQUID.search(label) or CONSTANT.search(label) else label
+
+
 def _yes(v: Any) -> bool:
     return str(v).lower() in ("yes", "true")
 
@@ -344,7 +418,7 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
         return None
     if v.upper() == "NULL":
         return f"{ref} IS NULL"
-    if v.upper() == "-NULL":
+    if v.upper() in ("-NULL", "NOT NULL"):
         return f"{ref} IS NOT NULL"
     if v.upper() == "EMPTY":
         return f"({ref} IS NULL OR {ref} = '')"
@@ -353,7 +427,9 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
     m = re.fullmatch(r"(>=|<=|<>|!=|>|<|=)?\s*(-?\d+(?:\.\d+)?)", v)
     if m and (kind == "number" or m.group(1)):
         return f"{ref} {m.group(1) or '='} {m.group(2)}"
-    if kind in ("time", "number") or re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b|[\[\]()]", v, re.I):
+    # dates, number ranges and anything that reads like a relative date need a person; brackets
+    # are literal in a string filter ("(5) Purchase")
+    if kind in ("time", "number") or re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
         return None
     neg = v.startswith("-")
     parts = [p.strip().replace("^,", ",") for p in re.split(r"(?<!\^),", v)]
@@ -399,6 +475,9 @@ class _Parser:
             self._view(vname, view)
         for mname, model in self.models.items():
             self._model(mname, model)
+        # an explore file included by several models yields the same policies once per model
+        self.b.row_filters = list({(r.name, r.table, r.predicate, r.todo): r for r in self.b.row_filters}.values())
+        self.b.permissions = list({(p.principal, p.action, p.resource_type, p.resource_id, p.todo): p for p in self.b.permissions}.values())
         usage = _usage_by_content(self.store.get_json("content_usage.json")) if self.store.exists("content_usage.json") else {}
         for rel in self.store.glob("dashboards/*.json"):
             try:
@@ -422,49 +501,100 @@ class _Parser:
             import lkml
         except ImportError as exc:  # pragma: no cover - exercised only without the extra
             raise SourceError("parsing LookML needs the `looker` extra: uv pip install 'unshackle[looker]'") from exc
-        refinements: list[tuple[str, dict[str, Any]]] = []
+        docs: dict[str, dict[str, Any]] = {}  # path inside the project -> parsed file
         for rel in self.store.glob("lookml/**/*.lkml"):
             try:
-                doc = lkml.load(self.store.get_text(rel))
+                docs[rel.removeprefix("lookml/")] = lkml.load(self.store.get_text(rel))
             except Exception as exc:  # noqa: BLE001
                 self.b.warn(rel, f"LookML did not parse: {exc}")
-                continue
+        constants = _constants(docs)
+        if constants:
+            docs = {path: _substitute(doc, constants) for path, doc in docs.items()}
+        closures = {p: _include_closure(p, docs) for p, d in sorted(docs.items()) if p.endswith(".model.lkml") or d.get("connection")}
+        used = set(closures).union(*closures.values())
+        refinements: list[tuple[str, dict[str, Any]]] = []
+        for path, doc in docs.items():
             for v in doc.get("views", []):
                 if v["name"].startswith("+"):
-                    refinements.append((rel, v))
+                    refinements.append((path, v))
                     continue
+                other = self.view_file.get(v["name"])
+                if other:
+                    keep = other if other in used and path not in used else path
+                    self.b.warn(f"view {v['name']}", f"defined in both {other} and {path}; using {keep} (the one a model includes, else the last)")
+                    if keep == other:
+                        continue
                 self.views[v["name"]] = v
-                self.view_file[v["name"]] = rel.removeprefix("lookml/")
+                self.view_file[v["name"]] = path
             for g in doc.get("access_grants", []):
                 self.grants[g["name"]] = g
-            if rel.endswith(".model.lkml") or doc.get("explores") or doc.get("connection"):
-                name = Path(rel).name.removesuffix(".lkml").removesuffix(".model")
-                model = self.models.setdefault(name, {"explores": [], "file": rel.removeprefix("lookml/")})
-                model["connection"] = doc.get("connection", model.get("connection", ""))
-                model["label"] = doc.get("label", model.get("label", ""))
-                model["explores"] += doc.get("explores", [])
+        self._load_models(docs, closures)
         for rel in self.store.glob("lookml/**/*.lookml"):
             self.b.warn(rel, "LookML dashboards are not parsed; the same dashboard is exported through the API if it is in a user folder")
-        for name, v in list(self.views.items()):
-            if v.get("extends") or v.get("extends__all"):
-                self.views[name] = self._extend(v, set())
-        for rel, ref in refinements:
+        # Looker applies refinements to the view first, then resolves extends, so a view that
+        # extends a refined view gets the refinement, and a refinement may add `extends`.
+        for path, ref in refinements:
             base = ref["name"][1:]
             if base not in self.views:
-                self.b.warn(rel, f"refinement +{base} has no base view")
+                self.b.warn(f"lookml/{path}", f"refinement +{base} has no base view")
                 continue
-            self.views[base] = _merge_view(self.views[base], ref)
+            self.views[base] = _merge_view(self.views[base], ref, refine=True)
+        for name, v in list(self.views.items()):
+            if v.get("extends") or v.get("extends__all"):
+                self.views[name] = self._extend(v, {name}, self.views, "view")
 
-    def _extend(self, view: dict[str, Any], seen: set[str]) -> dict[str, Any]:
-        parents = view.get("extends") or [p for group in view.get("extends__all", []) for p in group]
+    def _load_models(self, docs: dict[str, dict[str, Any]], closures: dict[str, list[str]]) -> None:
+        """Models and the explores they include (explores often live in their own files)."""
+        included = set().union(*closures.values())
+        explores: dict[str, list[dict[str, Any]]] = {}  # model file -> explores, in include order
+        for mpath, paths in closures.items():
+            explores[mpath] = list(docs[mpath].get("explores", []))
+            for path in paths:
+                if path not in closures:
+                    explores[mpath] += docs[path].get("explores", [])
+        for path, doc in docs.items():
+            if path not in closures and doc.get("explores") and path not in included:
+                explores[path] = list(doc["explores"])  # explores no model includes: keep them under their file
+        for path, exs in explores.items():
+            name = Path(path).name.removesuffix(".lkml").removesuffix(".model")
+            model = self.models.setdefault(name, {"explores": [], "file": path})
+            doc = docs[path]
+            model["connection"] = doc.get("connection", model.get("connection", ""))
+            model["label"] = doc.get("label", model.get("label", ""))
+            model["explores"] += self._resolve_explores(path, exs)
+
+    def _resolve_explores(self, path: str, explores: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Apply explore refinements (`explore: +x`) and `extends`; drop `extension: required` explores."""
+        by_name: dict[str, dict[str, Any]] = {}
+        refinements = []
+        for ex in explores:
+            if ex["name"].startswith("+"):
+                refinements.append(ex)
+            else:
+                by_name[ex["name"]] = ex
+        for ref in refinements:
+            base = ref["name"][1:]
+            if base not in by_name:
+                self.b.warn(f"lookml/{path}", f"explore refinement +{base} has no base explore")
+                continue
+            by_name[base] = _merge_view(by_name[base], ref, refine=True)
+        for name, ex in list(by_name.items()):
+            if ex.get("extends") or ex.get("extends__all"):
+                by_name[name] = self._extend(ex, {name}, by_name, "explore")
+        return [ex for ex in by_name.values() if ex.get("extension") != "required"]
+
+    def _extend(self, obj: dict[str, Any], seen: set[str], pool: dict[str, dict[str, Any]], kind: str) -> dict[str, Any]:
+        parents = obj.get("extends") or [p for group in obj.get("extends__all", []) for p in group]
         out: dict[str, Any] = {}
         for p in parents:
-            if p in seen or p not in self.views:
-                self.b.warn(f"view {view['name']}", f"extends {p} which was not found")
+            if p in seen or p not in pool:
+                self.b.warn(f"{kind} {obj['name']}", f"extends {p} which was not found")
                 continue
-            out = _merge_view(out, self._extend(self.views[p], seen | {p}))
-        merged = _merge_view(out, view)
-        merged["name"] = view["name"]
+            out = _merge_view(out, self._extend(pool[p], seen | {p}, pool, kind))
+        merged = _merge_view(out, obj)
+        merged["name"] = obj["name"]
+        if obj.get("extension"):
+            merged["extension"] = obj["extension"]
         return merged
 
     def _load_explores_json(self) -> None:
@@ -545,6 +675,16 @@ class _Parser:
                 if counts[n] > 1 or n == "count":
                     n = f"{snake(vname)}_{n}"
                 self.metric_names[(vname, m["name"])] = n
+        # a qualified name can meet a measure already called that (`count` next to `orders_count`)
+        taken = {n for (_, m), n in self.metric_names.items() if n == snake(m)}
+        for key, n in self.metric_names.items():
+            if n != snake(key[1]) and n in taken:
+                i = 2
+                while f"{n}_{i}" in taken:
+                    i += 1
+                self.b.warn(f"view {key[0]} measure {key[1]}", f"named {n}_{i}: {n} is another measure's name", "info")
+                n = self.metric_names[key] = f"{n}_{i}"
+            taken.add(n)
 
     def _field(self, vname: str, name: str) -> dict[str, Any] | None:
         v = self.views.get(vname) or {}
@@ -561,7 +701,12 @@ class _Parser:
         return None
 
     def table_name(self, vname: str) -> str:
-        return _strip_ident((self.views.get(vname) or {}).get("sql_table_name", "") or "")
+        return _plain_table((self.views.get(vname) or {}).get("sql_table_name", "") or "")
+
+    def model_table(self, vname: str) -> str:
+        """The table the view's semantic model reads: its table, or the view name for SQL-backed views."""
+        v = self.views.get(vname) or {}
+        return self.table_name(vname) or (snake(vname) if v.get("derived_table") or v.get("sql_table_name") else "")
 
     # ------------------------------------------------------------ SQL resolution
 
@@ -570,6 +715,8 @@ class _Parser:
         problems: list[str] = []
         if LIQUID.search(sql or ""):
             return sql, ["uses Liquid templating"]
+        if CONSTANT.search(sql or ""):
+            return sql, [f"uses constant {CONSTANT.search(sql).group(0)} that manifest.lkml does not define"]
 
         def sub(m: re.Match) -> str:
             ref = m.group(1).strip()
@@ -646,21 +793,33 @@ class _Parser:
             return None
         f = self._field(view, name) or {}
         t = f.get("type", "string")
-        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", ("yesno" if t == "yesno" else "number" if t == "number" else "string")
+        kind = "yesno" if t == "yesno" else "number" if t == "number" else "time" if t.startswith("date") or t == "time" else "string"
+        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", kind
 
     # ------------------------------------------------------------ views
 
     def _view(self, vname: str, v: dict[str, Any]) -> None:
         item = f"view {vname}"
         src = self.view_file.get(vname, "")
+        if v.get("extension") == "required":
+            self.b.warn(item, "extension: required view (only extended by other views); skipped", "info")
+            return
         table = self.table_name(vname)
         dt = v.get("derived_table")
+        what = "derived table"
+        if not dt and not table and v.get("sql_table_name"):
+            dt, what = {"sql": v["sql_table_name"]}, "sql_table_name that is SQL rather than a table name"
         if dt and not table:
             table = snake(vname)
-            sql, problems = self.resolve(vname, dt.get("sql", "")) if dt.get("sql") else ("", ["native derived table (explore_source)"])
+            if dt.get("sql"):
+                sql, problems = self.resolve(vname, dt["sql"])
+            elif dt.get("explore_source"):
+                sql, problems = "", ["native derived table (explore_source)"]
+            else:
+                sql, problems = "", ["no `sql` (sql_create or create_process runs custom DDL, e.g. a BigQuery ML model)"]
             pdt = [k for k in ("datagroup_trigger", "persist_for", "sql_trigger_value", "materialized_view", "increment_key") if dt.get(k)]
             todo = (
-                f"Looker {'PDT (' + ', '.join(f'{k}: {dt[k]}' for k in pdt) + ')' if pdt else 'derived table'}: "
+                f"Looker {'PDT (' + ', '.join(f'{k}: {dt[k]}' for k in pdt) + ')' if pdt else what}: "
                 f"materialize this SQL as a table or dbt model named `{table}` (the semantic model `{snake(vname)}` points at it)"
             )
             if problems:
@@ -670,7 +829,7 @@ class _Parser:
                 VerifiedQuery(
                     name=f"{vname} derived table",
                     sql=body if sql else "-- " + body.replace("\n", "\n-- "),
-                    description=f"Looker derived table {vname}",
+                    description=f"Looker {what} {vname}",
                     datasource=self.b.datasource,
                     source_ref=f"{src} view: {vname}",
                     todo=todo,
@@ -684,12 +843,16 @@ class _Parser:
         sm = SemanticModel(name=vname, table=table, datasource=self.b.datasource, source_ref=f"{src} view: {vname}")
         pk = self._pk(vname)
         if pk:
-            expr, _ = self.dim_expr(vname, pk)
-            sm.entities.append(Entity(snake(vname), "primary", "" if expr == snake(vname) else expr))
+            expr, problems = self.dim_expr(vname, pk)
+            if problems:
+                self.b.warn(item, f"primary key {pk['name']} {'; '.join(problems)}; no primary entity, add it by hand")
+                pk = None
+            else:
+                sm.entities.append(Entity(snake(vname), "primary", "" if expr == snake(vname) else expr))
         for d in v.get("dimensions", []):
             if d is pk:
                 if tbl is not None:
-                    tbl.columns.append(Column(self.dim_expr(vname, d)[0], COLUMN_TYPE.get(d.get("type", "string"), ""), d.get("description", ""), d.get("label", "")))
+                    tbl.columns.append(Column(self.dim_expr(vname, d)[0], COLUMN_TYPE.get(d.get("type", "string"), ""), d.get("description", ""), _label(d)))
                 continue
             expr, problems = self.dim_expr(vname, d)
             dtype = d.get("type", "string")
@@ -697,16 +860,16 @@ class _Parser:
                 name=d["name"],
                 expr="" if expr == d["name"] else expr,
                 description=d.get("description", ""),
-                label=d.get("label", ""),
+                label=_label(d),
             )
             if dtype in ("tier", "location", "distance", "duration"):
                 problems.append(f"type: {dtype} has no MetricFlow equivalent")
             if problems:
-                dim.todo, dim.source_expression, dim.source_language = "; ".join(problems), d.get("sql", ""), "lookml"
+                dim.todo, dim.source_expression, dim.source_language = "; ".join(problems), _source(d), "lookml"
                 dim.expr = ""
             sm.dimensions.append(dim)
             if tbl is not None and SIMPLE_IDENT.match(expr) and not problems:
-                tbl.columns.append(Column(expr, COLUMN_TYPE.get(dtype, ""), d.get("description", ""), d.get("label", ""), _yes(d.get("hidden"))))
+                tbl.columns.append(Column(expr, COLUMN_TYPE.get(dtype, ""), d.get("description", ""), _label(d), _yes(d.get("hidden"))))
         for g in v.get("dimension_groups", []):
             if g.get("type", "time") != "time":
                 sm.dimensions.append(
@@ -719,13 +882,15 @@ class _Parser:
             grain = next((gr for tf, gr in TIMEFRAME_GRAIN if tf in tfs), "day")
             if g.get("datatype") in ("date", "yyyymmdd") and grain in ("second", "minute", "hour"):
                 grain = "day"
-            dim = Dimension(g["name"], "time", "" if expr == g["name"] else expr, g.get("description", ""), g.get("label", ""), grain)
+            dim = Dimension(g["name"], "time", "" if expr == g["name"] else expr, g.get("description", ""), _label(g), grain)
+            if g.get("datatype") in ("epoch", "yyyymmdd"):
+                problems.append(f"datatype: {g['datatype']} (the column is a number, not a date); convert it to a date or timestamp in the expression")
             if problems:
-                dim.todo, dim.source_expression, dim.source_language, dim.expr = "; ".join(problems), g.get("sql", ""), "lookml", ""
+                dim.todo, dim.source_expression, dim.source_language, dim.expr = "; ".join(problems), _source(g), "lookml", ""
             sm.dimensions.append(dim)
-            if tbl is not None and SIMPLE_IDENT.match(expr):
+            if tbl is not None and SIMPLE_IDENT.match(expr) and not problems:
                 ctype = "date" if g.get("datatype") == "date" else "timestamp"
-                tbl.columns.append(Column(expr, ctype, g.get("description", ""), g.get("label", ""), _yes(g.get("hidden"))))
+                tbl.columns.append(Column(expr, ctype, g.get("description", ""), _label(g), _yes(g.get("hidden"))))
         taken = {e.name for e in sm.entities}
         for d in sm.dimensions:
             if snake(d.name) in taken:
@@ -742,9 +907,13 @@ class _Parser:
             if fld.get("required_access_grants"):
                 is_dim = any(fld is d for d in v.get("dimensions", []))
                 column = self.dim_expr(vname, fld)[0] if is_dim else fld["name"]
+                extra = ""
+                if is_dim and not SIMPLE_IDENT.match(column):
+                    extra = f"; the field is an expression ({column}), so protect each column it reads"
+                    column = fld["name"]
                 rtype = "Column" if is_dim else "Metric"
                 rid = f"{table}.{column}" if is_dim else self.metric_names.get((vname, fld["name"]), snake(fld["name"]))
-                self._grant_permissions(fld["required_access_grants"], rtype, rid, f"{src} view: {vname} field: {fld['name']}")
+                self._grant_permissions(fld["required_access_grants"], rtype, rid, f"{src} view: {vname} field: {fld['name']}", extra)
         if v.get("required_access_grants"):
             self._grant_permissions(v["required_access_grants"], "Table", table, f"{src} view: {vname}")
 
@@ -753,9 +922,11 @@ class _Parser:
         name = self.metric_names[(vname, m["name"])]
         src = f"{self.view_file.get(vname, '')} view: {vname} measure: {m['name']}"
         raw_sql = m.get("sql", "")
-        metric = Metric(name=name, label=m.get("label") or m["name"].replace("_", " ").title(),
+        metric = Metric(name=name, label=_label(m) or m["name"].replace("_", " ").title(),
                         description=m.get("description", ""), semantic_model=vname, source_ref=src)
-        source_expr = f"type: {mtype}" + (f" sql: {raw_sql}" if raw_sql else "")
+        source_expr = f"type: {mtype}" + (f" sql: {raw_sql}" if raw_sql else "") + "".join(
+            f" {k}: {m[k]}" for k in ("sql_distinct_key", "list_field", "direction", "percentile") if m.get(k)
+        )
 
         def todo(msg: str) -> None:
             metric.todo, metric.source_expression, metric.source_language = msg, source_expr, "lookml"
@@ -763,6 +934,8 @@ class _Parser:
 
         if LIQUID.search(raw_sql):
             return todo("uses Liquid templating; rewrite as a plain SQL measure (or one metric per branch)")
+        if CONSTANT.search(raw_sql):
+            return todo(f"uses constant {CONSTANT.search(raw_sql).group(0)} that manifest.lkml does not define")
         if mtype in MEASURE_AGG:
             if mtype == "count":
                 expr = self.dim_expr(vname, pk)[0] if pk else "1"
@@ -830,9 +1003,9 @@ class _Parser:
         table_explores: dict[str, list[str]] = {}
         for ex in model["explores"]:
             base = ex.get("from") or ex.get("view_name") or ex["name"]
-            table_explores.setdefault(self.table_name(base), []).append(ex["name"])
+            table_explores.setdefault(self.model_table(base), []).append(ex["name"])
             for j in ex.get("joins", []):
-                table_explores.setdefault(self.table_name(j.get("from") or j["name"]), []).append(ex["name"])
+                table_explores.setdefault(self.model_table(j.get("from") or j["name"]), []).append(ex["name"])
         for ex in model["explores"]:
             base = ex.get("from") or ex.get("view_name") or ex["name"]
             alias = {base: base, ex["name"]: base}
@@ -842,7 +1015,7 @@ class _Parser:
             if ex.get("description"):
                 lines.append("")
                 lines.append(ex["description"])
-            lines += ["", f"- Base view: `{base}` (`{self.table_name(base)}`)"]
+            lines += ["", f"- Base view: `{base}` (`{self.model_table(base)}`)"]
             for j in ex.get("joins", []):
                 self._join(ex, base, j, alias)
                 lines.append(f"- Joins `{j['name']}` ({j.get('relationship', 'many_to_one')}, {j.get('type', 'left_outer')}) on `{j.get('sql_on') or j.get('foreign_key', '')}`")
@@ -854,7 +1027,7 @@ class _Parser:
             if ex.get("always_filter"):
                 lines.append(f"- Default filter users must fill: `{json.dumps(ex['always_filter'])}`")
             if ex.get("required_access_grants"):
-                self._grant_permissions(ex["required_access_grants"], "Table", self.table_name(base), f"{src} explore: {ex['name']}")
+                self._grant_permissions(ex["required_access_grants"], "Table", self.model_table(base), f"{src} explore: {ex['name']}")
             lines.append("")
         self.b.knowledge.append(
             KnowledgeItem(f"Looker model {mname}", "\n".join(lines), description=f"Explores and joins from the Looker model {mname}",
@@ -872,6 +1045,15 @@ class _Parser:
         target = j.get("from") or j["name"]
         sql_on = j.get("sql_on") or (f"${{{base}.{j['foreign_key']}}} = ${{{j['name']}.{(self._pk(target) or {}).get('name', 'id')}}}" if j.get("foreign_key") else "")
         cols = self._join_cols(sql_on, alias)
+        if not sql_on and j.get("sql") is not None:
+            self.b.warn(f"explore {ex['name']} join {j['name']}",
+                        f"join uses `sql:` instead of sql_on ({j['sql'].strip()!r}), e.g. UNNEST of a nested field or a field-only view; "
+                        "model it by hand (MetricFlow joins only through entities)")
+            return
+        if not sql_on:
+            self.b.warn(f"explore {ex['name']} join {j['name']}",
+                        f"join has no sql_on or foreign_key (type: {j.get('type', 'left_outer')}, so a cross join); add the entity by hand if it is needed")
+            return
         if not cols:
             self.b.warn(f"explore {ex['name']} join {j['name']}", f"join is not a single equality ({sql_on!r}); add the entity by hand")
             return
@@ -904,12 +1086,12 @@ class _Parser:
         source = f"explore: {ex['name']} access_filter: {{field: {field} user_attribute: {attr}}}"
         name = f"{ex['name']}_{snake(field)}"
         if f is None:
-            self.b.row_filters.append(RowFilter(name, self.table_name(view), source_expression=source, source_ref=src,
+            self.b.row_filters.append(RowFilter(name, self.model_table(view), source_expression=source, source_ref=src,
                                                 todo=f"field {field} not found in LookML; write the predicate by hand"))
             return
         expr, problems = self.dim_expr(view, f)
-        table = self.table_name(view)
-        others = [e for e in table_explores.get(table, []) if e != ex["name"]]
+        table = self.model_table(view)
+        others = list(dict.fromkeys(e for e in table_explores.get(table, []) if e != ex["name"]))
         todo = "; ".join(problems)
         if others:
             todo = (todo + "; " if todo else "") + (
@@ -928,14 +1110,14 @@ class _Parser:
             jexpr, p2 = self.dim_expr(jv, self._field(jv, jf) or {"name": jf})
             if not (p1 or p2):
                 self.b.row_filters.append(
-                    RowFilter(f"{name}_via_{snake(base)}", self.table_name(base),
+                    RowFilter(f"{name}_via_{snake(base)}", self.model_table(base),
                               f"{bexpr} IN (SELECT {jexpr} FROM {table} WHERE {expr} = {{{{ user.{attr} }}}})",
                               source_expression=source + f" (through join {path['name']})", source_ref=src)
                 )
                 return
         self.b.row_filters.append(
-            RowFilter(f"{name}_via_{snake(base)}", self.table_name(base), source_expression=source, source_ref=src,
-                      todo=f"Looker filtered explore {ex['name']} (base {self.table_name(base)}) through joins to {view}; write a predicate on the base table")
+            RowFilter(f"{name}_via_{snake(base)}", self.model_table(base), source_expression=source, source_ref=src,
+                      todo=f"Looker filtered explore {ex['name']} (base {self.model_table(base)}) through joins to {view}; write a predicate on the base table")
         )
 
     def _always_where(self, src, ex, base, alias) -> None:
@@ -950,12 +1132,12 @@ class _Parser:
         expr, problems = self.resolve(base, REF.sub(unalias, sql))
         expr = expr.replace("\x01", "{{ user.").replace("\x02", " }}")
         self.b.row_filters.append(
-            RowFilter(f"{ex['name']}_always_where", self.table_name(base), "" if problems else expr, ["*"],
+            RowFilter(f"{ex['name']}_always_where", self.model_table(base), "" if problems else expr, ["*"],
                       source_expression=f"explore: {ex['name']} sql_always_where: {raw}", source_ref=src,
                       todo="; ".join(problems))
         )
 
-    def _grant_permissions(self, grant_names: list[str], rtype: str, rid: str, src: str) -> None:
+    def _grant_permissions(self, grant_names: list[str], rtype: str, rid: str, src: str, extra: str = "") -> None:
         for gname in grant_names:
             g = self.grants.get(gname)
             if not g:
@@ -969,6 +1151,7 @@ class _Parser:
             )
             if len(grant_names) > 1:
                 note += f". Looker required ALL of {grant_names}"
+            note += extra
             for value in values:
                 self.b.permissions.append(
                     Permission(f"group:{value}", "query" if rtype != "Notebook" else "view", rtype, rid,
@@ -1138,18 +1321,27 @@ class _Parser:
         )
 
 
-def _merge_view(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+def _merge_view(base: dict[str, Any], override: dict[str, Any], refine: bool = False) -> dict[str, Any]:
+    """Merge a view or explore into another: named children (fields, joins) by name, other keys
+    replaced. `extends` from a refinement adds to the base's; through `extends` it is not inherited."""
     out = {k: v for k, v in base.items()}
     for key, value in override.items():
         if key == "name":
             continue
-        if key in ("dimensions", "dimension_groups", "measures", "filters", "parameters") and isinstance(value, list):
+        if key in ("dimensions", "dimension_groups", "measures", "filters", "parameters", "sets", "joins") and isinstance(value, list):
             by_name = {f["name"]: dict(f) for f in out.get(key, [])}
             for f in value:
                 by_name[f["name"]] = {**by_name.get(f["name"], {}), **f}
             out[key] = list(by_name.values())
-        elif key not in ("extends", "extends__all", "extension"):
+        elif key == "access_filters":
+            out[key] = [*out.get(key, []), *(f for f in value if f not in out.get(key, []))]
+        elif key in ("extends", "extends__all"):
+            if refine:
+                parents = [p for g in (base.get("extends__all") or [base.get("extends") or []]) for p in g]
+                parents += [p for g in (override.get("extends__all") or [override.get("extends") or []]) for p in g]
+                out.pop("extends", None)
+                out["extends__all"] = [list(dict.fromkeys(parents))]
+        elif key != "extension" or refine:
             out[key] = value
     out.setdefault("name", base.get("name") or override.get("name"))
     return out
-

@@ -60,12 +60,14 @@ unshackle build looker
 | LookML | Becomes |
 | --- | --- |
 | view `sql_table_name` | `catalog/` table + semantic model `node_relation` |
+| `constant:` in `manifest.lkml` | `@{NAME}` replaced everywhere before parsing (constants that hold Liquid make the field a TODO) |
+| `include:` in a model | explores in included files (`explores/*.explore.lkml`) belong to that model; `*`, `**`, relative paths and a missing `.lkml` work |
 | `dimension` | categorical dimension; `${TABLE}.col` -> `col`, `${other_dim}` inlined, `case:` -> `CASE WHEN` |
 | `primary_key: yes` | primary entity named after the view |
 | `dimension_group: type: time` | time dimension named after the group; granularity = smallest timeframe (`date` -> day, `time` -> second, `datatype: date` caps at day) |
 | measure `sum/average/count_distinct/min/max/median/percentile` | measure + simple metric |
 | `type: count` | `count` of the primary key (`sum` of `1` without one) |
-| `filters: [status: "complete"]` | simple metric with `filter: "{{ Dimension('orders__status') }} = 'complete'"` (strings, `-x`, `a,b`, `%x%`, `NULL`, yes/no, numeric comparisons) |
+| `filters: [status: "complete"]` | simple metric with `filter: "{{ Dimension('orders__status') }} = 'complete'"` (strings, `-x`, `a,b`, `%x%`, `NULL`, `NOT NULL`, yes/no, numeric comparisons; relative dates stay TODO) |
 | `type: number` `${a} / NULLIF(${b}, 0)` | ratio metric |
 | other `type: number` over measures | derived metric (`expr` with metric names) |
 | explore `join` with `sql_on: ${a.fk} = ${b.pk}` | foreign (or `unique` for one_to_one) entity on `a` named `b` |
@@ -73,6 +75,7 @@ unshackle build looker
 | `sql_always_where` | row filter for `*`; `{{ _user_attributes['x'] }}` -> `{{ user.x }}` |
 | `required_access_grants` / `access_grant` | Cedar `permit` per allowed value, TODO to map groups |
 | `derived_table` | `queries/<view>-derived-table.sql` + semantic model on a table of the same name (TODO: materialize) |
+| `sql_table_name` that is SQL (a subquery or a Liquid switch) | treated like a derived table |
 | dashboard elements | notebook tiles (see below); Looks -> `queries/*.sql` |
 
 Measure/metric names are the LookML names; a bare `count` or a name used in two views
@@ -97,10 +100,23 @@ becomes `<view>_<name>`. Labels keep Looker's labels.
   model keyed by `sql_distinct_key`, then a plain `sum`/`average`.
 - **running_total / percent_of_total**: a `cumulative` metric, or a window in tile SQL.
 - **tier / duration dimension_group**: `CASE` buckets / `DATEDIFF` expression.
+- **Timeframe refs in a primary key** (`CONCAT(${TABLE}.id, ${created_date})`): no
+  primary entity is written (the warning names the view); write the key with
+  `CAST(... AS DATE)` and add the entity, or joins to that view stay missing.
+- **`sql_table_name` with Liquid** (often `{% if _dialect._name == ... %}`): pick the
+  branch for your warehouse and use it as the table (or materialize it); the query
+  file has the original.
+- **Joins with `sql:`** (`LEFT JOIN UNNEST(${orders.lines}) AS orders__lines`): nested
+  BigQuery records. The child views have no table and are skipped; flatten them in a
+  SQL model keyed by the parent's key, then add it as a semantic model.
+- **Liquid labels** (`label: "{% if _user_attributes['locale'] == 'ja' %}..."`, or a
+  constant like `@{label_sap_field_name}`) fall back to the field name. Pick a label.
 - **PDTs**: create a dbt model (or scheduled table) from the derived-table query,
   resolve `${view.SQL_TABLE_NAME}` (unshackle already inlines known tables), and keep the
   datagroup cadence as the model's schedule. Native derived tables (`explore_source`)
   need the SQL from Looker's SQL Runner or `run/sql` of an equivalent query.
+  `sql_create` / `create_process` run custom DDL (often BigQuery ML `CREATE MODEL`);
+  port them to your scheduler.
 - **Access grants**: Looker checks a user attribute; the Cedar policies check groups. Create
   one group per allowed value in the IdP (or rename to the real group), delete the rest.
   Several grants on one object mean AND in Looker: use one group that encodes both.
@@ -156,13 +172,25 @@ under `migration/parity/data/`.
   generated SQL) - handy for ad-hoc parity checks from an agent.
 - **gzr** (Gazer CLI): `gzr dashboard cat <id> --dir .` / `gzr look cat` export full
   dashboard JSON; useful when the API key can't list content but a user can.
-- LookML dashboards (`*.dashboard.lookml`) are not parsed; import a user-defined copy
+- LookML dashboards (`*.dashboard.lookml`) are not parsed. Without API access they are
+  the only dashboards you have: rebuild each tile from its element (`model`, `explore`,
+  `fields`, `pivots`, `filters`, `listen`). With API access, import a user-defined copy
   (`POST /dashboards/{lookml_id}/import`) or extract the UDD version.
 
 ## Gotchas
 
-- `extends` and refinements (`view: +orders`) are merged before parsing; `extension:
-  required` views without a table are skipped.
+- Refinements (`view: +orders`, `explore: +orders`) are applied first, then `extends`,
+  as Looker does: a view that extends a refined view gets the refinement, and
+  `extends` added by a refinement counts. `extension: required` views and explores
+  are not written themselves.
+- Views are global here, while Looker scopes refinements to the models that include
+  them. If two models refine the same view differently, the result is both merged;
+  check the view against the model you migrate first. When two files define the same
+  view, the one a model includes wins (warning).
+- Ignored without a TODO because they don't change numbers: `aggregate_table`
+  (aggregate awareness), explore `query:` (Quick Start), `fields:` / `sets`,
+  `always_join`, `test:` blocks, `.strings.json` localization (labels that are
+  localization keys come through as the key).
 - Join aliases (`join: buyer { from: customers }`) need a second entity by hand
   (role-playing dimensions).
 - Looker counts with symmetric aggregates across fan-out joins; a MetricFlow `count`

@@ -15,12 +15,12 @@ from unshackle import build
 from unshackle.ir import Dashboard, DashboardFilter, Encoding, Layer, Tile
 from unshackle.raw import RawStore
 from unshackle.run import notebook_queries, run_notebook
-from unshackle.sources import get_source
+from unshackle.sources import TOOLS as SOURCES, get_source
 from unshackle.target.notebooks import build_notebook
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
-TOOLS = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir())
+TOOLS = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name in SOURCES)
 TABLEAU_WB = FIXTURES / "tableau" / "workbooks" / "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f809a1b.twb"
 DS = "[federated.0hgpf0j1fdpvv316shikk0mmdlec]"
 
