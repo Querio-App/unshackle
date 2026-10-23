@@ -107,7 +107,8 @@ and `Retry-After`; unshackle polls `GET /v1/operations/{id}` until `Succeeded`, 
 | `SUM/AVERAGE/MIN/MAX/COUNT/COUNTA/DISTINCTCOUNT/MEDIAN(T[c])`, `COUNTROWS(T)` | measure + simple metric (on the model of `T`, whatever the measure's home table) |
 | `SUMX/AVERAGEX/MINX/MAXX(T, <row expr on T>)` | measure with `expr` (other tables or `RELATED` -> TODO) |
 | `DIVIDE([A], [B])`, `[A] / [B]` | ratio |
-| arithmetic over measures (`DIVIDE([A] - [B], [A])`) | derived (`(a - b) / nullif(a, 0)`) |
+| arithmetic over measures (`DIVIDE([A] - [B], [A])`) | derived; `+`/`-` treat BLANK as 0 like DAX (`(CASE WHEN a IS NULL AND b IS NULL THEN NULL ELSE COALESCE(a, 0) - COALESCE(b, 0) END) / nullif(a, 0)`) |
+| `DIVIDE([A], [B], 0)` | derived `CASE WHEN coalesce(b, 0) = 0 THEN 0 ELSE 1.0 * a / nullif(b, 0) END` |
 | `VAR x = .. RETURN ..` | variables inlined when they are only used outside `CALCULATE`, iterators and table functions (else TODO) |
 | `CALCULATE([M])` (no filters) | the same as `[M]` |
 | `CALCULATE(SUM(..), T[c] = "x") + 0`, `[A] - CALCULATE([A], ..)` | derived over a filtered simple metric (`<name>_1`); `+ 0` -> `coalesce(x, 0)` |
@@ -136,14 +137,18 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
   thing. `FILTER(Sales, Sales[Amount] > 100)` is a row condition: measure
   `expr: case when amount > 100 then amount end`, or a metric filter on a dimension.
   `FILTER(ALL(..), ..)` changes context: see below.
-- **ALL / REMOVEFILTERS / ALLEXCEPT / ALLSELECTED** (share of total, % of parent):
-  compute in the tile SQL with a window,
-  `sum(amount) / sum(sum(amount)) over ()` (ALL),
-  `... over (partition by region)` (ALLEXCEPT region). If the number is reused
-  everywhere, a SQL model at the fixed grain (`queries/models/`) plus a measure on it.
+- **ALL / REMOVEFILTERS / ALLEXCEPT / ALLSELECTED, `FILTER(ALL(..)/ALLSELECTED(..), ..)`**
+  (share of total, % of parent, running totals): the value depends on the visual's
+  grouping, so the metric stays a TODO, and `build` writes it into the tile SQL (see
+  Reports). Neither MetricFlow nor Ossie can say "ignore this filter": Ossie 0.2 metrics
+  are aggregates over fields, and grain calculations are a future extension of its
+  expression language. If the number is reused everywhere, write a SQL model at the
+  fixed grain (`queries/models/`) plus a measure on it.
 - **Iterators over related tables** (`SUMX(Sales, Sales[Qty] * RELATED(Product[Price]))`):
   SQL model joining the tables (`select s.*, p.price from sales s join product p ...`),
-  then `sum(qty * price)` on it. Same-table iterators are already translated.
+  then `sum(qty * price)` on it. Same-table iterators are already translated, and
+  iterators over `VALUES(T[c])` are translated in tile SQL (a metric would need a
+  nested aggregation, which neither format has).
 - **Time intelligence.** YTD/QTD/MTD -> cumulative `grain_to_date`; rolling
   `DATESINPERIOD(d, MAX(d), -3, MONTH)` -> cumulative `window: 3 months`;
   `SAMEPERIODLASTYEAR`/`DATEADD` -> derived `offset_window`; `PARALLELPERIOD`/
@@ -160,9 +165,13 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
   CALCULATE(.., p)`) keeps its DAX: translate the whole measure by its meaning (here a
   rolling window).
 - **`+ 0`** (show 0 instead of BLANK) becomes `coalesce(x, 0)`. In general DAX `+` and `-`
-  treat BLANK as 0 (`BLANK + 5 = 5`); tile SQL does the same with `COALESCE`, but derived
-  metrics don't: if one input can be empty for a group, wrap it in `coalesce(.., 0)` in the
-  derived `expr`.
+  treat BLANK as 0 (`BLANK + 5 = 5`) and are BLANK only when every input is; tile SQL,
+  calculated columns and derived metrics all write that as
+  `CASE WHEN a IS NULL AND b IS NULL THEN NULL ELSE COALESCE(a, 0) - COALESCE(b, 0) END`.
+- **`DIVIDE(a, b, alt)`** returns `alt` where `b` is 0 or BLANK, and BLANK where `a` is
+  BLANK and `b` isn't: `CASE WHEN coalesce(b, 0) = 0 THEN alt ELSE 1.0 * a / nullif(b, 0) END`
+  (a derived metric). `coalesce(1.0 * a / nullif(b, 0), alt)` would wrongly return `alt`
+  for an empty numerator. `DIVIDE(a, b)` and `DIVIDE(a, b, BLANK())` are ratio metrics.
 - **SELECTEDVALUE / HASONEVALUE / ISINSCOPE**: these read the visual. Turn the slicer
   into a notebook `:param`, or split tiles by hierarchy level.
 - **RANKX / TOPN**: `rank() over (order by ..)` / `order by .. limit n` in tile SQL.
@@ -175,15 +184,22 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
 - **Calculated tables** (`partition = calculated`, `CALENDARAUTO()`, `SUMMARIZE`): a SQL
   model; date tables -> the dbt/MetricFlow time spine.
 
-Example:
+Example (what `build` writes for a column chart of the share by region):
 
-```yaml
-# DAX: Share of Region = DIVIDE([Total Sales], CALCULATE([Total Sales], ALL(Customer[Region])))
-# -> not a metric; tile SQL:
-select region, sum(amount) as total_sales,
-       sum(amount) / sum(sum(amount)) over () as share_of_region
-from dbo.FactSales s left join dbo.DimCustomer c on s.CustomerKey = c.CustomerKey
-group by 1
+```sql
+-- DAX: Share of Region = DIVIDE([Total Sales], CALCULATE([Total Sales], ALL(Customer[Region])))
+SELECT
+  g.region AS region,
+  1.0 * g._a1 / NULLIF((SELECT SUM(sales_1.SalesAmount) FROM dbo.FactSales AS sales_1
+                        LEFT JOIN dbo.DimCustomer AS customer_1 ON sales_1.CustomerKey = customer_1.CustomerKey
+                        WHERE (sales_1.Channel = :channel OR :channel IS NULL)), 0) AS share_of_region
+FROM (
+  SELECT customer.Region AS region, SUM(sales.SalesAmount) AS _a1
+  FROM dbo.FactSales AS sales LEFT JOIN dbo.DimCustomer AS customer ON sales.CustomerKey = customer.CustomerKey
+  WHERE (sales.Channel = :channel OR :channel IS NULL)
+  GROUP BY 1
+) AS g
+ORDER BY 1
 ```
 
 ### DAX coverage
@@ -195,14 +211,19 @@ What `build` translates on its own, and what stays a `TODO(unshackle)` with the 
 | --- | --- |
 | `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `COUNTA`, `DISTINCTCOUNT`, `MEDIAN`, `COUNTROWS` | translated (simple metric) |
 | `SUMX`/`AVERAGEX`/`MINX`/`MAXX` over the measure's own table | translated (measure `expr`) |
-| `DIVIDE`, `/`, `+`, `-`, `*` over measures | translated (ratio / derived) |
+| `DIVIDE`, `/`, `+`, `-`, `*`, `COALESCE` over measures | translated (ratio / derived; `+`/`-` with DAX BLANK semantics) |
+| `DIVIDE(a, b, alt)` | translated (derived: `alt` where `b` is 0 or BLANK) |
 | `CALCULATE` with column predicates (`=`, `<>`, `<`, `IN {..}`, `&&`, `\|\|`, `NOT`, `KEEPFILTERS`) | translated (metric `filter`) |
 | `TOTALYTD/QTD/MTD`, `DATESYTD/QTD/MTD` | translated (cumulative `grain_to_date`) |
 | `SAMEPERIODLASTYEAR`, `DATEADD(.., -n, YEAR/QUARTER/MONTH/DAY)` | translated (derived `offset_window`; not in Ossie, kept in `custom_extensions`) |
 | `VAR`/`RETURN` (context-free use) | translated after inlining |
 | fiscal `TOTALYTD(.., "6/30")`, `DATESINPERIOD`, `PARALLELPERIOD`, `PREVIOUSMONTH/YEAR` | TODO (rolling or whole-period windows) |
-| `ALL`, `ALLEXCEPT`, `ALLSELECTED`, `REMOVEFILTERS`, `FILTER(ALL..)` | TODO (window SQL in the tile or a SQL model) |
-| iterators over `VALUES(..)`, other tables or `RELATED` | TODO (SQL model) |
+| `CALCULATE` with `ALL`, `ALLEXCEPT`, `ALLSELECTED`, `REMOVEFILTERS` (share of total, % of parent) | tile SQL translated; metric TODO (depends on the visual's grouping) |
+| `CALCULATE(.., FILTER(ALL(..)/ALLSELECTED(..), <cond with MAX/MIN of a column>))` (running totals) | tile SQL translated; metric TODO |
+| `SUMX`/`AVERAGEX`/`MINX`/`MAXX` over `VALUES(T[c])` of a plain measure | tile SQL translated; metric TODO |
+| a `CALCULATE` column filter on a column the visual groups by or a slicer filters | tile SQL translated (the filter replaces the grouping, as in DAX) |
+| iterators over other tables or `RELATED`; `VALUES` iterators over `CALCULATE`, time intelligence or `[M] + 0` | TODO (SQL model) |
+| `ALL..` across a bi-directional relationship, `ALLSELECTED` under an outer `CALCULATE` filter on the same column, `FILTER` over other tables | TODO |
 | `USERELATIONSHIP` | TODO (second entity / time dimension) |
 | `SELECTEDVALUE`, `HASONEVALUE`, `ISFILTERED`, `ISINSCOPE`, `SWITCH(TRUE(), ..)` over measures | TODO (notebook parameter or tile SQL) |
 | `RANKX`, `TOPN`, `SUMMARIZE`, `ADDCOLUMNS` | TODO |
@@ -210,7 +231,6 @@ What `build` translates on its own, and what stays a `TODO(unshackle)` with the 
 | `EXTERNALMEASURE` (composite models) | TODO (migrate the remote model) |
 | measures returning text, colours or SVG (`FORMAT`, `"data:image/svg+xml..."`) | TODO (presentation, not a metric) |
 
-`DIVIDE(a, b, 0)` as a ratio metric returns NULL, not 0, where `b` is 0 or empty.
 
 ## Power Query M -> SQL
 
@@ -270,7 +290,34 @@ enum: `0` Sum, `1` Avg, `2` Count (Distinct), `3` Min, `4` Max, `5` Count (non-n
 
 Tile SQL is generated from the measure's DAX (same rules as the metrics, pushed into
 `CASE WHEN` for CALCULATE filters) when every field is on the measure's table or on a
-table it reaches through one active many-to-one relationship. A visual or page filter
+table it reaches through one active many-to-one relationship.
+
+Measures that change the filter context are computed the way DAX does it, as filters
+added to and removed from the visual's filter context (its grouping, slicers, and
+report/page/visual filters):
+
+- A `CALCULATE` column filter replaces the filters on that column. `ALL(T)` /
+  `REMOVEFILTERS(T)` remove the filters on T and every table T reaches (DAX's expanded
+  table), `ALL(T[c])` only those on `c`, and `ALLEXCEPT(T, T[c])` all but `c`.
+  `ALLSELECTED` removes only the visual's own grouping; slicers and filters stay.
+  `KEEPFILTERS` adds without replacing.
+- On a date table (marked with `dataCategory: Time`, or a datetime column that a
+  relationship points to), a filter on the date column also removes the filters on the
+  rest of the table, so a running total grouped by `YearMonth` keeps running.
+- `FILTER(ALLSELECTED('Date'[Date]), 'Date'[Date] <= MAX('Date'[Date]))`: `MAX` is
+  evaluated in the visual's row, over the date table only (relationships filter from the
+  one side to the many side), as a scalar subquery.
+
+When a measure removes a filter the query applies, the tile groups in a derived table
+`g` first and that measure is a correlated subquery over the same tables with the
+filters that are left, the grouping becoming `col IS NOT DISTINCT FROM g.col`. It is
+exact for any grouping (a running total by month name too), not just ordered ones.
+Rows: SQL only returns groups with data, while Power BI also shows groups whose measure
+isn't BLANK (`CALCULATE([Sales], ALL(Product))` on a color without sales); the values on
+the rows returned are the same. `VALUES` iterators skip BLANKs in DAX, so they need a
+measure that is BLANK without rows (no `+ 0`); other forms keep a TODO. The SQL is
+standard (tested on DuckDB), but some warehouses restrict correlated subqueries: run
+the notebook once against yours. A visual or page filter
 that picks a calculation item (`'Time Intelligence'[Show as] = "PY"`) changes every
 measure in the visual, so such tiles get no SQL; items that are just `SELECTEDMEASURE()`
 (format-only) are ignored. The same field sliced twice on a page (e.g. a slicer panel

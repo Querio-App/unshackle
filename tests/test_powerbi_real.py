@@ -78,7 +78,10 @@ def test_sales_measures(sales):
     assert (m["sales_amount_ly"].type, m["sales_amount_ly"].offsets) == ("derived", {"sales_amount": "1 year"})
     assert m["sales_amount_ytd_ly"].offsets == {"sales_amount_ytd": "1 year"}
     # var ly = [Sales Amount (LY)] return DIVIDE([Sales Amount] - ly, ly)
-    assert m["sales_amount_pct_delta_ly"].expr == "1.0 * (sales_amount - sales_amount_ly) / nullif(sales_amount_ly, 0)"
+    assert m["sales_amount_pct_delta_ly"].expr == (
+        "1.0 * (CASE WHEN sales_amount IS NULL AND sales_amount_ly IS NULL THEN NULL"
+        " ELSE COALESCE(sales_amount, 0) - COALESCE(sales_amount_ly, 0) END) / nullif(sales_amount_ly, 0)"
+    )
     for name, needle in [
         ("sales_amount_12m_average", "DATESINPERIOD"),  # rolling 12 months, its period VAR used inside CALCULATE
         ("sales_qty_by_delivery_date", "USERELATIONSHIP"),
@@ -174,6 +177,24 @@ def test_fca_thin_report_uses_the_imported_model(fca):
     # [#PauseCost]+[#SparkAutoScale]+[#CapacityAutoScale], each CALCULATE(..)+0: BLANK counts as 0
     assert "(COALESCE(SUM(CASE WHEN fca.BillingType = 'Capacity Pause/Delete Surcharge' THEN fca.EffectiveCost END), 0))" in other
     assert "LEFT JOIN dbo.meters AS meters ON fca.MeterKey = meters.MeterKey" in other
+
+
+def test_fca_running_totals_and_replaced_filters_in_tile_sql(fca):
+    _, b = fca
+    tiles = {t.id: t for d in b.dashboards for t in d.tiles}
+    # Total Cost YTD = CALCULATE([#TotalCost], FILTER(ALLSELECTED('calendar'[Date]), 'calendar'[Date] <= MAX('calendar'[Date])))
+    ytd = tiles["49f5cca90df2b9e65be2"]
+    assert ytd.sql and "no SQL" not in ytd.todo
+    running = next(line for line in ytd.sql.splitlines() if line.endswith("AS total_cost_ytd,"))
+    # calendar is a marked date table: the Year/YearMonth/Date grouping goes, the date slicer stays (ALLSELECTED)
+    assert "calendar_2.Date <= (SELECT MAX(calendar_1.Date) FROM dbo.calendar AS calendar_1 WHERE" in running
+    assert "calendar_1.YearMonth IS NOT DISTINCT FROM g.year_month" in running and "calendar_2.Year " not in running
+    assert "(calendar_2.Date >= CAST(:date_from AS DATE) OR :date_from IS NULL)" in running
+    assert tiles["6caac5df45468d874b6d"].sql  # Available capacity YTD, the same pattern
+    # grouped by meters[Name], [#SparkAutoScale] = CALCULATE(.., meters[Name] = "autoscale ..") + 0: the filter replaces the grouping
+    details = next(t.sql for t in tiles.values() if "AS count_spark_auto_scale" in t.sql and "g.name AS name" in t.sql)
+    assert "meters_3.Name = 'autoscale for Spark Capacity Usage CU'" in details and "meters_3.Category IS NOT DISTINCT FROM g.category" in details
+    assert "meters_3.Name IS NOT DISTINCT FROM" not in details
 
 
 # ---------------------------------------------------------------- Query Capacity Correlation (composite model, many-to-many)
