@@ -1,0 +1,32 @@
+[
+  {
+    "qDefinition": "COMPLETED",
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000050",
+      "qType": "variable"
+    },
+    "qIsScriptCreated": true,
+    "qMetaDef": {},
+    "qName": "vCompletedStatus",
+    "qNumberPresentation": {
+      "qType": "U",
+      "qUseThou": 0,
+      "qnDec": 10
+    }
+  },
+  {
+    "qComment": "Annual revenue target",
+    "qDefinition": "1000000",
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000051",
+      "qType": "variable"
+    },
+    "qMetaDef": {},
+    "qName": "vRevenueTarget",
+    "qNumberPresentation": {
+      "qType": "U",
+      "qUseThou": 0,
+      "qnDec": 10
+    }
+  }
+]

@@ -1,0 +1,73 @@
+{
+  "_resourcetype": "app",
+  "create": [
+    {
+      "canCreate": true,
+      "resource": "sheet"
+    },
+    {
+      "canCreate": true,
+      "resource": "bookmark"
+    },
+    {
+      "canCreate": true,
+      "resource": "snapshot"
+    },
+    {
+      "canCreate": true,
+      "resource": "story"
+    },
+    {
+      "canCreate": true,
+      "resource": "dimension"
+    },
+    {
+      "canCreate": true,
+      "resource": "measure"
+    },
+    {
+      "canCreate": true,
+      "resource": "masterobject"
+    },
+    {
+      "canCreate": true,
+      "resource": "sheetgroup"
+    },
+    {
+      "canCreate": true,
+      "resource": "variable"
+    }
+  ],
+  "createdDate": "2026-10-23T15:25:33.099Z",
+  "description": "unshackle live test",
+  "encrypted": true,
+  "hassectionaccess": true,
+  "id": "00000000-0000-4000-8000-000000000001",
+  "modifiedDate": "2026-10-23T15:25:38.382Z",
+  "owner": "DM\\MICHAEL",
+  "ownerId": "000000000000000000000002",
+  "privileges": [
+    "read",
+    "update",
+    "delete",
+    "reload",
+    "export",
+    "duplicate",
+    "change_owner",
+    "change_space",
+    "export_reduced",
+    "source",
+    "exportappdata",
+    "evaluate",
+    "manage",
+    "publish_source"
+  ],
+  "published": false,
+  "qHasSectionAccess": true,
+  "qLastReloadTime": "2026-10-23T15:25:36.220Z",
+  "qSavedInProductVersion": "12.2969.0",
+  "qThumbnail": {},
+  "qTitle": "Dunder Mifflin sales",
+  "qUsage": "ANALYTICS",
+  "spaceId": "000000000000000000000003"
+}
