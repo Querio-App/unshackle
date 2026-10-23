@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
+  `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
+  `--quiet`, `NO_COLOR`, CI and piped output stay plain.
+- The README banner no longer draws window buttons.
 - Power BI: tested on published projects (`tests/fixtures/powerbi_real`). DAX `VAR`/`RETURN`
   is inlined where that keeps its meaning; `CALCULATE` without filters and the `+ 0` idiom
   translate; Direct Lake tables map to their SQL endpoint table; thin reports find a model
