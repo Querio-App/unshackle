@@ -46,4 +46,4 @@ path = "README.md"
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
 pattern = 'src="assets/'
-replacement = 'src="https://raw.githubusercontent.com/unshackle-analytics/unshackle/main/assets/'
+replacement = 'src="https://raw.githubusercontent.com/Querio-App/unshackle/main/assets/'

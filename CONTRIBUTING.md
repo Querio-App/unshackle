@@ -7,7 +7,7 @@ BI tool) and **targets** (writing open formats).
 ## Set up
 
 ```bash
-git clone https://github.com/unshackle-analytics/unshackle
+git clone https://github.com/Querio-App/unshackle
 cd unshackle
 uv venv && uv pip install -e ".[dev]"
 pytest
