@@ -1,0 +1,12 @@
+{
+  "resourceType": "theme",
+  "themeId": "dunder-mifflin-theme",
+  "name": "Dunder Mifflin",
+  "baseThemeId": "CLASSIC",
+  "versionDescription": "1",
+  "configuration": {
+    "uiColorPalette": {
+      "primaryForeground": "#1E2A3A"
+    }
+  }
+}

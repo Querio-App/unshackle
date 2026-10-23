@@ -60,6 +60,7 @@ connection and caching differences. Save the SQL in the case's `source.sql`.
 | Hex | re-run the project's SQL cells on the warehouse (they are the source of truth) |
 | Metabase | `POST /api/card/{id}/query/csv` with `format_rows=false` (a dashboard tile with filters: `POST /api/dashboard/{d}/dashcard/{dc}/card/{c}/query/csv` with `parameters`); the SQL is `POST /api/dataset/native` |
 | Superset | `POST /api/v1/chart/data` with the chart's `query_context`, `result_type: full`, `result_format: csv`, `pivot`/`flatten` post-processing dropped (a dashboard filter: add `{"col", "op": "IN", "val"}` to each query's `filters`); headers are metric verbose names; the SQL is the same call with `result_type: query` |
+| QuickSight | no query API: `StartDashboardSnapshotJob` exports table and pivot visuals as CSV (Pixel Perfect add-on); else Export to CSV from the visual, or QuickSight's own SQL from the warehouse's query history (Athena `ListQueryExecutions` in the data source's workgroup) after the dashboard is opened |
 | Redash | `POST /api/queries/{id}/results` with `{"parameters": {...}, "max_age": 0}`, poll `GET /api/jobs/{job}` until `status` 3, then `GET /api/query_results/{query_result_id}` (`data.columns` / `data.rows`; its `query` is the SQL Redash ran); a date range is `{"start", "end"}` |
 
 The source skill (`skills/source-<tool>/SKILL.md`) has the auth details. Save CSVs

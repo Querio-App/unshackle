@@ -19,6 +19,7 @@ Every test uses the same data: the fictional Dunder Mifflin paper company in
 | `test_metabase_live.py` | Metabase v0.64.1; native, query-builder and metric cards, a model, a snippet, a two-tab dashboard with filters; 5 parity cases | ~30 s |
 | `test_superset_live.py` | Superset 6.1.0 (built with the Postgres driver); datasets with metrics, 5 charts, a dashboard with a native filter, a role, RLS; 9 parity cases | ~40 s |
 | `test_redash_live.py` | Redash 26.9.0, its metadata Postgres and Redis; 4 parameterized queries, a dashboard; 6 parity cases | ~30 s |
+| `test_quicksight_live.py` | Amazon QuickSight in an AWS account (not Docker), Athena over the dataset in S3; the fixture's data source, 3 datasets, analysis and dashboard; 13 parity cases. **Not run yet** | - |
 
 The first run pulls images (Lightdash is a ~3.2 GB download, ~15 GB unpacked) and, through
 `npx`, the Lightdash CLI. The Superset image is built locally from `superset/Dockerfile`.
@@ -65,6 +66,58 @@ need to be non-empty):
 UNSHACKLE_LIVE_PG_PASSWORD=x UNSHACKLE_LIVE_SECRET=x docker-compose -p unshackle-live-<tool> \
   -f tests/live/docker-compose.warehouse.yml -f tests/live/<tool>/docker-compose.yml down -v
 ```
+
+## QuickSight notes
+
+QuickSight can't run in Docker, so this test uses a real AWS account and is skipped unless
+`QUICKSIGHT_ACCOUNT_ID`, `QUICKSIGHT_LIVE_BUCKET` and `QUICKSIGHT_LIVE_OWNER` are set as well
+as `UNSHACKLE_LIVE=1`. **It has not run yet**: it was written before an account was
+available, so expect a first run to need fixes. Its content is the offline fixture
+(`tests/fixtures/quicksight/bundle`), created through the API, so the first run also checks
+that the fixture is a valid QuickSight definition. `QUICKSIGHT_LIVE_SAVE_FIXTURE=1` copies the
+real export to `tests/live/fixtures/quicksight/` to replace it.
+
+What it needs in the account (cheapest setup: Athena in direct query mode, no SPICE):
+
+- **QuickSight Enterprise edition** (a trial is fine) in `QUICKSIGHT_REGION`, with access to
+  Athena and to the S3 bucket turned on under *Manage QuickSight -> Security & permissions*
+  (the QuickSight service role reads the Parquet files and writes Athena results).
+- **An S3 bucket** (`QUICKSIGHT_LIVE_BUCKET`) in the same region. The test writes under
+  `QUICKSIGHT_LIVE_PREFIX` (default `unshackle-live/`): `data/<table>/` (the Parquet files and an
+  RLS rules table), `athena-results/` and `snapshots/`, and deletes the prefix at the end.
+- **Athena workgroup** `QUICKSIGHT_LIVE_WORKGROUP` (default `primary`, engine v3). The test
+  creates the Glue database `dunder_mifflin` and its tables with Athena DDL and drops them at
+  the end.
+- **A QuickSight user** that owns the content, as an ARN in `QUICKSIGHT_LIVE_OWNER`
+  (`arn:aws:quicksight:<identity region>:<account>:user/default/<name>`, an ADMIN or AUTHOR).
+  The test creates the groups `Sales`, `Analysts` and `Finance` the fixture shares with.
+- **AWS credentials** for the standard boto3 chain (`AWS_PROFILE` or keys), allowed to:
+  `quicksight:*` on the test's assets (create/delete data sources, datasets, analyses,
+  dashboards and groups; the asset bundle export; `List*`/`Describe*`), `athena:StartQueryExecution`,
+  `athena:GetQueryExecution`, `athena:GetQueryResults`, `glue:*Database*`, `glue:*Table*`,
+  `glue:GetPartitions`, and `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, `s3:DeleteObject`,
+  `s3:GetBucketLocation` on the bucket. unshackle's own extract only needs the read-only policy in
+  `skills/source-quicksight/SKILL.md`.
+- `pip install -e ".[dev,live]"` (PyAthena with its SQLAlchemy dialect runs `unshackle verify`
+  on Athena).
+
+```bash
+UNSHACKLE_LIVE=1 QUICKSIGHT_ACCOUNT_ID=123456789012 QUICKSIGHT_REGION=us-east-1 \
+  QUICKSIGHT_LIVE_BUCKET=my-unshackle-live QUICKSIGHT_LIVE_OWNER=arn:aws:quicksight:us-east-1:123456789012:user/default/admin \
+  pytest tests/live/test_quicksight_live.py -s
+```
+
+| Variable | Default | |
+| --- | --- | --- |
+| `QUICKSIGHT_IDENTITY_REGION` | `QUICKSIGHT_REGION` | where QuickSight users and groups live |
+| `QUICKSIGHT_LIVE_SNAPSHOTS` | unset | `1` also compares the table visual with QuickSight's own CSV (`StartDashboardSnapshotJob`: needs the Pixel Perfect add-on and capacity pricing) |
+| `QUICKSIGHT_LIVE_SAVE_FIXTURE` | unset | `1` saves the real bundle to `tests/live/fixtures/quicksight/` |
+
+Source numbers: QuickSight has no API that returns a visual's data without the Pixel Perfect
+add-on, so the parity cases compare the migrated SQL, run on Athena, with reference SQL over
+the same Parquet files in DuckDB written from QuickSight's documented semantics (the KPI, line,
+table, combo and bar tiles, with and without the Status parameter, and four Ossie metrics).
+The cost is a few cents of Athena and S3; the content stays inside the QuickSight trial.
 
 ## Lightdash notes
 

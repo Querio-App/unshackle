@@ -40,6 +40,7 @@ MARK_METHOD = {
     "area": "mark_area()",
     "point": "mark_point()",
     "arc": "mark_arc()",
+    "rect": "mark_rect()",
     "text": "mark_text()",
 }
 RESERVED = {"alt", "pd", "os", "text", "engine", "create_engine", "base"}

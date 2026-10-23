@@ -16,6 +16,7 @@ TOOLS = {
     "metabase": "unshackle.sources.metabase:MetabaseSource",
     "superset": "unshackle.sources.superset:SupersetSource",
     "redash": "unshackle.sources.redash:RedashSource",
+    "quicksight": "unshackle.sources.quicksight:QuickSightSource",
 }
 
 

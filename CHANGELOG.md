@@ -16,6 +16,12 @@
   imported next to them. Fixed: lost parentheses and integer division in generated SQL,
   BLANK handling in `+`/`-`, entities on many-to-many or non-key relationships, tiles
   filtered to a calculation item, duplicate notebook cell ids.
+- Amazon QuickSight source: the asset bundle export (`StartAssetBundleExportJob`,
+  `QUICKSIGHT_JSON`) with `Describe*` calls as a fallback, `unshackle import quicksight
+  <file.qs>`, tile SQL generated from datasets, calculated fields and filter groups,
+  permissions, column-level security and row-level security. Install with
+  `unshackle[quicksight]`. Fixtures follow the service model; the live test hasn't run yet.
+- Heat maps: tiles can use the `rect` mark.
 
 ## 0.1.0
 

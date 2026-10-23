@@ -1,0 +1,21 @@
+{
+  "resourceType": "dataSource",
+  "dataSourceId": "dunder-mifflin-athena",
+  "name": "Dunder Mifflin (Athena)",
+  "type": "ATHENA",
+  "dataSourceParameters": {
+    "athenaParameters": {
+      "workGroup": "primary"
+    }
+  },
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:group/default/Analysts",
+      "actions": [
+        "quicksight:DescribeDataSource",
+        "quicksight:DescribeDataSourcePermissions",
+        "quicksight:PassDataSource"
+      ]
+    }
+  ]
+}

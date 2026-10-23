@@ -1,6 +1,6 @@
 ---
 name: migrate
-description: Use when migrating a BI tool (Looker, Lightdash, Omni, Hex, Sigma, ThoughtSpot, Power BI, Tableau, Metabase, Superset, Redash) into a Git repo with unshackle, or when re-running a migration after the source changed. Orchestrates inventory, extract, build, translate, verify and the write-up PR.
+description: Use when migrating a BI tool (Looker, Lightdash, Omni, Hex, Sigma, ThoughtSpot, Power BI, Tableau, Metabase, Superset, Redash, QuickSight) into a Git repo with unshackle, or when re-running a migration after the source changed. Orchestrates inventory, extract, build, translate, verify and the write-up PR.
 ---
 
 # Migrate a BI tool with unshackle
@@ -19,7 +19,7 @@ or `unshackle build`; refresh with `unshackle init --update-skills`). A referenc
 `spec/layout.md` means `migration/spec/layout.md`.
 
 1. Pick the source skill: `skills/source-<tool>/SKILL.md` where `<tool>` is one of
-   `looker lightdash omni hex sigma thoughtspot powerbi tableau metabase superset redash`. Load it now; it
+   `looker lightdash omni hex sigma thoughtspot powerbi tableau metabase superset redash quicksight`. Load it now; it
    covers auth, API quirks and what that tool's parser leaves as TODO.
 2. Install: `uv tool install "unshackle[run,sql]"`
    (add `looker` to the extras for LookML). The CLI is `unshackle`. Don't `pip install unshackle`:
