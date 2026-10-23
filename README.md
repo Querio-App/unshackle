@@ -11,6 +11,31 @@ Tableau, Metabase, Apache Superset, and Redash. The generated files include
 table descriptions, metrics, queries, dashboards, and permissions when the
 source provides them.
 
+## Supported tools
+
+| Tool | Extract through the API | Import downloaded files | How it's tested |
+| --- | --- | --- | --- |
+| Tableau | yes | `.twb`, `.twbx`, `.tds`, `.tdsx` | **Live:** a Tableau Cloud site; 7 parity checks against Tableau's own view data |
+| Metabase | yes | no | **Live:** Metabase in Docker; 5 parity checks against Metabase's own results |
+| Lightdash | yes | dbt project + `lightdash download` | **Live:** Lightdash in Docker; 6 parity checks |
+| Apache Superset | yes | not yet | **Live:** Superset in Docker; 9 parity checks |
+| Redash | yes | no | **Live:** Redash in Docker; 6 parity checks |
+| Amazon QuickSight | yes | asset bundle (`.qs`) | **Live:** a QuickSight account; the migrated SQL is checked on Athena (QuickSight has no API for chart data) |
+| Looker | yes | LookML project | **Real projects:** 18 open-source LookML projects; no live instance |
+| Power BI | yes | `.pbip` (TMDL) | **Real projects:** published Power BI projects; no live instance |
+| Omni | yes | model YAML | Saved exports |
+| Hex | yes | project YAML | Saved exports |
+| ThoughtSpot | yes | TML | Saved exports |
+| Sigma | yes | no (Sigma has no definition download) | Saved exports |
+
+- **Live** means the tool runs for real with a fictional dataset, unshackle extracts and
+  builds it, and `unshackle verify` checks that the migrated SQL returns the same numbers.
+- **Real projects** means parsing is tested on real-world definitions, but not against a
+  running instance.
+- **Saved exports** means parsing is tested on files shaped like the tool's exports. If you
+  use one of these tools, an anonymized export (a "Fixture submission" issue) is the most
+  useful thing you can contribute.
+
 ## Try it without connecting a BI tool
 
 ```bash
