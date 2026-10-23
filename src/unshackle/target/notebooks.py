@@ -257,6 +257,13 @@ def build_notebook(d: Dashboard, tool: str) -> dict:
         cells.append(_code(f"{ident}-sql", lines))
         cells.append(_code(f"{ident}-chart", _composed_chart(ident, tile) if tile.layers else _single_chart(ident, tile)))
     layout = [[idents[i] for i in row if i in idents] for row in d.layout or [[t.id] for t in d.tiles]]
+    seen: set[str] = set()
+    for cell in cells:  # ids are cut at 64 characters, so long titles can collide
+        cid, i = cell["id"], 2
+        while cid in seen:
+            cid, i = f"{cell['id'][:60]}-{i}", i + 1
+        seen.add(cid)
+        cell["id"] = cid
     return {
         "cells": cells,
         "metadata": {

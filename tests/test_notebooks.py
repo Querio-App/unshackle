@@ -15,12 +15,13 @@ from unshackle import build
 from unshackle.ir import Dashboard, DashboardFilter, Encoding, Layer, Tile
 from unshackle.raw import RawStore
 from unshackle.run import notebook_queries, run_notebook
+from unshackle.sources import TOOLS as SOURCES
 from unshackle.sources import get_source
 from unshackle.target.notebooks import build_notebook
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
-TOOLS = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir())
+TOOLS = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name in SOURCES)
 TABLEAU_WB = FIXTURES / "tableau" / "workbooks" / "3f2a9c1e-7b4d-4e8a-9c21-5d6e7f809a1b.twb"
 DS = "[federated.0hgpf0j1fdpvv316shikk0mmdlec]"
 
@@ -79,6 +80,15 @@ def test_cells_follow_layout_and_bind_filters():
     assert "second = pd.read_sql(text(second_sql), engine, params={'region': region})" in nb["cells"][-1]["source"]
     assert nb["cells"][3]["source"] == "Read **this** first."
     assert nb["metadata"]["unshackle"]["layout"] == [["c"], ["first", "second"]]
+
+
+def test_long_tile_titles_keep_cell_ids_unique():
+    title = "Sales Amount, Sales Amount (LY), Margin, Sales Amount (12M average) by Month"
+    d = Dashboard("D", "d", tiles=[Tile("a", title, mark="bar", sql="select 1"), Tile("b", title + " and Year", mark="bar", sql="select 1")])
+    nb = build_notebook(d, "demo")
+    ids = [c["id"] for c in nb["cells"]]
+    assert len(ids) == len(set(ids)) and all(len(i) <= 64 for i in ids)
+    nbformat.validate(nbformat.from_dict(nb))
 
 
 def _chart(tile: Tile) -> dict:

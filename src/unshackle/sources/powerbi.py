@@ -32,6 +32,7 @@ import json
 import re
 import textwrap
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -108,6 +109,7 @@ DAX_HINT = {
     "RANKX": "ranking (RANKX): window SQL (RANK() OVER ...) in the tile",
     "TOPN": "TOPN: ORDER BY ... LIMIT in the tile SQL",
     "USERELATIONSHIP": "activates an inactive relationship (USERELATIONSHIP): add a second foreign entity / time dimension",
+    "EXTERNALMEASURE": "measure of another semantic model (composite model, DirectQuery to Power BI): migrate that model and use its metric",
     "SELECTEDVALUE": "reads slicer selection (SELECTEDVALUE): a notebook filter parameter",
     "ISINSCOPE": "depends on visual hierarchy level (ISINSCOPE): split tiles or compute in tile SQL",
     "HASONEVALUE": "depends on visual filter context (HASONEVALUE): tile SQL",
@@ -686,6 +688,9 @@ class PPartition:
     type: str = "m"
     mode: str = ""
     source: str = ""
+    entity: str = ""  # entity partitions (Direct Lake, DirectQuery to another model): entityName, schemaName, expressionSource
+    schema: str = ""
+    expression_source: str = ""
 
 
 @dataclass
@@ -714,6 +719,12 @@ class PRel:
     to_column: str
     active: bool = True
     cross_filter: str = ""
+    to_many: bool = False  # toCardinality: many (a many-to-many relationship)
+
+    @property
+    def many_to_one(self) -> bool:
+        """What a foreign entity or a tile JOIN can follow without duplicating rows."""
+        return self.active and not self.to_many
 
 
 @dataclass
@@ -767,7 +778,7 @@ def model_from_tmdl(model_id: str, files: dict[str, str]) -> PModel:
         for n in ns:
             if n.ref:
                 continue
-            if n.kind == "database" and n.name:
+            if n.kind == "database" and n.name and n.name.lower() != "unknown":  # older Desktop versions write "Unknown"
                 pm.name = n.name
             elif n.kind == "model":
                 walk(n.children)
@@ -777,7 +788,8 @@ def model_from_tmdl(model_id: str, files: dict[str, str]) -> PModel:
                 ft, fc = split_column_ref(n.prop("fromColumn"))
                 tt, tc = split_column_ref(n.prop("toColumn"))
                 pm.relationships.append(
-                    PRel(n.name, ft, fc, tt, tc, n.prop("isActive", "true").lower() != "false", n.prop("crossFilteringBehavior"))
+                    PRel(n.name, ft, fc, tt, tc, n.prop("isActive", "true").lower() != "false", n.prop("crossFilteringBehavior"),
+                         n.prop("toCardinality").lower() == "many")
                 )
             elif n.kind == "role":
                 pm.roles.append(_role(n))
@@ -806,7 +818,8 @@ def _table(n: TNode) -> PTable:
     for m in n.kids("measure"):
         t.measures.append(PMeasure(m.name, m.expr, n.name, m.description, m.prop("formatString"), m.prop("displayFolder"), _bool(m, "isHidden")))
     for p in n.kids("partition"):
-        t.partitions.append(PPartition(p.name, (p.expr or "m").strip().lower(), p.prop("mode").lower(), p.prop("source")))
+        t.partitions.append(PPartition(p.name, (p.expr or "m").strip().lower(), p.prop("mode").lower(), p.prop("source"),
+                                       p.prop("entityName"), p.prop("schemaName"), p.prop("expressionSource")))
     for h in n.kids("hierarchy"):
         t.hierarchies[h.name] = {lv.name: lv.prop("column") or lv.name for lv in h.kids("level")}
     for cg in n.kids("calculationgroup"):
@@ -986,6 +999,19 @@ def m_source(expr: str, params: dict[str, str] | None = None) -> MSource:
     return ms
 
 
+def entity_source(part: PPartition, expressions: dict[str, str]) -> MSource:
+    """An entity partition reads a table named in the partition through a shared expression: Direct Lake
+    (a lakehouse / warehouse SQL endpoint, or OneLake) or DirectQuery to another Power BI semantic model."""
+    expr = expressions.get(_unquote_name(part.expression_source), "")
+    if re.search(r"\bAnalysisServices\.Database\s*\(|\bPowerPlatform\.|\bPowerBI\.", expr):
+        return MSource(problems=["DirectQuery to another Power BI semantic model (composite model); migrate that model and point this table at its source"])
+    if not part.entity:
+        return MSource(problems=["entity partition without entityName"])
+    ms = m_source(expr) if expr else MSource()
+    ms.schema, ms.table, ms.sql, ms.problems = part.schema, part.entity, "", []
+    return ms
+
+
 # ==================================================================== DAX
 
 
@@ -1038,13 +1064,27 @@ class DSet:
     items: list[Any]
 
 
+@dataclass
+class DVar:
+    """A VAR reference; dax_parse() replaces it with the variable's expression (see _inline_vars)."""
+
+    name: str
+    value: Any
+
+
+# Calls a variable may sit under and still mean the same thing when inlined: they don't change filter
+# or row context. Anything else (CALCULATE, iterators, FILTER, time intelligence) would re-evaluate the
+# inlined expression in a different context than the one the VAR captured.
+VAR_SAFE = {"DIVIDE", "IF", "SWITCH", "ISBLANK", "NOT", "AND", "OR", "COALESCE", "ROUND", "ABS", "TRUE", "FALSE", "BLANK"}
+
+
 _DAX_TOKEN = re.compile(
     r"""
     (?P<ws>\s+|--[^\n]*|//[^\n]*|/\*.*?\*/)
   | (?P<col>(?:'(?:[^']|'')+'|[A-Za-z_][\w]*)?\[(?:[^\]]|\]\])*\])
   | (?P<tbl>'(?:[^']|'')+')
   | (?P<str>"(?:[^"]|"")*")
-  | (?P<num>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)
+  | (?P<num>(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)
   | (?P<ident>[A-Za-z_][\w.]*)
   | (?P<op><=|>=|<>|==|&&|\|\||[=<>+\-*/(),&{}^!])
     """,
@@ -1068,8 +1108,7 @@ class _DaxParser:
     def __init__(self, text: str):
         self.toks = dax_tokens(text)
         self.i = 0
-        if any(k == "ident" and v.upper() in ("VAR", "RETURN") for k, v in self.toks):
-            raise DaxError("uses VAR/RETURN variables")
+        self.scopes: list[dict[str, Any]] = []
 
     def peek(self, value: str | None = None, kind: str | None = None) -> bool:
         if self.i >= len(self.toks):
@@ -1130,7 +1169,34 @@ class _DaxParser:
             return DCall("NOT", [self.unary()])
         return self.primary()
 
+    def _let(self) -> Any:
+        """VAR a = .. VAR b = .. RETURN body, with each variable inlined where it is used (see VAR_SAFE)."""
+        scope: dict[str, Any] = {}
+        self.scopes.append(scope)
+        try:
+            while self.peek("VAR", "ident"):
+                self.take()
+                kind, name = self.take()
+                if kind != "ident":
+                    raise DaxError(f"expected a variable name after VAR, got {name!r}")
+                self.expect("=")
+                scope[name.lower()] = self.or_()
+            if not self.peek("RETURN", "ident"):
+                raise DaxError("VAR without RETURN")
+            self.take()
+            return self.or_()
+        finally:
+            self.scopes.pop()
+
+    def _var(self, name: str) -> Any | None:
+        for scope in reversed(self.scopes):
+            if name.lower() in scope:
+                return scope[name.lower()]
+        return None
+
     def primary(self) -> Any:
+        if self.peek("VAR", "ident"):
+            return self._let()
         kind, v = self.take()
         if kind == "num":
             return DNum(v)
@@ -1166,14 +1232,36 @@ class _DaxParser:
                 return DCall(v.upper(), args)
             if v.upper() in ("TRUE", "FALSE"):
                 return DCall(v.upper())
-            return DTable(v)
+            value = self._var(v)
+            return DTable(v) if value is None else DVar(v, value)
         raise DaxError(f"unexpected {v!r}")
+
+
+def _inline_vars(n: Any, under: str = "") -> Any:
+    """Replace each VAR reference by its expression. A variable is evaluated once, where it is defined;
+    inlining it under CALCULATE, an iterator or a table function would evaluate it in another context."""
+    if isinstance(n, DVar):
+        if under and not _is_literal(n.value):  # constants mean the same in any context
+            hint = next((f for f in dax_functions(n.value) if f in DAX_HINT), "")
+            raise DaxError(f"uses VAR/RETURN variables: {n.name} is used inside {under}, so it can't be inlined"
+                           + (f"; it uses {hint}: {DAX_HINT[hint]}" if hint else ""))
+        return _inline_vars(n.value, under)
+    if isinstance(n, DCall):
+        inner = under or ("" if n.name in VAR_SAFE else n.name)
+        return DCall(n.name, [_inline_vars(a, inner) for a in n.args])
+    if isinstance(n, DBin):
+        return DBin(n.op, _inline_vars(n.left, under), _inline_vars(n.right, under))
+    if isinstance(n, DUn):
+        return DUn(n.op, _inline_vars(n.operand, under))
+    if isinstance(n, DSet):
+        return DSet([_inline_vars(i, under) for i in n.items])
+    return n
 
 
 def dax_parse(text: str) -> Any:
     if not (text or "").strip():
         raise DaxError("empty expression")
-    return _DaxParser(text).parse()
+    return _inline_vars(_DaxParser(text).parse())
 
 
 def dax_functions(node: Any) -> list[str]:
@@ -1211,6 +1299,27 @@ def _is_literal(n: Any) -> bool:
     )
 
 
+def _terms(n: Any, sign: int = 1) -> list[tuple[int, Any]]:
+    """a - (b + c) -> [(1, a), (-1, b), (-1, c)]"""
+    if isinstance(n, DBin) and n.op in ("+", "-"):
+        return _terms(n.left, sign) + _terms(n.right, sign if n.op == "+" else -sign)
+    return [(sign, n)]
+
+
+def _sum_sql(terms: list[tuple[int, str, bool]], never_blank: bool) -> str:
+    """(sign, sql, never blank) terms -> SQL. DAX + and - treat BLANK as 0 (BLANK + 5 = 5) and are BLANK only
+    when every input is (`[M] + 0` never is); in SQL NULL + 5 is NULL."""
+    body = " ".join(f"{'+' if sign > 0 else '-'} {sql if sure else f'COALESCE({sql}, 0)'}" for sign, sql, sure in terms)
+    body = body.removeprefix("+ ")
+    if never_blank:
+        return f"({body})"
+    return f"(CASE WHEN {' AND '.join(f'{sql} IS NULL' for _, sql, _ in terms)} THEN NULL ELSE {body} END)"
+
+
+def _is_zero(n: Any) -> bool:
+    return isinstance(n, DNum) and float(n.value) == 0
+
+
 def _lit_sql(n: Any) -> str:
     if isinstance(n, DStr):
         return _sql_str(n.value)
@@ -1221,15 +1330,45 @@ def _lit_sql(n: Any) -> str:
     return {"TRUE": "TRUE", "FALSE": "FALSE", "BLANK": "NULL"}[n.name]
 
 
+def _paren(sql: str, n: Any) -> str:
+    """Parenthesize an operand that is itself an operation, so DAX precedence survives in SQL."""
+    if not (isinstance(n, (DBin, DUn)) or (isinstance(n, DCall) and n.name == "DIVIDE")) or _wrapped(sql):
+        return sql
+    return f"({sql})"
+
+
+def _wrapped(sql: str) -> bool:
+    """True if sql is one parenthesized group: "(a - b)" but not "(a) - (b)"."""
+    if not (sql.startswith("(") and sql.endswith(")")) or "'" in sql:
+        return False
+    depth = 0
+    for i, ch in enumerate(sql):
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        if depth == 0 and i < len(sql) - 1:
+            return False
+    return True
+
+
+def _div_sql(num: str, num_node: Any, den: str, alt: str | None = None) -> str:
+    """DAX `/` and DIVIDE(): never integer division, NULL (BLANK) on a zero or blank denominator,
+    or DIVIDE's alternate result."""
+    if alt is None:
+        return f"1.0 * {_paren(num, num_node)} / NULLIF({den}, 0)"
+    return f"CASE WHEN COALESCE({den}, 0) = 0 THEN {alt} ELSE 1.0 * {_paren(num, num_node)} / {den} END"
+
+
 def _sn(name: str) -> str:
     """snake_case that also splits CamelCase identifiers: OrderDate -> order_date ('Sales YoY' stays sales_yoy)."""
-    name = name or ""
+    name = unicodedata.normalize("NFKD", (name or "").replace("Δ", " delta ").replace("∆", " delta "))
+    name = name.encode("ascii", "ignore").decode()  # names must be ASCII identifiers: Año -> ano
     if " " not in name.strip():
         name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", name)
     return snake(name)
 
 
 def _mname(name: str) -> str:
+    if " " not in name.strip():  # split CamelCase before '#' and '%' add spaces: #AvailableCapacity -> count_available_capacity
+        name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", name)
     return _sn(name.replace("%", " pct ").replace("#", " count "))
 
 
@@ -1573,12 +1712,13 @@ class _Parser:
     def _physical_column(self, pm: PModel, table: str, col: PColumn) -> str:
         ms = self.msrc.get((pm.id, table))
         src = col.source_column or col.name
-        return ms.renames.get(src, src) if ms else src
+        # renames point back at a warehouse table or native query; a source someone rewrites as SQL keeps Power BI's names
+        return ms.renames.get(src, src) if ms and (ms.table or ms.sql) else src
 
     def _model(self, pm: PModel) -> None:
         keys: dict[str, set[str]] = {}
         for r in pm.relationships:
-            if r.active:
+            if r.many_to_one:
                 keys.setdefault(r.from_table, set()).add(r.from_column.lower())
                 keys.setdefault(r.to_table, set()).add(r.to_column.lower())
         for t in pm.tables.values():
@@ -1592,7 +1732,12 @@ class _Parser:
             if part.type == "calculated" and "NAMEOF" in source.upper():
                 self.b.warn(item, "field parameter table (NAMEOF list); becomes a notebook parameter that switches columns/metrics, not a model", "info")
                 continue
-            ms = m_source(source, pm.expressions) if part.type == "m" else MSource(problems=[f"{part.type} partition"])
+            if part.type == "m":
+                ms = m_source(source, pm.expressions)
+            elif part.type == "entity":
+                ms = entity_source(part, pm.expressions)
+            else:
+                ms = MSource(problems=[f"{part.type} partition"])
             self.msrc[(pm.id, t.name)] = ms
             has_data_cols = any(not c.expression for c in t.columns if c.name.lower() not in ("value", "column1"))
             if not t.columns or (not has_data_cols and t.measures) or (t.measures and "entered data" in " ".join(ms.problems) and len(t.columns) <= 1):
@@ -1626,10 +1771,7 @@ class _Parser:
             sm = SemanticModel(name=name, table=phys, description=t.description, datasource=self.b.datasource, source_ref=src)
             via = f" via {ms.connector}({', '.join(x for x in (ms.server, ms.database) if x)})" if ms.connector else ""
             tbl = Table(self.b.datasource, ms.schema, ms.table, t.description, source_ref=src + via) if physical_ok else None
-            primary = next((c for c in t.columns if c.is_key), None)
-            to_keys = [r for r in pm.relationships if r.active and r.to_table == t.name]
-            if to_keys:
-                primary = t.column(to_keys[0].to_column) or primary
+            primary = self._primary(pm, t)
             if primary:
                 sm.entities.append(Entity(name, "primary", self._ent_expr(pm, t, primary, name)))
             for r in pm.relationships:
@@ -1637,6 +1779,14 @@ class _Parser:
                     continue
                 if not r.active:
                     self.b.warn(item, f"inactive relationship {r.from_table}[{r.from_column}] -> {r.to_table}[{r.to_column}] (used with USERELATIONSHIP); add a second entity/time dimension by hand if needed", "info")
+                    continue
+                rel = f"{r.from_table}[{r.from_column}] -> {r.to_table}[{r.to_column}]"
+                if r.to_many:
+                    self.b.warn(item, f"many-to-many relationship {rel}: not an entity (MetricFlow joins many-to-one only); join through a bridge table or in SQL")
+                    continue
+                pk = self._primary(pm, pm.table(r.to_table)) if pm.table(r.to_table) else None
+                if pk is not None and pk.name.lower() != r.to_column.lower():
+                    self.b.warn(item, f"relationship {rel} is not on {r.to_table}'s key [{pk.name}]: not an entity; add one by hand if you need the join")
                     continue
                 target = self.sm_name.get((pm.id, r.to_table), _sn(r.to_table))
                 col = t.column(r.from_column)
@@ -1672,6 +1822,12 @@ class _Parser:
             self.b.semantic_models.append(sm)
             if tbl is not None:
                 self.b.tables.append(tbl)
+
+    @staticmethod
+    def _primary(pm: PModel, t: PTable) -> PColumn | None:
+        """The column a table's primary entity is on: the target of its first many-to-one relationship, else isKey."""
+        to_keys = [r for r in pm.relationships if r.many_to_one and r.to_table == t.name]
+        return (t.column(to_keys[0].to_column) if to_keys else None) or next((c for c in t.columns if c.is_key), None)
 
     def _ent_expr(self, pm: PModel, t: PTable, col: PColumn, name: str) -> str:
         if col.expression:
@@ -1712,17 +1868,23 @@ class _Parser:
         if _is_literal(n):
             return _lit_sql(n)
         if isinstance(n, DUn):
-            return f"{n.op}{rs(n.operand)}"
+            return f"{n.op}{_paren(rs(n.operand), n.operand)}"
         if isinstance(n, DSet):
             return "(" + ", ".join(rs(i) for i in n.items) + ")"
         if isinstance(n, DBin):
             if n.op in ("=", "==", "<>") and _is_literal(n.right) and isinstance(n.right, DCall) and n.right.name == "BLANK":
-                return f"{rs(n.left)} IS {'NOT ' if n.op == '<>' else ''}NULL"
+                return f"{_paren(rs(n.left), n.left)} IS {'NOT ' if n.op == '<>' else ''}NULL"
             op = {"&": "||", "&&": "AND", "||": "OR", "==": "=", "IN": "IN", "^": "^"}.get(n.op, n.op)
             left, right = rs(n.left), rs(n.right)
             if op in ("AND", "OR"):
                 return f"({left} {op} {right})"
-            return f"{left} {op} {right}"
+            if op == "/":
+                return _div_sql(left, n.left, right)
+            if op in ("+", "-"):
+                const = lambda x: _is_literal(x) and not (isinstance(x, DCall) and x.name == "BLANK")  # noqa: E731
+                terms = [(sign, rs(x), const(x)) for sign, x in _terms(n) if not _is_zero(x)]
+                return _sum_sql(terms or [(1, "0", True)], any(const(x) for _, x in _terms(n)))
+            return f"{_paren(left, n.left)} {op} {_paren(right, n.right)}"
         if isinstance(n, DCall):
             a = n.args
             f = n.name
@@ -1745,9 +1907,9 @@ class _Parser:
             if f == "OR" and len(a) == 2:
                 return f"({rs(a[0])} OR {rs(a[1])})"
             if f == "ISBLANK" and len(a) == 1:
-                return f"{rs(a[0])} IS NULL"
+                return f"{_paren(rs(a[0]), a[0])} IS NULL"
             if f == "DIVIDE" and len(a) in (2, 3):
-                return f"{rs(a[0])} / NULLIF({rs(a[1])}, 0)"
+                return _div_sql(rs(a[0]), a[0], rs(a[1]), rs(a[2]) if len(a) == 3 else None)
             if f in ("YEAR", "MONTH", "DAY", "QUARTER", "HOUR") and len(a) == 1:
                 return f"EXTRACT({f} FROM {rs(a[0])})"
             simple = {"UPPER": "UPPER", "LOWER": "LOWER", "TRIM": "TRIM", "LEN": "LENGTH", "ABS": "ABS", "ROUND": "ROUND",
@@ -1857,6 +2019,13 @@ class _Parser:
             return t
         agg = self._agg_of(pm, n)
         if agg:
+            sm = self.sm.get((pm.id, agg[2]))
+            same = next((x for x in sm.measures if (x.agg, x.expr) == agg[:2]), None) if sm else None
+            if same is not None:  # SUM(T[c]) written out again: reuse the measure
+                return MT("", "simple", same.name, [], sm.name)
+            col = agg[1][1:-1].replace('""', '"') if agg[1].startswith('"') else agg[1]
+            if SIMPLE_IDENT.match(agg[1]) or agg[1].startswith('"'):  # shared by other metrics: name it after what it sums
+                hint = _sn(f"{agg[0]} {_sn(col)}")
             mname, model = self._add_measure(pm, self._unique(hint), agg[0], agg[1], agg[2], None)
             return MT("", "simple", mname, [], model)
         if isinstance(n, DCall) and n.name == "CALCULATE" and n.args:
@@ -1883,6 +2052,8 @@ class _Parser:
 
     def _classify(self, pm: PModel, m: PMeasure, n: Any, metric: Metric) -> MT:
         name = metric.name
+        if isinstance(n, DCall) and n.name == "CALCULATE" and len(n.args) == 1:  # no filters: the expression itself
+            return self._classify(pm, m, n.args[0], metric)
         agg = self._agg_of(pm, n)
         if agg:
             mname, model = self._add_measure(pm, name, agg[0], agg[1], agg[2], m)
@@ -1933,9 +2104,11 @@ class _Parser:
                 metric.semantic_model = sides[0].model
                 return MT(name, "ratio", model=sides[0].model)
         refs: list[MT] = []
-        expr = self._derived(pm, n, refs, name)
+        aux: list[Metric] = []
+        expr = self._derived(pm, n, refs, name, aux)
         if not refs:
             raise DaxError(self._reason(n))
+        self.b.metrics += aux
         metric.type, metric.expr = "derived", expr
         metric.metrics = list(dict.fromkeys(r.metric for r in refs))
         metric.semantic_model = refs[0].model
@@ -1951,7 +2124,8 @@ class _Parser:
             return n.left, n.right
         return None
 
-    def _derived(self, pm: PModel, n: Any, refs: list[MT], name: str) -> str:
+    def _derived(self, pm: PModel, n: Any, refs: list[MT], name: str, aux: list[Metric]) -> str:
+        sub = lambda x: self._derived(pm, x, refs, name, aux)  # noqa: E731
         if self._measure_ref(pm, n) is not None:
             t = self._metric_of(pm, n)
             refs.append(t)
@@ -1959,19 +2133,32 @@ class _Parser:
         if isinstance(n, DNum):
             return n.value
         if isinstance(n, DUn) and n.op == "-":
-            return f"-{self._derived(pm, n.operand, refs, name)}"
+            return f"-{sub(n.operand)}"
+        zero = next((x for x in ((n.left, n.right) if isinstance(n, DBin) and n.op == "+" else ()) if _is_zero(x)), None)
+        if zero is not None:  # `[M] + 0`: BLANK becomes 0
+            return f"coalesce({sub(n.right if zero is n.left else n.left)}, 0)"
         if isinstance(n, DBin) and n.op in ("+", "-", "*", "/"):
-            left, right = self._derived(pm, n.left, refs, name), self._derived(pm, n.right, refs, name)
+            left, right = sub(n.left), sub(n.right)
             wrap = lambda s, x: f"({s})" if isinstance(x, DBin) or (isinstance(x, DCall) and x.name == "DIVIDE") else s  # noqa: E731
             return f"{wrap(left, n.left)} {n.op} {wrap(right, n.right)}"
         if isinstance(n, DCall) and n.name == "DIVIDE" and len(n.args) in (2, 3):
-            a, b = self._derived(pm, n.args[0], refs, name), self._derived(pm, n.args[1], refs, name)
+            a, b = sub(n.args[0]), sub(n.args[1])
             a = f"({a})" if isinstance(n.args[0], DBin) else a
             return f"1.0 * {a} / nullif({b}, 0)"
         if self._agg_of(pm, n):
             s = self._simple_of(pm, n, f"{name}_{len(refs) + 1}")
             refs.append(MT(s.measure, "simple", s.measure, [], s.model))
             return s.measure
+        if isinstance(n, DCall) and n.name == "CALCULATE" and n.args:  # a filtered input: its own simple metric
+            s = self._simple_of(pm, n, f"{name}_{len(refs) + 1}_base")
+            if not s.filters:
+                refs.append(MT(s.measure, "simple", s.measure, [], s.model))
+                return s.measure
+            part = self._unique(f"{name}_{len(refs) + 1}")
+            aux.append(Metric(name=part, measure=s.measure, filter=" AND ".join(s.filters), semantic_model=s.model,
+                              description=f"input of {name}", source_ref=f"{pm.source} part of measure for {name}"))
+            refs.append(MT(part, "simple", s.measure, s.filters, s.model))
+            return part
         raise DaxError(self._reason(n))
 
     def _reason(self, n: Any) -> str:
@@ -2053,7 +2240,9 @@ class _Parser:
                 q.touch(t.name)
                 return f"{SQL_AGG[DAX_ITER[f]]}({cond(self.row_sql(pm, a[1], t.name, q))})"
             if f == "DIVIDE" and len(a) in (2, 3):
-                return f"{rec(a[0])} / NULLIF({rec(a[1])}, 0)"
+                if len(a) == 3 and not _is_literal(a[2]):
+                    raise DaxError("DIVIDE with a computed alternate result")
+                return _div_sql(rec(a[0]), a[0], rec(a[1]), _lit_sql(a[2]) if len(a) == 3 else None)
             if f == "CALCULATE" and a:
                 if any(self._is_time_intel(x) for x in a[1:]):
                     raise DaxError("time intelligence has no single-query SQL; use the metric (mf query) or a window")
@@ -2063,11 +2252,28 @@ class _Parser:
             return n.value
         if isinstance(n, DUn) and n.op == "-":
             return f"-{rec(n.operand)}"
-        if isinstance(n, DBin) and n.op in ("+", "-", "*"):
+        if isinstance(n, DBin) and n.op in ("+", "-"):
+            terms = [(sign, rec(x), self._never_blank(pm, x)) for sign, x in _terms(n) if not _is_zero(x)]
+            return _sum_sql(terms or [(1, "0", True)], self._never_blank(pm, n))
+        if isinstance(n, DBin) and n.op == "*":
             return f"({rec(n.left)} {n.op} {rec(n.right)})"
         if isinstance(n, DBin) and n.op == "/":
-            return f"{rec(n.left)} / NULLIF({rec(n.right)}, 0)"
+            return _div_sql(rec(n.left), n.left, rec(n.right))
         raise DaxError(self._reason(n))
+
+    def _never_blank(self, pm: PModel, n: Any, depth: int = 0) -> bool:
+        """A literal, or a sum with one: `[M] + 0` is 0 where [M] is BLANK."""
+        if _is_literal(n):
+            return not (isinstance(n, DCall) and n.name == "BLANK")
+        if isinstance(n, DBin) and n.op in ("+", "-"):
+            return any(self._never_blank(pm, x, depth) for _, x in _terms(n))
+        ref = self._measure_ref(pm, n)
+        if ref is not None and depth < 8:
+            try:
+                return self._never_blank(pm, dax_parse(ref.expression), depth + 1)
+            except DaxError:
+                return False
+        return False
 
     def _filter_sql(self, pm: PModel, n: Any, q: Any) -> str:
         if isinstance(n, DCall) and n.name == "KEEPFILTERS" and len(n.args) == 1:
@@ -2194,7 +2400,8 @@ class _Parser:
         if pm.relationships:
             lines += ["", "## Relationships", ""]
             for r in pm.relationships:
-                flags = ", ".join(x for x in ("inactive" if not r.active else "", r.cross_filter if r.cross_filter.lower() == "bothdirections" else "") if x)
+                flags = ", ".join(x for x in ("inactive" if not r.active else "", "many-to-many" if r.to_many else "",
+                                              r.cross_filter if r.cross_filter.lower() == "bothdirections" else "") if x)
                 lines.append(f"- `{r.from_table}[{r.from_column}]` -> `{r.to_table}[{r.to_column}]`" + (f" ({flags})" if flags else ""))
         if pm.roles:
             lines += ["", "## Roles (RLS)", ""]
@@ -2216,6 +2423,11 @@ class _Parser:
             by_path = ((pbir.get("datasetReference") or {}).get("byPath") or {}).get("path", "")
             if not mid and by_path:  # a .pbip project: "../Sales.SemanticModel" (imported as models/Sales)
                 mid = PurePosixPath(by_path.replace("\\", "/")).name.removesuffix(".SemanticModel")
+            conn = ((pbir.get("datasetReference") or {}).get("byConnection") or {}).get("connectionString") or ""
+            catalog = re.search(r"initial catalog=([^;]+)", conn, re.I)
+            if not mid and catalog:  # a thin report on a published model; the model may have been imported next to it
+                want = catalog.group(1).strip().strip('"').lower()
+                mid = next((k for k, v in self.models.items() if want in (k.lower(), v.name.lower())), "")
         pm = self.models.get(mid)
         pages: list[VPage] = []
         report_filters: list[dict[str, Any]] = []
@@ -2265,6 +2477,8 @@ class _Parser:
             fld = next((f for fs in v.roles.values() for f in fs), None)
             if fld is None or fld.kind not in ("column", "hier"):
                 continue
+            if any((f.entity, f.prop, f.hierarchy, f.level) == (fld.entity, fld.prop, fld.hierarchy, fld.level) for _, f, _ in slicers):
+                continue  # the same field sliced twice on a page (e.g. a slicer panel shown by a bookmark): one parameter
             pcol = self._pcol(pm, fld) if pm else None
             param = _sn(fld.prop or fld.level)
             while param in used_params:
@@ -2317,6 +2531,10 @@ class _Parser:
             raise DaxError(f"unknown table {f.entity}")
         if f.kind == "measure":
             m = pm.measure(f.prop)
+            kpi = re.fullmatch(r"_(.+) (Status|Goal|Trend)", f.prop)
+            if m is None and kpi and pm.measure(kpi.group(1)):
+                raise DaxError(f"{f.prop} is the KPI {kpi.group(2).lower()} of measure [{kpi.group(1)}] (a kpi expression in the model); "
+                               "compute it in the tile from that measure")
             if m is None:
                 raise DaxError(f"unknown measure {f.prop} (report-level measure? see reportExtensions.json)")
             try:
@@ -2419,6 +2637,22 @@ class _Parser:
             preds.append((label, fn))
         return preds, problems
 
+    def _calc_group_items(self, pm: PModel, f: dict[str, Any]) -> list[str] | None:
+        """None if the filter is not on a calculation group; else the picked items that change values
+        (an item that is just SELECTEDMEASURE() only sets a format string)."""
+        flt = f.get("filter") or {}
+        groups = [pm.table(x.get("Entity", "")) for x in flt.get("From") or []]
+        groups = [t for t in groups if t is not None and t.is_calc_group]
+        if not groups:
+            return None
+        exprs = dict(groups[0].calc_items)
+        picked = [self._literal(row[0]).strip("'") for w in flt.get("Where") or []
+                  for row in ((w.get("Condition") or {}).get("In") or {}).get("Values") or [] if row]
+        if not picked or len(flt.get("Where") or []) != 1 or "Not" in json.dumps(flt.get("Where")):
+            return [f"of {groups[0].name}"]
+        identity = lambda e: re.sub(r"\s+", "", e or "").upper() == "SELECTEDMEASURE()"  # noqa: E731
+        return [f"{groups[0].name}[{p}]" for p in picked if not identity(exprs.get(p))]
+
     def _tile(self, pm: PModel, v: VVisual, slicers: list[tuple[str, VField, str]], scope_filters: list[dict[str, Any]]) -> Tile:
         if v.type == "textbox":
             return Tile(v.name, v.title, "text", "text", text=v.text, source_type=v.type)
@@ -2442,10 +2676,20 @@ class _Parser:
         if not dims and not vals:
             todos.append("visual has no fields in its query")
         # SQL
-        preds, problems = self._vfilters(pm, scope_filters + v.filters, "visual/page")
+        plain, items = [], []
+        for f in scope_filters + v.filters:
+            group = self._calc_group_items(pm, f)
+            if group is None:
+                plain.append(f)
+            else:
+                items += group
+        preds, problems = self._vfilters(pm, plain, "visual/page")
         todos += problems
         sql = ""
         try:
+            if items:  # a calculation item rewrites every measure in the visual
+                raise DaxError(f"a filter picks calculation item(s) {', '.join(items)}, which change the measures; "
+                               "apply the item's DAX to each measure (see the model's knowledge file)")
             sql = self._tile_sql(pm, dims, vals, preds, slicers, todos)
         except DaxError as exc:
             todos.append(f"no SQL: {exc}")
@@ -2507,9 +2751,16 @@ class _Parser:
         rec = _Recorder()
         for _, f in dims + vals:
             self._field_sql(pm, f, rec)
-        base = (mrec.tables or rec.tables or [None])[0]
-        if base is None:
+        candidates = list(dict.fromkeys(mrec.tables or rec.tables))
+        if not candidates:
             raise DaxError("no fields")
+
+        def reaches(b: str) -> bool:  # every table is b itself or one active many-to-one hop from it
+            return all(t == b or any(r.many_to_one and r.from_table == b and r.to_table == t for r in pm.relationships)
+                       for t in mrec.tables + rec.tables)
+
+        # the fact table a measure aggregates, not a dimension its CALCULATE filters happened to touch first
+        base = next((b for b in candidates if reaches(b)), candidates[0])
         if (pm.id, base) not in self.phys:
             raise DaxError(f"table {base} has no SQL source")
         joins: dict[str, PRel] = {}
@@ -2517,7 +2768,7 @@ class _Parser:
         def joinable(table: str) -> bool:
             if table == base or table in joins:
                 return True
-            rel = next((r for r in pm.relationships if r.active and r.from_table == base and r.to_table == table), None)
+            rel = next((r for r in pm.relationships if r.many_to_one and r.from_table == base and r.to_table == table), None)
             if rel is None or (pm.id, table) not in self.phys:
                 return False
             joins[table] = rel
