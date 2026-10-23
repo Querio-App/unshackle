@@ -15,8 +15,7 @@ from unshackle import build
 from unshackle.ir import Dashboard, DashboardFilter, Encoding, Layer, Tile
 from unshackle.raw import RawStore
 from unshackle.run import notebook_queries, run_notebook
-from unshackle.sources import TOOLS as SOURCES
-from unshackle.sources import get_source
+from unshackle.sources import TOOLS as SOURCES, get_source
 from unshackle.target.notebooks import build_notebook
 
 ROOT = Path(__file__).resolve().parents[1]
