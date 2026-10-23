@@ -45,6 +45,10 @@ You can also run those steps separately with `unshackle init`, `unshackle invent
 `unshackle extract`, and `unshackle build`. The CLI runs in your terminal and connects
 to the source tool's API when inventorying or extracting.
 
+In an interactive terminal you'll see the *Endurance* working its way through the
+pack ice while each step runs. Piped output, CI, `NO_COLOR` and `unshackle --quiet`
+get plain text.
+
 ## No API access? Import files
 
 If you can't get API credentials but can download definitions from the tool, import

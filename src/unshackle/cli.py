@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import click
 import httpx
 
-from unshackle import build, scaffold, verify
+from unshackle import build, scaffold, verify, voyage
 from unshackle.http import SourceError
 from unshackle.lock import Lock
 from unshackle.raw import RawStore
@@ -20,8 +22,47 @@ TOOL = click.argument("tool", type=click.Choice(sorted(TOOLS)))
 
 @click.group()
 @click.version_option(package_name="unshackle", prog_name="unshackle")
-def main() -> None:
+@click.option("--quiet", "-q", is_flag=True, help="Plain output: no banner or animation.")
+@click.pass_context
+def main(ctx: click.Context, quiet: bool) -> None:
     """Unshackle your BI tool: extract its definitions into open formats in a Git repo you own."""
+    ctx.ensure_object(dict)["quiet"] = quiet
+
+
+def _state() -> dict:
+    return click.get_current_context().find_root().ensure_object(dict)
+
+
+@contextmanager
+def _voyage(*steps: str):
+    """The ship animation for a command; nested commands (migrate) move the same ship on."""
+    state = _state()
+    if state.get("voyage"):
+        state["voyage"].step(steps[0])
+        yield state["voyage"]
+        return
+    if not (voyage.enabled(quiet=state.get("quiet", False)) and sys.stdout.isatty()):
+        yield None
+        return
+    if not state.get("banner"):
+        voyage.banner()
+        state["banner"] = True
+    with voyage.Voyage(list(steps)) as ship:
+        state["voyage"] = ship
+        try:
+            yield ship
+        finally:
+            state["voyage"] = None
+    if state.get("summary"):
+        click.echo(state.pop("summary"), err=True)
+
+
+def _say(message: str, err: bool = False) -> None:
+    ship = _state().get("voyage")
+    if ship:
+        ship.say(message)
+    else:
+        click.echo(message, err=err)
 
 
 @main.command()
@@ -39,7 +80,7 @@ def tools() -> None:
 def init(repo: Path, name: str | None, update_skills: bool) -> None:
     """Create the unshackle layout in REPO and copy the migration skills (never overwrites)."""
     for rel in scaffold.init(repo, name, update_skills):
-        click.echo(f"created {rel}")
+        _say(f"created {rel}")
 
 
 @main.command()
@@ -47,12 +88,13 @@ def init(repo: Path, name: str | None, update_skills: bool) -> None:
 @REPO
 def inventory(tool: str, repo: Path) -> None:
     """List everything in TOOL, with usage, into migration/inventory.<tool>.md."""
-    inv = _run(lambda: get_source(tool).inventory())
+    with _voyage("taking inventory"):
+        inv = _run(lambda: get_source(tool).inventory())
     out = repo / "migration"
     out.mkdir(parents=True, exist_ok=True)
     (out / f"inventory.{tool}.md").write_text(inv.to_markdown())
     (out / f"inventory.{tool}.json").write_text(json.dumps(inv.to_dict(), indent=2) + "\n")
-    click.echo(f"{len(inv.items)} items -> migration/inventory.{tool}.md")
+    _say(f"{len(inv.items)} items -> migration/inventory.{tool}.md")
 
 
 @main.command()
@@ -65,12 +107,13 @@ def extract(tool: str, repo: Path, only: tuple[str, ...]) -> None:
     store = RawStore(repo, tool)
     if not only:
         store.begin()
-    _run(lambda: src.extract(store, set(only) or None))
-    store.save()
-    if store.had_errors():
-        click.echo(f"some items failed: see migration/raw/{tool}/_errors.json (earlier raw files were kept)", err=True)
-    changes = Lock.load(repo).changed_sources(tool, store.manifest)
-    click.echo(f"{len(store.manifest)} raw files, {len(changes)} added/changed/removed since last build")
+    with _voyage("extracting"):
+        _run(lambda: src.extract(store, set(only) or None))
+        store.save()
+        if store.had_errors():
+            _say(f"some items failed: see migration/raw/{tool}/_errors.json (earlier raw files were kept)", err=True)
+        changes = Lock.load(repo).changed_sources(tool, store.manifest)
+        _say(f"{len(store.manifest)} raw files, {len(changes)} added/changed/removed since last build")
 
 
 @main.command(name="import")
@@ -83,8 +126,9 @@ def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path) -> None:
 
     store = RawStore(repo, tool)
     before = len(store.content_files())
-    files = _run(lambda: import_files(get_source(tool), store, list(paths)))
-    click.echo(f"{len(files)} raw files imported manually" + (f" (replacing {before} earlier raw files)" if before else ""))
+    with _voyage("importing"):
+        files = _run(lambda: import_files(get_source(tool), store, list(paths)))
+        _say(f"{len(files)} raw files imported manually" + (f" (replacing {before} earlier raw files)" if before else ""))
     click.echo(f"next: unshackle build {tool}")
 
 
@@ -103,19 +147,27 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
     if not store.content_files():
         hint = f" (extract errors: migration/raw/{tool}/_errors.json)" if store.had_errors() else ""
         raise click.ClickException(f"no raw files for {tool}{hint}; run `unshackle extract {tool}` (or `unshackle import {tool} <files>`) first")
-    bundle = _run(lambda: src.parse(store))
-    if not dry_run:
-        from unshackle.resources import copy_skills
+    with _voyage("parsing", "writing") as ship:
+        bundle = _run(lambda: src.parse(store))
+        if ship:
+            ship.step("writing")
+        if not dry_run:
+            from unshackle.resources import copy_skills
 
-        copy_skills(repo)
-    result = build.apply(bundle, repo, dry_run=dry_run)
-    if not dry_run:
-        lock = Lock.load(repo)
-        lock.record_source(tool, store.manifest)
-        lock.save()
-    w = result.writes
-    click.echo(f"{len(w.written)} written, {len(w.unchanged)} unchanged, {len(w.kept_hand_edits)} hand edits kept")
-    click.echo(f"report: {result.report_path}")
+            copy_skills(repo)
+        result = build.apply(bundle, repo, dry_run=dry_run)
+        if not dry_run:
+            lock = Lock.load(repo)
+            lock.record_source(tool, store.manifest)
+            lock.save()
+        w = result.writes
+        _say(f"{len(w.written)} written, {len(w.unchanged)} unchanged, {len(w.kept_hand_edits)} hand edits kept")
+        _say(f"report: {result.report_path}")
+        if ship and not dry_run:
+            todos = len(build.scan_todos(repo, build.all_generated(repo)))
+            policies = len(bundle.permissions) + len(bundle.row_filters)
+            _state()["summary"] = (f"{len(bundle.metrics)} metrics, {len(bundle.dashboards)} dashboards and {policies} policies "
+                                   f"made it out of {tool}. {todos} TODOs left: unshackle todo")
 
 
 @main.command()
@@ -125,10 +177,11 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
 def migrate(tool: str, repo: Path, only: tuple[str, ...]) -> None:
     """init + inventory + extract + build in one go."""
     ctx = click.get_current_context()
-    ctx.invoke(init, repo=repo, name=None, update_skills=False)
-    ctx.invoke(inventory, tool=tool, repo=repo)
-    ctx.invoke(extract, tool=tool, repo=repo, only=only)
-    ctx.invoke(build_cmd, tool=tool, repo=repo, dry_run=False)
+    with _voyage("setting up", "taking inventory", "extracting", "parsing", "writing"):
+        ctx.invoke(init, repo=repo, name=None, update_skills=False)
+        ctx.invoke(inventory, tool=tool, repo=repo)
+        ctx.invoke(extract, tool=tool, repo=repo, only=only)
+        ctx.invoke(build_cmd, tool=tool, repo=repo, dry_run=False)
 
 
 @main.command()
