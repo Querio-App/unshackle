@@ -242,3 +242,202 @@ def test_extract_and_inventory_with_mock_api(tmp_path: Path, monkeypatch):
     only = RawStore(tmp_path / "only", "looker")
     src.extract(only, {"look:7"})
     assert only.exists("looks/7.json") and not only.glob("dashboards/*.json")
+
+
+# ---------------------------------------------------------------- regressions from real-world LookML
+
+
+def _lookml(tmp_path: Path, files: dict[str, str]):
+    store = RawStore(tmp_path, "looker")
+    for name, text in files.items():
+        store.put_text(f"lookml/{name}", text)
+    return LookerSource().parse(store)
+
+
+ORDERS = """view: orders {
+  sql_table_name: analytics.orders ;;
+  dimension: id { primary_key: yes sql: ${TABLE}.id ;; }
+  dimension: status { sql: ${TABLE}.status ;; }
+  measure: count { type: count }
+}
+"""
+
+
+def test_manifest_constants_are_substituted(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "manifest.lkml": 'constant: SCHEMA { value: "@{DB}.analytics" }\nconstant: DB { value: "prod" }\n'
+                         'constant: CUR { value: "{% if _user_attributes[\'c\'] %} 1 {% endif %}" }\n',
+        "v.view.lkml": """view: orders {
+  sql_table_name: @{SCHEMA}.orders ;;
+  dimension: id { primary_key: yes }
+  dimension: amount { label: "@{CUR}" sql: ${TABLE}.amount * @{CUR} ;; }
+  dimension: region { sql: @{MISSING} ;; }
+}""",
+    })
+    (sm,) = b.semantic_models
+    assert sm.table == "prod.analytics.orders"
+    dims = _by_name(sm.dimensions)
+    assert "Liquid" in dims["amount"].todo and dims["amount"].label == ""  # a constant holding Liquid stays TODO
+    assert "@{MISSING}" in dims["region"].todo and dims["region"].expr == ""
+
+
+def test_sql_table_name_that_is_sql_becomes_a_query(tmp_path: Path, monkeypatch):
+    b = _lookml(tmp_path, {"v.view.lkml": """view: status {
+  sql_table_name: {% if _dialect._name == 'postgres' %} (SELECT 1 AS id) {% else %} perf.global_status {% endif %} ;;
+  dimension: id { primary_key: yes }
+}"""})
+    (sm,) = b.semantic_models
+    assert sm.table == "status" and not b.tables
+    (q,) = b.queries
+    assert "sql_table_name that is SQL" in q.todo and "Liquid" in q.todo and q.sql.startswith("{% if")
+    build.apply(b, tmp_path)  # no table file named after the SQL
+
+
+def test_refinement_extends_apply_before_view_extends(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "base.view.lkml": """view: common_ext {
+  extension: required
+  dimension: fiscal_year { sql: ${TABLE}.FiscalYear ;; }
+  dimension: amount { hidden: yes }
+}
+view: ledger { sql_table_name: fin.ledger ;; dimension: amount { sql: ${TABLE}.Amt ;; } }
+view: ledger_copy { extends: [ledger] }""",
+        "ledger_rfn.view.lkml": "view: +ledger { extends: [common_ext] dimension: note { sql: ${TABLE}.note_text ;; } }",
+    })
+    models = _by_name(b.semantic_models)
+    assert "common_ext" not in models
+    for name in ("ledger", "ledger_copy"):
+        dims = _by_name(models[name].dimensions)
+        assert dims["fiscal_year"].expr == "FiscalYear" and dims["note"].expr == "note_text"
+        assert dims["amount"].expr == "Amt"  # the view's own field wins over the extension's
+
+
+def test_explores_in_included_files_refinements_and_extends(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "shop.model.lkml": 'connection: "wh"\ninclude: "explores/*.explore"\n'
+                           "explore: +orders { join: users { sql_on: ${orders.user_id} = ${users.id} ;; relationship: many_to_one } }",
+        "explores/orders.explore.lkml": "explore: orders_base { extension: required access_filter: { field: orders.status user_attribute: st } }\n"
+                                        "explore: orders { extends: [orders_base] }",
+        "orders.view.lkml": ORDERS.replace("dimension: status", "dimension: user_id { sql: ${TABLE}.user_id ;; }\n  dimension: status"),
+        "users.view.lkml": "view: users { sql_table_name: analytics.users ;; dimension: id { primary_key: yes } }",
+    })
+    (k,) = b.knowledge
+    assert k.name == "Looker model shop"
+    assert "## Explore: orders\n" in k.body and "+orders" not in k.body and "orders_base" not in k.body
+    assert "Joins `users`" in k.body
+    assert any(e.name == "users" and e.expr == "user_id" for e in _by_name(b.semantic_models)["orders"].entities)
+    assert [r.predicate for r in b.row_filters] == ["status = {{ user.st }}"]
+
+
+def test_explore_file_in_several_models_gives_one_policy(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "a.model.lkml": 'connection: "wh"\ninclude: "/orders.explore.lkml"',
+        "b.model.lkml": 'connection: "wh"\ninclude: "/*.explore"',
+        "orders.explore.lkml": "explore: orders { sql_always_where: ${status} <> 'test' ;; }",
+        "orders.view.lkml": ORDERS,
+    })
+    assert len(b.knowledge) == 2
+    assert [r.predicate for r in b.row_filters] == ["status <> 'test'"]
+
+
+def test_duplicate_view_prefers_the_included_file(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "m.model.lkml": 'connection: "wh"\ninclude: "/views/raw/*.view"\nexplore: orders {}',
+        "views/raw/orders.view.lkml": ORDERS,
+        "views/zz_unused/orders.view.lkml": ORDERS.replace("analytics.orders", "old.orders"),
+    })
+    assert b.semantic_models[0].table == "analytics.orders"
+    assert any("defined in both" in w.message for w in b.warnings)
+
+
+def test_unresolved_primary_key_gives_no_entity(tmp_path: Path):
+    b = _lookml(tmp_path, {"v.view.lkml": """view: balances {
+  sql_table_name: bank.balances ;;
+  dimension: pk { primary_key: yes sql: CONCAT(${TABLE}.account_id, CAST(${balance_date} AS STRING)) ;; }
+  dimension_group: balance { type: time timeframes: [date, month] sql: ${TABLE}.ts ;; }
+  measure: count { type: count }
+}"""})
+    (sm,) = b.semantic_models
+    assert sm.entities == []
+    assert "timeframe" in _by_name(sm.dimensions)["pk"].todo
+    assert _by_name(sm.measures)["balances_count"].expr == "1"
+
+
+def test_joins_without_an_equality_say_why(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "m.model.lkml": """connection: "wh"
+explore: orders {
+  join: orders__items { sql: LEFT JOIN UNNEST(${orders.items}) AS orders__items ;; relationship: one_to_many }
+  join: totals { type: cross relationship: many_to_one }
+}""",
+        "orders.view.lkml": ORDERS,
+        "totals.view.lkml": "view: totals { sql_table_name: analytics.totals ;; dimension: n {} }",
+    })
+    msgs = {w.item: w.message for w in b.warnings}
+    assert "UNNEST" in msgs["explore orders join orders__items"]
+    assert "cross join" in msgs["explore orders join totals"]
+
+
+def test_numeric_dates_and_odd_measures_stay_todo(tmp_path: Path):
+    b = _lookml(tmp_path, {"v.view.lkml": """view: events {
+  sql_table_name: raw.events ;;
+  dimension: id { primary_key: yes }
+  dimension: step { sql: ${TABLE}.step ;; }
+  dimension: day { type: date sql: ${TABLE}.day ;; }
+  dimension: spot { type: location sql_latitude: ${TABLE}.lat ;; sql_longitude: ${TABLE}.lon ;; }
+  dimension_group: created { type: time timeframes: [date] datatype: yyyymmdd sql: ${TABLE}.created ;; }
+  dimension: title { label: "{% if _user_attributes['locale'] == 'de' %}Titel{% else %}Title{% endif %}" }
+  measure: purchases { type: count filters: [step: "(5) Purchase,(4) Cart"] }
+  measure: known { type: count filters: [step: "NOT NULL"] }
+  measure: recent { type: count filters: [day: "7 days"] }
+  measure: steps { type: list list_field: step }
+}"""})
+    (sm,) = b.semantic_models
+    dims = _by_name(sm.dimensions)
+    assert "yyyymmdd" in dims["created"].todo and dims["created"].expr == ""
+    assert dims["title"].label == ""
+    assert "location" in dims["spot"].todo and "sql_latitude" in dims["spot"].source_expression  # no `sql:`, still the original
+    m = _by_name(b.metrics)
+    assert m["purchases"].filter == "{{ Dimension('events__step') }} IN ('(5) Purchase', '(4) Cart')"
+    assert m["known"].filter == "{{ Dimension('events__step') }} IS NOT NULL"
+    assert "7 days" in m["recent"].todo  # a date-typed dimension is not compared as a string
+    assert m["steps"].source_expression == "type: list list_field: step" and m["steps"].todo
+
+
+def test_access_rules_on_derived_tables_and_expressions(tmp_path: Path):
+    b = _lookml(tmp_path, {
+        "m.model.lkml": """connection: "wh"
+access_grant: pii { user_attribute: dept allowed_values: ["hr"] }
+explore: orders {
+  join: stores { sql_on: ${orders.store_id} = ${stores.id} ;; relationship: many_to_one }
+  access_filter: { field: stores.name user_attribute: store }
+}""",
+        "orders.view.lkml": ORDERS.replace("dimension: status", "dimension: store_id { sql: ${TABLE}.store_id ;; }\n  dimension: status"),
+        "stores.view.lkml": """view: stores {
+  derived_table: { sql: SELECT id, name FROM raw.stores ;; }
+  dimension: id { primary_key: yes }
+  dimension: name { required_access_grants: [pii] sql: CONCAT(${TABLE}.name, '!') ;; }
+}""",
+    })
+    rf = _by_name(b.row_filters)
+    assert rf["orders_stores_name"].table == "stores"
+    assert rf["orders_stores_name_via_orders"].predicate == "store_id IN (SELECT id FROM stores WHERE CONCAT(name, '!') = {{ user.store }})"
+    (p,) = b.permissions
+    assert (p.resource_type, p.resource_id) == ("Column", "stores.name") and "expression" in p.todo
+
+
+def test_derived_table_without_sql(tmp_path: Path):
+    b = _lookml(tmp_path, {"v.view.lkml": """view: model_fit {
+  derived_table: { datagroup_trigger: daily create_process: { sql_step: CREATE MODEL ${SQL_TABLE_NAME} ;; } }
+  dimension: x {}
+}"""})
+    (q,) = b.queries
+    assert "create_process" in q.todo and "explore_source" not in q.todo
+
+
+def test_qualified_count_does_not_reuse_a_measure_name(tmp_path: Path):
+    b = _lookml(tmp_path, {"v.view.lkml": ORDERS.replace("measure: count { type: count }",
+                                                          "measure: count { type: count }\n  measure: orders_count { type: count_distinct sql: ${id} ;; }")})
+    assert sorted(m.name for m in b.metrics) == ["orders_count", "orders_count_2"]
+    meas = _by_name(b.semantic_models[0].measures)
+    assert (meas["orders_count"].agg, meas["orders_count_2"].agg) == ("count_distinct", "count")  # the real orders_count keeps its name
