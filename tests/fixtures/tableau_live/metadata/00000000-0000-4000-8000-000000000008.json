@@ -1,0 +1,43 @@
+{
+  "description": "",
+  "embeddedDatasources": [
+    {
+      "fields": [
+        {
+          "__typename": "CalculatedField",
+          "dataType": "BOOLEAN",
+          "description": null,
+          "formula": "[Revenue] >= [Parameters].[Parameter 1]",
+          "isHidden": false,
+          "name": "Large Order",
+          "role": "DIMENSION"
+        },
+        {
+          "__typename": "ColumnField",
+          "dataType": "REAL",
+          "description": null,
+          "isHidden": false,
+          "name": "Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "ColumnField",
+          "dataType": "INTEGER",
+          "description": null,
+          "isHidden": false,
+          "name": "days_to_close",
+          "role": "MEASURE"
+        }
+      ],
+      "hasExtracts": false,
+      "name": "Dunder Mifflin Orders",
+      "upstreamTables": []
+    }
+  ],
+  "luid": "00000000-0000-4000-8000-000000000008",
+  "name": "Dunder Mifflin Sales",
+  "projectName": "unshackle-live",
+  "updatedAt": "2026-10-23T14:25:59Z",
+  "upstreamDatasources": [],
+  "upstreamTables": []
+}
