@@ -91,8 +91,11 @@ unshackle build tableau
 | `[Profit Ratio] * 100` | derived metric |
 | row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#` | dimension `expr` (time dimension with that grain for `DATETRUNC`), or measure `expr` when the calc's role is measure |
 | custom SQL `<relation type='text'>` | `queries/<ds>-custom-sql.sql` (TODO: materialize) + semantic model named after the datasource |
-| `{FIXED [a] : AGG([x])}` | TODO on the field + `queries/<field>-fixed-lod.sql` with the pre-aggregation SQL |
-| calc with `USERNAME()` / `ISMEMBEROF()` / `USERDOMAIN()` / `FULLNAME()` | row filter (`[Owner] = USERNAME()` -> `owner = {{ user.email }}`), always with a TODO |
+| joins (`<relation type='join'>`) on a table's key | foreign entity on the other table's model (Ossie relationship with `join_type` in `custom_extensions`); the join's semantics go in both models' descriptions |
+| `{FIXED [a] : AGG([x])}` (one FIXED dimension) | semantic model `<a>_lod` defined by its query (`select a, agg(x) ... group by 1` over the datasource's rows, joins included): Ossie's dataset `source`, and in dbt projects `models/unshackle/<a>_lod.sql`. Primary entity `a`, foreign entity `a` on the table holding it. The value is a dimension (or a measure + metric when the field is a measure); all FIXED fields at the same grain share one model |
+| `AVG({FIXED [a] : SUM([x])})`, `AVG([a FIXED field])` | measure + metric on the `<a>_lod` model |
+| row calc over FIXED values of one grain (`IF [Account Revenue] >= 1000000 THEN "Large" ... END`) | dimension of the `<a>_lod` model |
+| calc with `USERNAME()` / `FULLNAME()` / `USERDOMAIN()` / `ISMEMBEROF('g')` | row filter (`[Owner] = USERNAME()` -> `owner = {{ user.email }}`, `ISMEMBEROF('g')` -> `'g' in ({{ user.groups }})`), always with a TODO; a datasource filter also gets a rule per inner-joined table |
 | worksheet | notebook tile with generated SQL (below) |
 | dashboard | notebook; zones grouped into layout rows by `y` (cell order, `unshackle.layout` metadata); text zones -> markdown cells; quick filter / parameter zones -> parameters cell |
 | worksheets on no dashboard | one extra notebook `<workbook>-sheets` |
@@ -123,11 +126,12 @@ Shelf refs look like `[federated.x].[sum:Sales:qk]` = derivation : field : type
 horizontal bar (x = measure, y = dimension). Extra dimension -> color; `lod` ->
 detail; first tooltip field -> tooltip. SQL is `select <dims>, <aggs> from
 <schema.table> [where] group by ... order by ...` (custom SQL datasources become a
-`with custom_sql as (...)` CTE). A sheet using fields from several tables of a joined
-datasource gets the datasource's joins (`from public.orders as orders inner join
-public.products as products on ...`, physical columns qualified); a sheet on one table
-queries only that table, as Tableau does when it culls joins (with inner joins and
-missing keys Tableau may drop rows that SQL keeps: check). Categorical filters
+`with custom_sql as (...)` CTE). A sheet on a joined datasource gets the datasource's
+joins (`from public.orders as orders inner join public.products as products on ...`,
+physical columns qualified), even when it uses one table: Tableau computes it over the
+joined rows, where inner joins drop unmatched rows and joins can repeat rows. The join
+is left out only when it can't change the numbers: the sheet uses the first table and
+every join is a left join on the other table's key. Categorical filters
 (include / exclude / null) -> `where` (or `having` on aggregates), range filters ->
 `>=`/`<=`, Top N by an aggregate -> `order by ... desc limit N`. A filter on a row-level
 calc that compares with a parameter (`[Revenue] >= [Parameters].[Min Order Value]`)
@@ -136,33 +140,35 @@ parameters cell. Aliases follow Tableau's display names
 (`Month of Order Date` -> `month_of_order_date`); `source_config.columns` maps each
 alias back to its Tableau name.
 
+**LODs in tiles** follow Tableau's order of operations. A FIXED grain is a CTE computed
+over all of the datasource's rows (before the sheet's dimension filters):
+
+| Sheet shows | Tile SQL |
+| --- | --- |
+| a FIXED value as a dimension (`Account Tier`, `Month of First Order`) | `left join account_id_lod on orders.account_id is not distinct from account_id_lod.account_id`, one value per row |
+| a FIXED value aggregated (`AVG([Account Revenue])`, `AVG({FIXED ...})`, `MAX` of a two-dimension FIXED) | one value per distinct (sheet dimensions, FIXED dimensions) from the filtered rows, joined to the grain, then aggregated per mark |
+| `AVG({INCLUDE [order_id] : SUM([x])})` | aggregate at the sheet's dimensions plus `order_id`, then `avg` per mark |
+| `SUM({EXCLUDE [paper_type] : SUM([x])})` | aggregate at the sheet's dimensions minus `paper_type`, joined back to each mark |
+| `SUM([x] / [Account Revenue])` (row fields and FIXED values) | an ordinary aggregate over the rows joined to the grain |
+
+Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions.
+
 ## Finishing TODOs
 
-**FIXED LOD** (`{FIXED [Customer Name] : MIN([Order Date])}`): pre-aggregated at a
-fixed grain -> SQL model. unshackle already wrote the SQL; save it as
-`queries/models/customer_first_order.sql` (dbt: `models/unshackle/`), add a semantic model
-with a primary entity on the FIXED columns, and a foreign entity on the base model:
+**FIXED LODs that stay TODO**: several FIXED dimensions (tiles work; for the semantic
+layer the TODO holds the grain's SQL: save it as a SQL model with a composite key and
+relate it by hand), nested LODs (build the inner one first), a FIXED inside a larger
+aggregate expression (`SUM([Sales]) / SUM([Account Revenue])`: in the tile, compute
+`SUM([Account Revenue])` per mark as above and divide), and aggregates of calculations
+over FIXED values (`SUM(IF [Account Revenue] > 0 THEN 1 END)`): check in Tableau whether
+it counts rows or LOD groups before writing it. In dbt projects MetricFlow also needs a
+time dimension on the `_lod` model before its measures load.
 
-```yaml
-semantic_models:
-- name: customer_first_order
-  node_relation: {alias: customer_first_order, schema_name: analytics}
-  defaults: {agg_time_dimension: customer_first_order}
-  entities: [{name: customer, type: primary, expr: customer_name}]
-  dimensions:
-  - {name: customer_first_order, type: time, type_params: {time_granularity: day}}
-# and in orders.yml entities: - {name: customer, type: foreign, expr: customer_name}
-```
-
-`{FIXED [Region] : SUM([Sales])}` used as a measure (share of region):
-`sum(sales) / sum(sum(sales)) over (partition by region)` in the tile SQL, or a SQL
-model joined back. Nested LODs: build the inner one first.
-
-**INCLUDE / EXCLUDE LOD** depend on the view's dimensions: tile SQL. `{INCLUDE
-[Order ID] : SUM([Sales])}` averaged per region -> aggregate a subquery by
-`region, order_id`, then `avg()` per region. `{EXCLUDE [Month] : SUM([Sales])}` ->
-`sum(sum(sales)) over (partition by <other dims>)`. `{ SUM([Sales]) }` (no keyword) ->
-`sum(sum(sales)) over ()`.
+**INCLUDE / EXCLUDE LOD** depend on the view's dimensions, so they are never metrics;
+tiles that show them compute them (above). Elsewhere: `{INCLUDE [Order ID] : SUM([Sales])}`
+averaged per region -> aggregate a subquery by `region, order_id`, then `avg()` per region.
+`{EXCLUDE [Month] : SUM([Sales])}` -> `sum(sum(sales)) over (partition by <other dims>)`.
+`{ SUM([Sales]) }` (no keyword) -> `sum(sum(sales)) over ()`.
 
 **Table calcs** (`WINDOW_SUM/AVG`, `RUNNING_SUM`, `RANK*`, `LOOKUP`, `INDEX`, `TOTAL`,
 `SIZE`, `FIRST/LAST`, `PREVIOUS_VALUE`, quick table calcs like `[pcto:sum:Sales:qk]`)
@@ -239,11 +245,16 @@ model at the warehouse copy of that data.
 - User filters: `[Regional Manager] = USERNAME()` -> row filter
   `regional_manager = {{ user.email }}` on the model's table. `USERNAME()` is the
   Tableau user name: the email on Cloud, often a domain login (`ACME\jdoe`) on
-  Server; pick the matching IdP attribute. `ISMEMBEROF('Executives') OR ...` means
-  members are unfiltered: write the predicate for everyone else and give the
-  unfiltered group its own rule, or use an entitlement table. Calcs used as
-  datasource filters are marked `(datasource filter)`; others only applied where a
-  worksheet filtered on them.
+  Server; pick the matching IdP attribute. `ISMEMBEROF('Executives') OR ...` ->
+  `'Executives' in ({{ user.groups }}) or ...`, a rule for everyone (`groups: ['*']`):
+  confirm your platform expands `{{ user.groups }}` to a SQL list of the user's group
+  names and that they match the Tableau group names (or split the rule by group).
+  Calcs used as datasource filters are marked `(datasource filter)`; others only
+  applied where a worksheet filtered on them.
+- A datasource filter applies to the joined rows, so each inner-joined table gets its
+  own rule through the join keys: `account_id in (select account_id from
+  public.accounts where <predicate>)` on orders, and on from there. Left joins and joins
+  not on a key are listed in the TODO: add those rules by hand.
 - Row-level security via an entitlement table joined in the datasource (`[Email] =
   USERNAME()` on the joined table) -> subquery predicate
   `region in (select region from security.entitlements where email = {{ user.email }})`.
@@ -309,9 +320,13 @@ keys: [category, month of order date]
 - The same table used by several workbooks becomes one semantic model; the first
   definition of a calc name wins; a later, different formula under the same caption is
   skipped with a warning in the report: reconcile them (rename one) before migrating.
-- Joined datasources (`<relation type='join'>`, new object-model relationships) give
-  one model per table; add foreign entities by hand (unshackle warns). Join columns with
-  the same name get a table suffix in Tableau (`[account_id (accounts)]`).
+- Joined datasources (`<relation type='join'>`) give one model per table, related by
+  foreign entities when the join is on the other table's key. Ossie and MetricFlow
+  consumers usually read a relationship as a left join, while a Tableau inner join drops
+  unmatched rows and repeats one-side rows per match: the models' descriptions say so,
+  and tiles keep the join. Joins on several columns or on non-key columns get no
+  relationship (unshackle warns); new object-model relationships are not read yet. Join
+  columns with the same name get a table suffix in Tableau (`[account_id (accounts)]`).
 - Local names vs captions: formulas reference local names (`[Calculation_123]`,
   sometimes `[sales]` with caption `Sales`); unshackle resolves both.
 - Hidden fields are still migrated (they may feed calcs); `hidden: true` columns get
