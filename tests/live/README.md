@@ -167,8 +167,11 @@ UNSHACKLE_LIVE=1 pytest tests/live/test_tableau_live.py -s
 - What it changes on the site: one project (`unshackle-live`, override with
   `UNSHACKLE_LIVE_TABLEAU_PROJECT`) holding everything it publishes, and one group,
   `unshackle-managers`. No site settings or users are touched. At the end, even when a
-  step fails, it deletes the project's workbooks and data sources, the project and the
-  group, then lists them again to check they are gone. `bootstrap.teardown()` does the
+  step fails, it deletes the project's workbooks and data sources, the project, the
+  group, and the database and tables Tableau Catalog recorded for the data source's
+  connection (`warehouse.example.com`), then lists them again to check they are gone. On a
+  site without external assets yet, Tableau creates an "External Assets Default Project"
+  the first time; that project is Tableau's and is left in place. `bootstrap.teardown()` does the
   same by hand: `python -c "import sys; sys.path.insert(0, 'tests/live/tableau'); import bootstrap; print(bootstrap.teardown())"`.
 - Data: Tableau Cloud can't reach the local warehouse, so `tests/live/tableau/bootstrap.py`
   writes orders joined to accounts and products into a `.hyper` extract with Tableau's

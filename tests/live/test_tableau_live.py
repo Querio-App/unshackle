@@ -51,6 +51,7 @@ def _assert_gone(tableau) -> None:
         assert site.items("/workbooks", "workbooks", "workbook", filter=f"projectName:eq:{tableau.PROJECT}") == []
         assert site.items("/datasources", "datasources", "datasource", filter=f"projectName:eq:{tableau.PROJECT}") == []
         assert site.items("/groups", "groups", "group", filter=f"name:eq:{tableau.GROUP}") == []
+        assert [d for d in site.items("/databases", "databases", "database") if d.get("hostName") == tableau.WAREHOUSE_HOST] == []
     finally:
         site.close()
 

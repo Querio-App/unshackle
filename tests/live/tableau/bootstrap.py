@@ -16,7 +16,10 @@ Everything goes into one project (`unshackle-live` by default):
   a table filtered by a parameter-driven calc, and a dashboard with all four;
 - group `unshackle-managers` (empty) with View on the project and the workbook.
 
-`teardown()` deletes the project (and so its content) and the group.
+`teardown()` deletes the project (and so its content), the group, and the database and tables
+Tableau Catalog lists for the data source's connection (external assets, kept after the data
+source is gone). Tableau may also create an "External Assets Default Project" for those the
+first time; it is Tableau's, so it is left alone.
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ DATASOURCE = "Dunder Mifflin Orders"
 WORKBOOK = "Dunder Mifflin Sales"
 SHEETS = ("Revenue by Paper Type", "Monthly Revenue", "Average Order Value", "Large Orders by Account")
 DASHBOARD = "Sales Overview"
+WAREHOUSE_HOST = "warehouse.example.com"  # what the data source says it connects to; Tableau never reaches it
 
 # (local name, table, remote name, Tableau type). Duplicate column names in a join get " (table)", as in Desktop.
 COLUMNS = [
@@ -181,8 +185,8 @@ def datasource_tds(hyper_name: str = "Data/Extracts/dunder_mifflin.hyper") -> st
 <datasource formatted-name='federated.1unshackle0live' inline='true' source-platform='linux' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
   <connection class='federated'>
     <named-connections>
-      <named-connection caption='warehouse.example.com' name='{pg}'>
-        <connection authentication='username-password' class='postgres' dbname='dunder_mifflin' port='5432' server='warehouse.example.com' sslmode='require' username='tableau_reader' />
+      <named-connection caption='{WAREHOUSE_HOST}' name='{pg}'>
+        <connection authentication='username-password' class='postgres' dbname='dunder_mifflin' port='5432' server='{WAREHOUSE_HOST}' sslmode='require' username='tableau_reader' />
       </named-connection>
     </named-connections>
     {join}
@@ -510,6 +514,11 @@ def teardown(site: Site | None = None) -> list[str]:
         for g in site.items("/groups", "groups", "group", filter=f"name:eq:{GROUP}"):
             site.api("DELETE", f"/groups/{g['id']}")
             gone.append(f"group {g['name']}")
+        # Tableau Catalog adds the data source's database and tables as external assets; they outlive the data source.
+        for db in site.items("/databases", "databases", "database"):
+            if db.get("hostName") == WAREHOUSE_HOST and not db.get("isEmbedded"):
+                site.api("DELETE", f"/databases/{db['id']}")
+                gone.append(f"database {db['name']} (external asset, with its tables)")
     finally:
         if own:
             site.close()
