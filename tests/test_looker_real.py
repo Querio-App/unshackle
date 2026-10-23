@@ -68,6 +68,11 @@ def test_import_build_and_validate(project: str, built):
         assert m.source_expression if m.todo else not LOOKML.search(f"{m.filter} {m.expr} {m.label}"), m.name
     for r in b.row_filters:
         assert r.table and (r.todo or not LOOKML.search(r.predicate.replace("{{ user.", ""))), r.name
+    # each project's LookML dashboard is a notebook; tile SQL is plain SQL, and a tile without SQL says why
+    assert len(b.dashboards) == 1 and any((repo / "notebooks").glob("*.ipynb"))
+    for t in b.dashboards[0].tiles:
+        assert not LOOKML.search(t.sql), t.id
+        assert t.sql or t.kind == "text" or t.todo.startswith("no SQL written"), t.id
     assert "## Still to translate" in (repo / "migration/report.md").read_text()
 
 
@@ -132,9 +137,13 @@ def test_financial_services(built):
     models = _by_name(b.semantic_models)
     m = _by_name(b.metrics)
     assert "sql_distinct_key: ${card.card_id}" in m["total_annual_fee"].source_expression and m["total_annual_fee"].todo
-    # primary key built from a timeframe (${balance_date}): no entity rather than a broken one
+    # primary key built from a timeframe: ${balance_date} is the group's SQL cast to a date
     bal = models["balances_fact"]
-    assert not any(e.type == "primary" for e in bal.entities) and "timeframe" in _by_name(bal.dimensions)["primary_key"].todo
+    (pk,) = [e for e in bal.entities if e.type == "primary"]
+    assert pk.expr == "CONCAT(account_id,cast((CAST((cast(date_field as timestamp)) AS DATE)) as string))"
+    dims = _by_name(bal.dimensions)
+    assert dims["is_yesterday"].expr == "(CAST((cast(date_field as timestamp)) AS DATE)) = date_add(current_date(), interval -1 day)"
+    assert "Liquid" in dims["is_beginning_of_period"].todo
     pct = [x for sm in b.semantic_models for x in sm.measures if x.agg == "percentile"]
     assert pct and all(0 < x.agg_params["percentile"] < 1 for x in pct)
 
@@ -167,3 +176,70 @@ def test_cloud_sql_observability(built):
     # -NULL excludes NULLs; only "is not <value>" filters keep them
     m = _by_name(b.metrics)
     assert m["running_threads_count"].filter == "{{ Dimension('threads__processlist_state') }} IS NOT NULL"
+
+
+# ---------------------------------------------------------------- DuckDB parity on the real projects
+
+
+def _duckdb(tmp_path, statements: list[str]):
+    import duckdb
+
+    path = tmp_path / "wh.duckdb"
+    con = duckdb.connect(str(path))
+    for s in statements:
+        con.execute(s)
+    con.close()
+    return f"duckdb:///{path}"
+
+
+def test_looker_skills_dashboard_tiles_match_hand_written_sql(built, tmp_path):
+    """The LookML dashboard's tiles, run on a few rows, against SQL written by hand from the LookML."""
+    from unshackle import verify
+    from unshackle.run import notebook_queries, query
+
+    repo, b = built("looker_skills")
+    (d,) = b.dashboards
+    assert d.name == "eCommerce Operations Overview"
+    params, sqls = notebook_queries(repo / "notebooks/ecommerce-operations-overview.ipynb")
+    url = _duckdb(tmp_path, [
+        "CREATE TABLE orders (order_id INT, user_id INT, status VARCHAR, created_at TIMESTAMP)",
+        "INSERT INTO orders VALUES (1, 1, 'Complete', '2024-01-01'), (2, 1, 'Shipped', '2024-01-02'), "
+        "(3, 2, 'Complete', '2024-01-02'), (4, 3, NULL, '2024-01-03')",
+        "CREATE TABLE users (id INT, first_name VARCHAR, last_name VARCHAR)",
+        "INSERT INTO users VALUES (1, 'Ada', 'Lovelace'), (2, 'Alan', 'Turing'), (3, 'Grace', 'Hopper'), (4, 'No', 'Orders')",
+        "CREATE TABLE order_items (id INT, order_id INT, sale_price DOUBLE)",
+        "INSERT INTO order_items VALUES (1, 1, 10), (2, 1, 5), (3, 2, 7), (4, 3, 20)",
+    ])
+
+    def run(tile: str):
+        return query(sqls[tile].replace("bigquery-public-data.thelook_ecommerce.", ""), params, url)
+
+    # users.users_count through the many_to_one join: users who have orders
+    assert verify.compare(run("total_users"), query("SELECT count(DISTINCT user_id) AS users_users_count FROM orders", {}, url))[0] == "pass"
+    ref = query("SELECT status AS orders_status, count(*) AS orders_orders_count FROM orders WHERE status IS NOT NULL GROUP BY 1", {}, url)
+    assert verify.compare(run("order_status_breakdown"), ref, ["orders_status"])[0] == "pass"
+    # dimensions only: one row per distinct combination, the order_items join brings each item's price
+    ref = query("""SELECT DISTINCT o.order_id AS orders_id, u.first_name || ' ' || u.last_name AS users_full_name,
+                   o.status AS orders_status, i.sale_price AS orders_sale_price
+                   FROM orders o LEFT JOIN users u ON u.id = o.user_id LEFT JOIN order_items i ON i.order_id = o.order_id""", {}, url)
+    got = run("recent_orders_detail")
+    assert len(got) == len(ref) == 5
+    assert verify.compare(got, ref, ["orders_id", "orders_sale_price"])[0] == "pass"
+
+
+def test_thelook_gross_margin_metric_matches_looker_sql(built, tmp_path):
+    """`sum(${sale_price} - ${inventory_items.cost})`: the Ossie metric over the related datasets equals
+    Looker's SQL over the explore's full outer join."""
+    import duckdb
+
+    repo, b = built("thelook_event")
+    doc = yaml.safe_load((repo / "semantic/order_items.ossie.yaml").read_text())
+    expr = {m["name"]: m["expression"]["dialects"][0]["expression"] for m in doc["metrics"]}["order_items_total_gross_margin"]
+    assert expr == "SUM((order_items.sale_price - inventory_items.cost))"
+    con = duckdb.connect()
+    con.execute("CREATE TABLE order_items AS SELECT * FROM (VALUES (1, 100, 30.0), (2, 101, 12.5), (3, NULL, 9.0)) t(id, inventory_item_id, sale_price)")
+    con.execute("CREATE TABLE inventory_items AS SELECT * FROM (VALUES (100, 10.0), (101, 2.5), (102, 4.0)) t(id, cost)")
+    got = con.execute(f"SELECT {expr} FROM order_items LEFT JOIN inventory_items ON order_items.inventory_item_id = inventory_items.id").fetchone()[0]
+    looker = con.execute("SELECT SUM(order_items.sale_price - inventory_items.cost) FROM order_items "
+                         "FULL OUTER JOIN inventory_items ON inventory_items.id = order_items.inventory_item_id").fetchone()[0]
+    assert got == looker == 30.0

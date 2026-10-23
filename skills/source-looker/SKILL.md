@@ -51,9 +51,10 @@ unshackle build looker
   unwrapped.
 - Only `.lkml` and `.lookml` files are copied; `.git` and anything else is skipped.
 - This is the same LookML `LOOKER_LOOKML_DIR` gives `extract`, so views, explores,
-  measures and access grants come out the same. Missing: user-defined dashboards and
-  Looks (API only; LookML dashboards are not parsed), Looker's generated SQL, view
-  counts and links, and who holds each user attribute.
+  measures and access grants come out the same. LookML dashboards
+  (`*.dashboard.lookml`) become notebooks (see Dashboards). Missing: user-defined
+  dashboards and Looks (API only), Looker's generated SQL, view counts and links,
+  and who holds each user attribute.
 
 ## What is deterministic
 
@@ -63,6 +64,8 @@ unshackle build looker
 | `constant:` in `manifest.lkml` | `@{NAME}` replaced everywhere before parsing (constants that hold Liquid make the field a TODO) |
 | `include:` in a model | explores in included files (`explores/*.explore.lkml`) belong to that model; `*`, `**`, relative paths and a missing `.lkml` work |
 | `dimension` | categorical dimension; `${TABLE}.col` -> `col`, `${other_dim}` inlined, `case:` -> `CASE WHEN` |
+| `${created_date}` and other timeframe refs | the group's SQL with Looker's value for the timeframe (table below) |
+| measure over fields of a joined view (`sum: ${sale_price} - ${inventory_items.cost}`) | measure over `{{ Dimension('view__field') }}` refs -> Ossie model-scoped metric (`SUM(order_items.sale_price - inventory_items.cost)`); MetricFlow keeps it pending |
 | `primary_key: yes` | primary entity named after the view |
 | `dimension_group: type: time` | time dimension named after the group; granularity = smallest timeframe (`date` -> day, `time` -> second, `datatype: date` caps at day) |
 | measure `sum/average/count_distinct/min/max/median/percentile` | measure + simple metric |
@@ -76,7 +79,32 @@ unshackle build looker
 | `required_access_grants` / `access_grant` | Cedar `permit` per allowed value, TODO to map groups |
 | `derived_table` | `queries/<view>-derived-table.sql` + semantic model on a table of the same name (TODO: materialize) |
 | `sql_table_name` that is SQL (a subquery or a Liquid switch) | treated like a derived table |
-| dashboard elements | notebook tiles (see below); Looks -> `queries/*.sql` |
+| dashboard elements (API) | notebook tiles with Looker's generated SQL (see below); Looks -> `queries/*.sql` |
+| LookML dashboards (`*.dashboard.lookml`) | notebooks: tile SQL written from the explore, filters -> parameters (see below) |
+
+Timeframe references (`${created_month}`, `${orders.created_date}`) use the
+`dimension_group`'s SQL:
+
+| Timeframe | SQL |
+| --- | --- |
+| `raw`, `time` | the group's SQL |
+| `date` | `CAST(x AS DATE)` (the SQL itself with `datatype: date`) |
+| `year`, `month_num`, `day_of_month`, `hour_of_day` | `EXTRACT(YEAR/MONTH/DAY/HOUR FROM x)` (no `hour_of_day` on a date) |
+| `month`, `week` | Looker's string (`'2024-01'`, the Monday starting the week as `'2024-01-01'`) in the warehouse's dialect: `FORMAT_DATE` (BigQuery), `TO_CHAR` (Snowflake, Postgres, Redshift), `DATE_FORMAT` (Databricks), `STRFTIME` (DuckDB). Needs `[datasources.warehouse] type` in `unshackle.toml`; a `week_start_day` other than Monday stays TODO |
+| others (`quarter`, `day_of_week`, `month_name`, `hour`, fiscal, ...), `datatype: epoch / yyyymmdd` | TODO with the original |
+
+Looker converts timestamps to the query time zone when `convert_tz` is on and the
+connection sets one; the translations, like the time dimensions themselves, use the
+stored time zone.
+
+A measure that reads another view's fields is translated when every explore with
+both views joins them the same way, many_to_one or one_to_one on the other view's
+primary key (so the semantic models relate through an entity and no row of the
+measure's view repeats). Otherwise it stays TODO and says which: no explore joins
+them, explores join them differently, the join repeats the measure's rows (Looker
+dedupes with symmetric aggregates), or an inner/full join with an expression that
+doesn't drop out on NULL. A *dimension* over another view stays TODO: Ossie fields
+read one dataset; the TODO names the join.
 
 Measure/metric names are the LookML names; a bare `count` or a name used in two views
 becomes `<view>_<name>`. Labels keep Looker's labels.
@@ -90,8 +118,13 @@ becomes `<view>_<name>`. Labels keep Looker's labels.
   a row filter.
 - **Cross-view refs in a dimension** (`${customers.region}` in `orders`): move the
   dimension to the view that owns the column; MetricFlow joins through entities.
-- **Timeframe refs** (`${created_date}`): `CAST(created_at AS DATE)` or
-  `DATE_TRUNC('<tf>', created_at)` in your dialect.
+  Measures built on it are translated when the join allows (see above).
+- **Cross-view measures that stay TODO**: for a one_to_many join, pre-aggregate the
+  other view per row of the measure's view in a SQL model (what Looker's symmetric
+  aggregates compute), or define the measure on the other view.
+- **Timeframe refs left TODO** (`${created_quarter}`, `${created_day_of_week}`):
+  write Looker's value in your dialect (quarter is `'2024-01'` style for the first
+  month, `day_of_week` the day's name), or reference `${created_raw}` and truncate.
 - **Relative date filters** (`"30 days"`, `"last month"`): no MetricFlow equivalent
   in a metric filter that stays correct over time; either drop the filter and use a
   time constraint at query time, or write
@@ -100,9 +133,10 @@ becomes `<view>_<name>`. Labels keep Looker's labels.
   model keyed by `sql_distinct_key`, then a plain `sum`/`average`.
 - **running_total / percent_of_total**: a `cumulative` metric, or a window in tile SQL.
 - **tier / duration dimension_group**: `CASE` buckets / `DATEDIFF` expression.
-- **Timeframe refs in a primary key** (`CONCAT(${TABLE}.id, ${created_date})`): no
-  primary entity is written (the warning names the view); write the key with
-  `CAST(... AS DATE)` and add the entity, or joins to that view stay missing.
+- **A primary key that doesn't translate** (Liquid, or a timeframe left TODO such as
+  `CONCAT(${TABLE}.id, ${created_quarter})`): no primary entity is written (the
+  warning names the view); write the key and add the entity, or joins to that view
+  stay missing.
 - **`sql_table_name` with Liquid** (often `{% if _dialect._name == ... %}`): pick the
   branch for your warehouse and use it as the table (or materialize it); the query
   file has the original.
@@ -129,15 +163,54 @@ Vis types: `looker_column/bar` -> bar, `looker_line` -> line, `looker_area` -> a
 `looker_scatter` -> point, `looker_pie/donut_multiples` -> arc, `single_value` -> KPI,
 `looker_grid/table` -> table, maps and custom viz -> TODO. First dimension -> x
 (temporal for dimension-group fields), first measure -> y, first pivot -> color.
-Tile SQL is Looker's generated SQL with `AS "view.field"` rewritten to `view_field`.
+
+**From the API** (user-defined dashboards): tile SQL is Looker's generated SQL with
+`AS "view.field"` rewritten to `view_field`.
+
+**LookML dashboards** (`*.dashboard.lookml`, YAML): the only dashboards a project
+without API access has. Each element's query becomes SQL over its explore, the way
+Looker writes it:
+
+- `FROM <base table> AS <explore>`, and only the joins its fields, filters and
+  `sql_on`s need (`required_joins` too), in dependency order. `foreign_key` joins use
+  the joined view's primary key. Derived tables are read under the name they
+  materialize as (TODO until they exist).
+- Dimensions are grouped (`GROUP BY 1, 2, ...`, also without measures), yesno fields
+  select `'Yes'`/`'No'`. `count` is `COUNT(DISTINCT <primary key>)` (`COUNT(*)`
+  without one), `sum/average/min/max/count_distinct` with measure `filters` as
+  `CASE WHEN`, `type: number` over other measures inlined.
+- Element `filters` -> `WHERE` (dimensions) / `HAVING` (measures); explore
+  `sql_always_where`, `sql_always_having`, `always_filter` and `conditionally_filter`
+  defaults apply as in Looker. `sorts` -> `ORDER BY` (Looker's default sort without
+  them), `limit` -> `LIMIT`.
+- Dashboard `filters` -> notebook parameters. A tile that `listen`s gets
+  `(:param IS NULL OR <field> = :param)` when the default is one plain value (or
+  none); the parameter takes one value, not a Looker filter expression. Date filters,
+  defaults like `"7 days"`, `"[50,100]"` or `"a,b"`, and filters whose join would
+  change the rows when empty (inner, full or one_to_many) are TODO on the tile.
+- `extends` merges elements and filters by name; `extension: required` dashboards
+  are not written. A LookML dashboard also exported through the API
+  (`model::name`) is written once, from the API.
+- Layout follows `row`/`col` (newspaper) or `rows` (grid).
+
+No SQL is written (the tile says why) when a field or filter can't be translated
+(Liquid, a Looker filter expression, `tier`/`location` dimensions, `median`,
+`percentile`, `list` and other measure types, joins written as `sql:`), for merged
+results, and when a measure's rows repeat across a join in the query: Looker uses
+symmetric aggregates there (a sum or average on the many side of a one_to_many join,
+or on a view joined many_to_one). `count` (distinct primary key), `count_distinct`,
+`min` and `max` are safe. Notes that leave the SQL right but incomplete: a dashboard
+filter not bound, a pivot with a `limit` (Looker limits pivoted rows; the long-format
+SQL has none), a sort on one pivot column, `query_timezone` with converted
+timestamps, access filters (enforced by the policies, not the SQL).
 
 - **Table calculations / custom fields** (`dynamic_fields`): Looker expressions over
   the result. `${a} / ${b}` -> column expression; `offset(${x}, -1)` -> `LAG`;
   `running_total(${x})` -> `SUM(...) OVER (ORDER BY ...)`; `pivot_index`/`pivot_row`
   -> pivot in SQL or pandas in the tile's chart cell.
-- **Dashboard filters** are not in `run/sql`; the TODO names the param to add
-  (`AND customers.region = :region`). Relative date defaults (`"12 months"`) need a
-  real default in the parameters cell.
+- **Dashboard filters** from the API are not in `run/sql`; the TODO names the param
+  to add (`AND customers.region = :region`). Relative date defaults (`"12 months"`)
+  need a real default in the parameters cell.
 - **Pivoted queries** return SQL with `z__pivot_col_rank` CTEs; long format (one row
   per x and pivot value) is what Altair wants, so drop the ranking wrapper.
 - Extra measures on one chart: fold them in SQL (`UNION ALL` or unpivot) and color by
@@ -172,10 +245,9 @@ under `migration/parity/data/`.
   generated SQL) - handy for ad-hoc parity checks from an agent.
 - **gzr** (Gazer CLI): `gzr dashboard cat <id> --dir .` / `gzr look cat` export full
   dashboard JSON; useful when the API key can't list content but a user can.
-- LookML dashboards (`*.dashboard.lookml`) are not parsed. Without API access they are
-  the only dashboards you have: rebuild each tile from its element (`model`, `explore`,
-  `fields`, `pivots`, `filters`, `listen`). With API access, import a user-defined copy
-  (`POST /dashboards/{lookml_id}/import`) or extract the UDD version.
+- LookML dashboards are written from the LookML (see Dashboards). To compare a tile
+  with Looker's own SQL, import a user-defined copy (`POST /dashboards/{lookml_id}/import`)
+  and extract it, or run the element's query in Looker and diff the SQL.
 
 ## Gotchas
 

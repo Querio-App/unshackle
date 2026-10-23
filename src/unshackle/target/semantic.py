@@ -234,7 +234,10 @@ def _render_model(model: SemanticModel, layout: Layout, fd: _FileDoc, names: _Na
             }
         )
         if m.todo or _has_jinja(m.expr):
-            reason = m.todo or "expression still has template code"
+            reason = m.todo or (
+                "reads dimensions of other semantic models ({{ Dimension(...) }}); a MetricFlow measure reads one model, "
+                "so this is a model-scoped metric in the Ossie file only (or move the expression into a SQL model)"
+                if "Dimension(" in m.expr else "expression still has template code")
             fd.pending.append(_Pending("measure", f"{name}.{mname}", _reason(reason, m.source_language, m.source_expression or m.expr), item))
             continue
         if not time_dims:

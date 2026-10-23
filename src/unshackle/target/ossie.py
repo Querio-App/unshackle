@@ -101,6 +101,7 @@ class _Dataset:
     measures: dict[str, tuple[Measure, str]] = field(default_factory=dict)
     metrics: list[dict[str, Any]] = field(default_factory=list)
     pending: list[dict[str, Any]] = field(default_factory=list)
+    cross: dict[str, str] = field(default_factory=dict)  # measure -> expression over `{{ Dimension(...) }}` refs
     todos: list[str] = field(default_factory=list)
     time_dims: list[str] = field(default_factory=list)
     default_time: str = ""
@@ -150,6 +151,12 @@ def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) 
         key = ds.by_expr.get(_norm(expr)) or ds.add(_mf(expr if IDENT.fullmatch(expr) else e.name), expr)
         ds.entities.setdefault(e.name, (e.type, key))
     for m in model.measures:
+        if not m.todo and _has_jinja(m.expr) and _is_cross(m.expr):
+            # an expression over dimensions of related datasets: resolved per metric (model-scoped)
+            ds.cross[m.name] = ds.cross[snake(m.name)] = m.expr
+            ds.measures.setdefault(m.name, (m, ""))
+            ds.measures.setdefault(snake(m.name), (m, ""))
+            continue
         if m.todo or _has_jinja(m.expr):
             ds.skip("measure", m, _reason(m.todo or "expression still has template code", m.source_language, m.source_expression or m.expr))
             arg = ""
@@ -159,6 +166,11 @@ def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) 
         ds.measures.setdefault(m.name, (m, arg))
         ds.measures.setdefault(snake(m.name), (m, arg))
     return ds
+
+
+def _is_cross(expr: str) -> bool:
+    """A measure expression whose only template code is dimension references (`{{ Dimension('v__f') }}`)."""
+    return bool(FILTER_REF.search(expr)) and not _has_jinja(FILTER_REF.sub("", expr))
 
 
 def _render_dataset(ds: _Dataset, copy: bool = False) -> dict[str, Any]:
@@ -251,11 +263,15 @@ class _Resolver:
             raise _Skip(f"measure {name} is {'ambiguous' if owners else 'not in any semantic model'}")
         ds = owners[0]
         meas, arg = ds.measures[name]
+        if name in ds.cross:
+            if ds.name not in self.doc:
+                raise _Skip(f"needs dataset {ds.name}, which this model has no relationship to")
+            arg = self.filter(ds.cross[name])
         if not arg:
             raise _Skip(f"measure {ds.name}.{_mf(name)} is not migrated yet", from_source=True)
         if ds.name not in self.doc:
             raise _Skip(f"needs dataset {ds.name}, which this model has no relationship to")
-        x = arg if CONSTANT.fullmatch(arg) else self.ref(ds, arg)
+        x = arg if CONSTANT.fullmatch(arg) or name in ds.cross else self.ref(ds, arg)
         self.used.add(ds.name)
         if filters:
             x = f"CASE WHEN {filters[0] if len(filters) == 1 else ' AND '.join(f'({f})' for f in filters)} THEN {x} END"
@@ -271,9 +287,9 @@ class _Resolver:
             entity, dim, grain = m.groups()
             ds = next((d for d in self.datasets.values() if d.entities.get(entity, ("",))[0] == "primary"), None) or self.datasets.get(entity)
             if ds is None or snake(dim) not in ds.dims:
-                raise _Skip(f"filter refers to {entity}__{dim}, which isn't a migrated dimension")
+                raise _Skip(f"refers to {entity}__{dim}, which isn't a migrated dimension")
             if ds.name not in self.doc:
-                raise _Skip(f"filter needs dataset {ds.name}, which this model has no relationship to")
+                raise _Skip(f"refers to {entity}__{dim} in dataset {ds.name}, which this model has no relationship to")
             col = self.ref(ds, ds.dims[snake(dim)])
             return f"DATE_TRUNC('{grain}', {col})" if grain else col
 
