@@ -104,7 +104,10 @@ def test_parse_semantic_models(tmp_path: Path):
     assert dims["order_date"].type == "time" and dims["order_date"].expr == "OrderDate"
     assert dims["amount"].expr == "SalesAmount" and dims["amount"].label == "Amount"
     assert "customer_key" not in dims  # keys become entities
-    assert dims["line_margin"].expr == "SalesAmount - TotalCost"  # calculated column translated
+    # calculated column translated; DAX subtraction treats BLANK as 0
+    assert dims["line_margin"].expr == (
+        "(CASE WHEN SalesAmount IS NULL AND TotalCost IS NULL THEN NULL ELSE COALESCE(SalesAmount, 0) - COALESCE(TotalCost, 0) END)"
+    )
     assert "RELATED" in dims["customer_segment"].todo and dims["customer_segment"].source_language == "dax"
     cust = _by_name(models["customer"].dimensions)
     assert cust["name"].expr == "CustomerName"  # Table.RenameColumns reversed
@@ -143,10 +146,11 @@ def test_parse_metrics(tmp_path: Path):
     assert (py.type, py.expr, py.metrics, py.offsets) == ("derived", "total_sales", ["total_sales"], {"total_sales": "1 year"})
     assert m["sales_3m_ago"].offsets == {"total_sales": "3 months"}
     assert m["sales_yoy_pct"].expr == "1.0 * (total_sales - sales_py) / nullif(sales_py, 0)"
+    dr = m["discount_rate"]  # VAR Gross = SUMX(..) RETURN DIVIDE(Gross - [Total Sales], Gross): inlined, reusing the measure
+    assert (dr.type, dr.expr, dr.todo) == ("derived", "1.0 * (extended_amount - total_sales) / nullif(extended_amount, 0)", "")
     for name, needle in [
         ("sales_all_regions", "ALL"),
         ("ship_date_sales", "USERELATIONSHIP"),
-        ("discount_rate", "VAR/RETURN"),
         ("fiscal_ytd", "fiscal"),
     ]:
         assert needle in m[name].todo, name
@@ -219,7 +223,10 @@ def test_parse_legacy_report(tmp_path: Path):
     d = _by_name(b.dashboards)["Executive Summary - Summary"]
     t = {x.title: x for x in d.tiles}
     assert d.layout[0] == ["a1b2c3d4e5f6a7b8c9d0", "b2c3d4e5f6a7b8c9d0e1"]
-    assert t["Margin %"].kind == "kpi" and "(SUM(SalesAmount) - SUM(TotalCost)) / NULLIF(SUM(SalesAmount), 0)" in t["Margin %"].sql
+    assert t["Margin %"].kind == "kpi" and (
+        "1.0 * (CASE WHEN SUM(SalesAmount) IS NULL AND SUM(TotalCost) IS NULL THEN NULL"
+        " ELSE COALESCE(SUM(SalesAmount), 0) - COALESCE(SUM(TotalCost), 0) END) / NULLIF(SUM(SalesAmount), 0)"
+    ) in t["Margin %"].sql
     donut = t["Sales by channel"]
     assert donut.mark == "arc" and donut.encodings["theta"].field == "total_sales" and donut.encodings["color"].field == "channel"
     matrix = next(x for x in d.tiles if x.source_type == "pivotTable")
@@ -471,3 +478,229 @@ def test_inventory_and_access_token(tmp_path: Path, monkeypatch):
     fresh = PowerBISource(client=src.client(), poll_interval=0)
     fresh.extract(RawStore(tmp_path, "powerbi"), {f"model:{MODEL}"})
     assert not any(c.startswith("POST login") for c in calls)
+
+
+# ---------------------------------------------------------------- regressions found on published projects (tests/fixtures/powerbi_real)
+
+
+def _m(item: str) -> str:
+    return (
+        "\tpartition P = m\n\t\tmode: import\n\t\tsource =\n"
+        f'\t\t\t\tlet Source = Sql.Database("srv", "DW"), T = Source{{[Schema="dbo",Item="{item}"]}}[Data] in T\n'
+    )
+
+
+def _col(name: str, dtype: str = "double", extra: str = "") -> str:
+    return f"\tcolumn {name}\n\t\tdataType: {dtype}\n\t\tsourceColumn: {name.strip(chr(39))}\n{extra}\n"
+
+
+SALES_TMDL = (
+    "table Sales\n"
+    "\tmeasure Margin = SUMX(Sales, Sales[Qty] * (Sales[Price] - Sales[Cost]))\n"
+    "\tmeasure Revenue = SUM(Sales[Price])\n"
+    "\tmeasure 'Unit Price' = DIVIDE(SUM(Sales[Price]), SUM(Sales[Qty]))\n"
+    "\tmeasure 'Total' = CALCULATE(SUM(Sales[Price]))\n"
+    "\tmeasure 'Red' = CALCULATE(SUM(Sales[Price]), Product[Color] = \"Red\") + 0\n"
+    "\tmeasure 'Red Share' = DIVIDE([Red], [Revenue])\n"
+    "\tmeasure 'Rev Δ' =\n\t\t\tVAR r = [Revenue]\n\t\t\tVAR m = [Margin]\n\t\t\tRETURN DIVIDE(r - m, r)\n"
+    "\tmeasure 'Rev Red' =\n\t\t\tVAR r = [Revenue]\n\t\t\tRETURN CALCULATE(r, Product[Color] = \"Red\")\n"
+    "\tmeasure 'Half' = CALCULATE([Revenue], Sales[Qty] > .5)\n"
+    "\tmeasure '#NetCost' = SUM(Sales[Cost])\n"
+    + _col("Qty", "int64") + _col("Price") + _col("Cost") + _col("ProductKey", "int64")
+    + "\tcolumn 'Line Margin' = Sales[Price] - Sales[Cost] / Sales[Qty]\n\t\tdataType: double\n\n"
+    + _m("FactSales")
+)
+PRODUCT_TMDL = "table Product\n" + _col("ProductKey", "int64", "\t\tisKey") + _col("Color", "string") + _m("DimProduct")
+REL_TMDL = "relationship r1\n\tfromColumn: Sales.ProductKey\n\ttoColumn: Product.ProductKey\n"
+
+
+def _mini(tmp_path: Path, files: dict[str, str]):
+    """A small project imported by hand: models/<id>/definition/... and reports/<id>/..."""
+    raw = tmp_path / "migration" / "raw" / "powerbi"
+    for rel, text in files.items():
+        (raw / rel).parent.mkdir(parents=True, exist_ok=True)
+        (raw / rel).write_text(text)
+    return get_source("powerbi").parse(RawStore(tmp_path, "powerbi"))
+
+
+def _sales(tmp_path: Path, **extra: str):
+    return _mini(tmp_path, {
+        "models/Shop/definition/database.tmdl": "database Unknown\n\tcompatibilityLevel: 1601\n",
+        "models/Shop/definition/tables/Sales.tmdl": SALES_TMDL,
+        "models/Shop/definition/tables/Product.tmdl": PRODUCT_TMDL,
+        "models/Shop/definition/relationships.tmdl": REL_TMDL,
+        **extra,
+    })
+
+
+def test_dax_operator_precedence_and_division(tmp_path: Path):
+    b = _sales(tmp_path)
+    meas = {m.name: m for sm in b.semantic_models for m in sm.measures}
+    assert meas["margin"].expr == "Qty * (CASE WHEN Price IS NULL AND Cost IS NULL THEN NULL ELSE COALESCE(Price, 0) - COALESCE(Cost, 0) END)"
+    dims = {d.name: d for sm in b.semantic_models for d in sm.dimensions}
+    assert dims["line_margin"].expr == (
+        "(CASE WHEN Price IS NULL AND 1.0 * Cost / NULLIF(Qty, 0) IS NULL THEN NULL ELSE COALESCE(Price, 0) - COALESCE(1.0 * Cost / NULLIF(Qty, 0), 0) END)"
+    )
+    assert dax_parse("[A] < .5").right.value == ".5"
+
+
+def test_dax_vars_inlined_only_where_context_is_the_same(tmp_path: Path):
+    m = _by_name(_sales(tmp_path).metrics)
+    assert (m["rev_delta"].type, m["rev_delta"].expr, m["rev_delta"].todo) == ("derived", "1.0 * (revenue - margin) / nullif(revenue, 0)", "")
+    assert "r is used inside CALCULATE" in m["rev_red"].todo and m["rev_red"].source_expression.startswith("VAR r")
+    assert dax_parse("VAR x = 1 RETURN CALCULATE([a], T[c] = x)").args[1].right.value == "1"  # constants are safe anywhere
+
+
+def test_dax_calculate_without_filters_and_plus_zero(tmp_path: Path):
+    b = _sales(tmp_path)
+    m = _by_name(b.metrics)
+    meas = {x.name: x for sm in b.semantic_models for x in sm.measures}
+    assert (m["total"].type, meas[m["total"].measure].agg, meas[m["total"].measure].expr) == ("simple", "sum", "Price")  # CALCULATE(SUM(..)) is SUM(..)
+    red = m["red"]  # CALCULATE(SUM(..), filter) + 0: a filtered input metric, BLANK shown as 0
+    assert (red.type, red.expr, red.metrics) == ("derived", "coalesce(red_1, 0)", ["red_1"])
+    assert (m["red_1"].measure, m["red_1"].filter) == ("revenue", "{{ Dimension('product__color') }} = 'Red'")
+    assert (m["red_share"].type, m["red_share"].numerator, m["red_share"].denominator) == ("ratio", "red", "revenue")
+    assert m["half"].filter == "{{ Dimension('sales__qty') }} > .5"
+    assert "count_net_cost" in m and "rev_delta" in m  # names are ASCII snake_case: '#NetCost', 'Rev Δ'
+
+
+def test_model_named_after_folder_when_database_is_unknown(tmp_path: Path):
+    b = _sales(tmp_path)
+    assert any(k.name == "Power BI model Shop" for k in b.knowledge)
+
+
+def _visual(name: str, vtype: str, select: list[dict], filters: list[dict] | None = None) -> str:
+    return json.dumps({
+        "name": name, "position": {"x": 0, "y": 0, "width": 100, "height": 100},
+        "visual": {"visualType": vtype, "query": {"queryState": {"Values": {"projections": select}}}},
+        **({"filterConfig": {"filters": filters}} if filters else {}),
+    })
+
+
+def _measure(entity: str, prop: str) -> dict:
+    return {"field": {"Measure": {"Expression": {"SourceRef": {"Entity": entity}}, "Property": prop}}, "queryRef": f"{entity}.{prop}"}
+
+
+def test_thin_report_by_connection_and_tile_sql(tmp_path: Path):
+    pbir = {"version": "4.0", "datasetReference": {"byConnection": {
+        "connectionString": "Data Source=powerbi://api.powerbi.com/v1.0/myorg/WS;initial catalog=Shop;integrated security=ClaimsToken"}}}
+    page = "reports/Thin/definition/pages/p1"
+    b = _sales(tmp_path, **{
+        "reports/Thin/definition.pbir": json.dumps(pbir),
+        f"{page}/page.json": json.dumps({"name": "p1", "displayName": "Page"}),
+        f"{page}/visuals/v1/visual.json": _visual("v1", "card", [_measure("Sales", "Red")]),
+        f"{page}/visuals/v2/visual.json": _visual("v2", "card", [_measure("Sales", "Unit Price")]),
+    })
+    t = {x.id: x for x in b.dashboards[0].tiles}
+    # the model imported next to the thin report is found; the fact table is the FROM even though the filter touches Product first
+    assert "FROM dbo.FactSales AS sales\nLEFT JOIN dbo.DimProduct AS product" in t["v1"].sql
+    assert "(COALESCE(SUM(CASE WHEN product.Color = 'Red' THEN sales.Price END), 0)) AS red" in t["v1"].sql
+    assert "1.0 * SUM(Price) / NULLIF(SUM(Qty), 0) AS unit_price" in t["v2"].sql
+
+
+def test_calculation_group_filter_on_a_visual(tmp_path: Path):
+    calc = (
+        "table 'Time Calc'\n\tcalculationGroup\n\t\tcalculationItem Current = SELECTEDMEASURE()\n\n"
+        "\t\tcalculationItem PY = CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Date'[Date]))\n\n"
+        "\tcolumn Item\n\t\tdataType: string\n\t\tsourceColumn: Name\n"
+    )
+
+    def flt(item: str) -> dict:
+        return {"name": f"f{item}", "type": "Categorical", "filter": {"Version": 2, "From": [{"Name": "t", "Entity": "Time Calc", "Type": 0}],
+                "Where": [{"Condition": {"In": {"Expressions": [{"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": "Item"}}],
+                                                 "Values": [[{"Literal": {"Value": f"'{item}'"}}]]}}}]}}
+
+    page = "reports/R/definition/pages/p1"
+    b = _sales(tmp_path, **{
+        "models/Shop/definition/tables/Time Calc.tmdl": calc,
+        "reports/R/definition.pbir": json.dumps({"datasetReference": {"byPath": {"path": "../Shop.SemanticModel"}}}),
+        f"{page}/page.json": json.dumps({"name": "p1", "displayName": "Page"}),
+        f"{page}/visuals/cur/visual.json": _visual("cur", "card", [_measure("Sales", "Revenue")], [flt("Current")]),
+        f"{page}/visuals/py/visual.json": _visual("py", "card", [_measure("Sales", "Revenue")], [flt("PY")]),
+    })
+    t = {x.id: x for x in b.dashboards[0].tiles}
+    assert "SUM(Price) AS revenue" in t["cur"].sql and not t["cur"].todo  # SELECTEDMEASURE() only: values unchanged
+    assert not t["py"].sql and "calculation item(s) Time Calc[PY]" in t["py"].todo
+
+
+def test_direct_lake_and_composite_entity_partitions(tmp_path: Path):
+    lake = "table fca\n" + _col("Cost") + (
+        "\tpartition fca = entity\n\t\tmode: directLake\n\t\tsource\n"
+        "\t\t\tentityName: focus_cost\n\t\t\tschemaName: dbo\n\t\t\texpressionSource: DatabaseQuery\n"
+    )
+    remote = "table Items\n" + _col("Name", "string") + (
+        "\tpartition Items = entity\n\t\tmode: directQuery\n\t\tsource\n"
+        "\t\t\tentityName: Items\n\t\t\texpressionSource: 'DirectQuery to AS - Metrics'\n"
+    )
+    exprs = (
+        'expression DatabaseQuery =\n\t\tlet\n\t\t    database = Sql.Database("abc.datawarehouse.fabric.microsoft.com", "5548f1dd")\n'
+        "\t\tin\n\t\t    database\n\n"
+        "expression 'DirectQuery to AS - Metrics' =\n\t\tlet\n\t\t    Source = AnalysisServices.Database(\"powerbi://x\", \"Metrics\")\n"
+        "\t\tin\n\t\t    Source\n"
+    )
+    b = _mini(tmp_path, {
+        "models/M/definition/tables/fca.tmdl": lake,
+        "models/M/definition/tables/Items.tmdl": remote,
+        "models/M/definition/expressions.tmdl": exprs,
+    })
+    sm = _by_name(b.semantic_models)
+    assert sm["fca"].table == "dbo.focus_cost" and [t.name for t in b.tables] == ["focus_cost"]
+    (q,) = b.queries
+    assert q.name == "Items source" and "DirectQuery to another Power BI semantic model" in q.todo
+
+
+def test_renames_kept_for_sources_rewritten_as_sql(tmp_path: Path):
+    cal = "table Calendar\n" + _col("Date", "dateTime") + (
+        "\tpartition Calendar = m\n\t\tmode: import\n\t\tsource =\n"
+        "\t\t\t\tlet Source = List.Dates(#date(2020,1,1), 10, #duration(1,0,0,0)), T = Table.FromList(Source, Splitter.SplitByNothing()),\n"
+        '\t\t\t\t    R = Table.RenameColumns(T,{{"Column1", "Date"}}) in R\n'
+    )
+    b = _mini(tmp_path, {"models/M/definition/tables/Calendar.tmdl": cal})
+    (sm,) = b.semantic_models
+    assert sm.table == "calendar" and [d.expr for d in sm.dimensions] == [""]  # the SQL model to write exposes Date, not Column1
+
+
+def test_kpi_status_field_explained(tmp_path: Path):
+    page = "reports/R/definition/pages/p1"
+    b = _sales(tmp_path, **{
+        "reports/R/definition.pbir": json.dumps({"datasetReference": {"byPath": {"path": "../Shop.SemanticModel"}}}),
+        f"{page}/page.json": json.dumps({"name": "p1", "displayName": "Page"}),
+        f"{page}/visuals/k/visual.json": _visual("k", "tableEx", [_measure("Sales", "_Margin Status")]),
+    })
+    assert "KPI status of measure [Margin]" in b.dashboards[0].tiles[0].todo
+
+
+def test_many_to_many_and_non_key_relationships_are_not_entities(tmp_path: Path):
+    items = "table Items\n" + _col("'Unique key'", "string") + _col("'Item key'", "string") + _m("Items")
+    detail = "table Detail\n" + _col("'Unique key'", "string") + _col("CU") + _m("Detail")
+    memory = "table Memory\n" + _col("'Item key'", "string") + _col("MB") + _m("Memory")
+    other = "table Other\n" + _col("'Item key'", "string") + _m("Other")
+    rels = (
+        "relationship a\n\tfromColumn: Detail.'Unique key'\n\ttoColumn: Items.'Unique key'\n\n"
+        "relationship b\n\ttoCardinality: many\n\tfromColumn: Memory.'Item key'\n\ttoColumn: Items.'Item key'\n\n"
+        "relationship c\n\tfromColumn: Other.'Item key'\n\ttoColumn: Items.'Item key'\n"
+    )
+    b = _mini(tmp_path, {"models/M/definition/tables/Items.tmdl": items, "models/M/definition/tables/Detail.tmdl": detail,
+                         "models/M/definition/tables/Memory.tmdl": memory, "models/M/definition/tables/Other.tmdl": other,
+                         "models/M/definition/relationships.tmdl": rels})
+    sm = _by_name(b.semantic_models)
+    assert [(e.name, e.type, e.expr) for e in sm["items"].entities] == [("items", "primary", '"Unique key"')]
+    assert [e.name for e in sm["detail"].entities] == ["items"]
+    assert sm["memory"].entities == [] and sm["other"].entities == []  # would join Item key to Unique key
+    warnings = " ".join(w.message for w in b.warnings)
+    assert "many-to-many relationship Memory[Item key] -> Items[Item key]" in warnings and "is not on Items's key [Unique key]" in warnings
+
+
+def test_same_field_sliced_twice_is_one_parameter(tmp_path: Path):
+    color = {"field": {"Column": {"Expression": {"SourceRef": {"Entity": "Product"}}, "Property": "Color"}}, "queryRef": "Product.Color"}
+    page = "reports/R/definition/pages/p1"
+    b = _sales(tmp_path, **{
+        "reports/R/definition.pbir": json.dumps({"datasetReference": {"byPath": {"path": "../Shop.SemanticModel"}}}),
+        f"{page}/page.json": json.dumps({"name": "p1", "displayName": "Page"}),
+        f"{page}/visuals/s1/visual.json": _visual("s1", "slicer", [color]),
+        f"{page}/visuals/s2/visual.json": _visual("s2", "slicer", [color]),
+        f"{page}/visuals/v/visual.json": _visual("v", "card", [_measure("Sales", "Revenue")]),
+    })
+    (d,) = b.dashboards
+    assert [f.name for f in d.filters] == ["color"]
+    assert d.tiles[0].sql.count(":color") == 2 and "color_2" not in d.tiles[0].sql

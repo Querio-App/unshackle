@@ -63,7 +63,9 @@ unshackle build powerbi
   Preview features), save again, then import. `import` refuses a model.bim-only model.
 - Reports in either format work: PBIR (`definition/pages/...`) or legacy `report.json`.
   A project's report points at its model by path (`byPath` in `definition.pbir`), and
-  `build` follows that link.
+  `build` follows that link. A thin report bound to a published model (`byConnection`,
+  `initial catalog=<model>`) finds that model when you import its `.SemanticModel`
+  folder in the same `import` (`unshackle import powerbi Model.SemanticModel Report.Report`).
 - `.pbix` / `.pbit` are rejected: the model inside is a binary format.
 - `.pbi/` folders (Desktop's local cache, which holds data, and local settings) are
   never imported.
@@ -95,14 +97,20 @@ and `Retry-After`; unshackle polls `GET /v1/operations/{id}` until `Succeeded`, 
 | table with an M partition `Sql.Database(...)` + `{[Schema="dbo",Item="X"]}` (also Snowflake/Databricks/BigQuery `{[Name=..,Kind=..]}` navigation, M parameters from `expressions.tmdl`) | `catalog/` table `dbo.X` + semantic model on it |
 | `Table.RenameColumns` | reversed, so dimensions point at the physical column |
 | `Value.NativeQuery(src, "sql")` / `[Query="sql"]` | `queries/<table>-source.sql` (TODO: materialize as SQL model) + semantic model on a table named after it |
+| Direct Lake: `partition = entity` with `entityName`, `schemaName` on a SQL endpoint expression | `catalog/` table `<schemaName>.<entityName>` (the lakehouse / warehouse SQL endpoint table) |
+| `partition = entity` on `AnalysisServices.Database(..)` (composite model, DirectQuery to another semantic model) | SQL-model TODO: migrate the remote model first; its measures (`EXTERNALMEASURE`) are TODOs |
 | column | dimension (`dateTime` -> time, day grain); the only date column is `agg_time_dimension`; with several, a TODO lists them |
 | calculated column `column X = <DAX>` with same-table refs, `IF`, `SWITCH`, `&`, arithmetic, `YEAR`... | dimension `expr` in SQL; `RELATED` etc. -> TODO |
 | relationship `fromColumn: Sales.CustomerKey` -> `toColumn: Customer.CustomerKey` (active) | `customer` primary entity on Customer, foreign entity on Sales |
+| many-to-many (`toCardinality: many`), or a relationship to a column that isn't the table's key | no entity, a warning (an entity would join on the wrong or a non-unique key) |
 | `isKey` column | primary entity |
 | `SUM/AVERAGE/MIN/MAX/COUNT/COUNTA/DISTINCTCOUNT/MEDIAN(T[c])`, `COUNTROWS(T)` | measure + simple metric (on the model of `T`, whatever the measure's home table) |
 | `SUMX/AVERAGEX/MINX/MAXX(T, <row expr on T>)` | measure with `expr` (other tables or `RELATED` -> TODO) |
 | `DIVIDE([A], [B])`, `[A] / [B]` | ratio |
 | arithmetic over measures (`DIVIDE([A] - [B], [A])`) | derived (`(a - b) / nullif(a, 0)`) |
+| `VAR x = .. RETURN ..` | variables inlined when they are only used outside `CALCULATE`, iterators and table functions (else TODO) |
+| `CALCULATE([M])` (no filters) | the same as `[M]` |
+| `CALCULATE(SUM(..), T[c] = "x") + 0`, `[A] - CALCULATE([A], ..)` | derived over a filtered simple metric (`<name>_1`); `+ 0` -> `coalesce(x, 0)` |
 | `CALCULATE([M], T[c] = "x")`, `IN {..}`, `<>`, `&&`, `\|\|`, `KEEPFILTERS` | simple metric with `filter: "{{ Dimension('t__c') }} = 'x'"` |
 | `TOTALYTD/QTD/MTD([M], 'Date'[Date])`, `CALCULATE([M], DATESYTD(..))` | cumulative `grain_to_date` |
 | `CALCULATE([M], SAMEPERIODLASTYEAR(..))`, `DATEADD(.., -n, MONTH)` | derived with `offset_window: 1 year` / `n months` |
@@ -146,7 +154,15 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
   entity or time dimension (`ship_date`) and a metric that uses it
   (`agg_time_dimension` on the measure, or query `--group-by metric_time` with
   `ship_date`).
-- **VAR / RETURN**: inline the variables, then classify the result as above.
+- **VAR / RETURN**: unshackle inlines variables used in plain arithmetic, `DIVIDE`, `IF`
+  and `SWITCH`. A variable is evaluated once, where it is defined, so one used inside
+  `CALCULATE`, an iterator or a table function (`VAR p = DATESINPERIOD(..) RETURN
+  CALCULATE(.., p)`) keeps its DAX: translate the whole measure by its meaning (here a
+  rolling window).
+- **`+ 0`** (show 0 instead of BLANK) becomes `coalesce(x, 0)`. In general DAX `+` and `-`
+  treat BLANK as 0 (`BLANK + 5 = 5`); tile SQL does the same with `COALESCE`, but derived
+  metrics don't: if one input can be empty for a group, wrap it in `coalesce(.., 0)` in the
+  derived `expr`.
 - **SELECTEDVALUE / HASONEVALUE / ISINSCOPE**: these read the visual. Turn the slicer
   into a notebook `:param`, or split tiles by hierarchy level.
 - **RANKX / TOPN**: `rank() over (order by ..)` / `order by .. limit n` in tile SQL.
@@ -169,6 +185,32 @@ select region, sum(amount) as total_sales,
 from dbo.FactSales s left join dbo.DimCustomer c on s.CustomerKey = c.CustomerKey
 group by 1
 ```
+
+### DAX coverage
+
+What `build` translates on its own, and what stays a `TODO(unshackle)` with the original DAX
+(`source_expression`) for a person to finish:
+
+| DAX | Result |
+| --- | --- |
+| `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `COUNTA`, `DISTINCTCOUNT`, `MEDIAN`, `COUNTROWS` | translated (simple metric) |
+| `SUMX`/`AVERAGEX`/`MINX`/`MAXX` over the measure's own table | translated (measure `expr`) |
+| `DIVIDE`, `/`, `+`, `-`, `*` over measures | translated (ratio / derived) |
+| `CALCULATE` with column predicates (`=`, `<>`, `<`, `IN {..}`, `&&`, `\|\|`, `NOT`, `KEEPFILTERS`) | translated (metric `filter`) |
+| `TOTALYTD/QTD/MTD`, `DATESYTD/QTD/MTD` | translated (cumulative `grain_to_date`) |
+| `SAMEPERIODLASTYEAR`, `DATEADD(.., -n, YEAR/QUARTER/MONTH/DAY)` | translated (derived `offset_window`; not in Ossie, kept in `custom_extensions`) |
+| `VAR`/`RETURN` (context-free use) | translated after inlining |
+| fiscal `TOTALYTD(.., "6/30")`, `DATESINPERIOD`, `PARALLELPERIOD`, `PREVIOUSMONTH/YEAR` | TODO (rolling or whole-period windows) |
+| `ALL`, `ALLEXCEPT`, `ALLSELECTED`, `REMOVEFILTERS`, `FILTER(ALL..)` | TODO (window SQL in the tile or a SQL model) |
+| iterators over `VALUES(..)`, other tables or `RELATED` | TODO (SQL model) |
+| `USERELATIONSHIP` | TODO (second entity / time dimension) |
+| `SELECTEDVALUE`, `HASONEVALUE`, `ISFILTERED`, `ISINSCOPE`, `SWITCH(TRUE(), ..)` over measures | TODO (notebook parameter or tile SQL) |
+| `RANKX`, `TOPN`, `SUMMARIZE`, `ADDCOLUMNS` | TODO |
+| calculation groups, field parameters | not models (warning); items listed in the model's knowledge file |
+| `EXTERNALMEASURE` (composite models) | TODO (migrate the remote model) |
+| measures returning text, colours or SVG (`FORMAT`, `"data:image/svg+xml..."`) | TODO (presentation, not a metric) |
+
+`DIVIDE(a, b, 0)` as a ratio metric returns NULL, not 0, where `b` is 0 or empty.
 
 ## Power Query M -> SQL
 
@@ -228,7 +270,12 @@ enum: `0` Sum, `1` Avg, `2` Count (Distinct), `3` Min, `4` Max, `5` Count (non-n
 
 Tile SQL is generated from the measure's DAX (same rules as the metrics, pushed into
 `CASE WHEN` for CALCULATE filters) when every field is on the measure's table or on a
-table it reaches through one active many-to-one relationship. Visual/page/report
+table it reaches through one active many-to-one relationship. A visual or page filter
+that picks a calculation item (`'Time Intelligence'[Show as] = "PY"`) changes every
+measure in the visual, so such tiles get no SQL; items that are just `SELECTEDMEASURE()`
+(format-only) are ignored. The same field sliced twice on a page (e.g. a slicer panel
+shown by a bookmark) is one notebook parameter. `_<Measure> Status/Goal/Trend` fields are
+the measure's KPI expressions (`kpi` in the TMDL): compute them in the tile. Visual/page/report
 `Categorical` filters become `WHERE` clauses; slicers become `(col = :p OR :p IS NULL)`
 (dates: `:p_from` / `:p_to`). TopN, relative-date and measure (Values) filters are TODOs:
 `order by .. limit n`, a pinned date window, `having`. Time-intelligence measures have no
@@ -288,3 +335,10 @@ their last refresh (`GET /datasets/{id}/refreshes`).
 - **Power BI dashboards** (pinned tiles) are not migrated; their tiles come from
   reports that are.
 - **Paginated reports** (`.rdl`) are skipped and listed in `_errors.json`.
+- **Composite models** (tables `= entity` on `AnalysisServices.Database`, measures
+  `EXTERNALMEASURE(..)`) are a layer over another semantic model: migrate that model,
+  then rebuild these measures on top of its metrics.
+- **Format strings and display folders** are not carried into metrics; set number
+  formats in the notebook charts (`formatString` is in the TMDL next to each measure).
+- **Power Query renames** are reversed only for tables that map to a warehouse table or
+  native query; a table you rewrite as SQL keeps Power BI's column names.

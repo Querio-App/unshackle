@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Power BI: tested on published projects (`tests/fixtures/powerbi_real`). DAX `VAR`/`RETURN`
+  is inlined where that keeps its meaning; `CALCULATE` without filters and the `+ 0` idiom
+  translate; Direct Lake tables map to their SQL endpoint table; thin reports find a model
+  imported next to them. Fixed: lost parentheses and integer division in generated SQL,
+  BLANK handling in `+`/`-`, entities on many-to-many or non-key relationships, tiles
+  filtered to a calculation item, duplicate notebook cell ids.
+
 ## 0.1.0
 
 First release.

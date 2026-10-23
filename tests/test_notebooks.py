@@ -81,6 +81,15 @@ def test_cells_follow_layout_and_bind_filters():
     assert nb["metadata"]["unshackle"]["layout"] == [["c"], ["first", "second"]]
 
 
+def test_long_tile_titles_keep_cell_ids_unique():
+    title = "Sales Amount, Sales Amount (LY), Margin, Sales Amount (12M average) by Month"
+    d = Dashboard("D", "d", tiles=[Tile("a", title, mark="bar", sql="select 1"), Tile("b", title + " and Year", mark="bar", sql="select 1")])
+    nb = build_notebook(d, "demo")
+    ids = [c["id"] for c in nb["cells"]]
+    assert len(ids) == len(set(ids)) and all(len(i) <= 64 for i in ids)
+    nbformat.validate(nbformat.from_dict(nb))
+
+
 def _chart(tile: Tile) -> dict:
     nb = build_notebook(Dashboard("D", "d", tiles=[tile]), "demo")
     code = next(c["source"] for c in nb["cells"] if c["id"].endswith("-chart"))
