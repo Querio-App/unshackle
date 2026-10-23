@@ -14,7 +14,7 @@ source provides them.
 ## Try it without connecting a BI tool
 
 ```bash
-git clone https://github.com/unshackle-analytics/unshackle
+git clone https://github.com/Querio-App/unshackle
 cd unshackle
 uv venv
 uv pip install -e ".[dev]"
