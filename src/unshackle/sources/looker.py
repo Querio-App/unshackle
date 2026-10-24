@@ -195,7 +195,7 @@ ALL_TIMEFRAMES = [
     "quarter_of_year", "hour_of_day", "fiscal_month_num", "fiscal_quarter", "fiscal_quarter_of_year", "fiscal_year",
 ]
 UNNEST_JOIN = re.compile(
-    r"^\s*(LEFT\s+(?:OUTER\s+)?JOIN|CROSS\s+JOIN|INNER\s+JOIN|JOIN|,)\s*UNNEST\s*\(\s*(?:\$\{(\w+)\.(\w+)\}|(\w+)\.(\w+))\s*\)"
+    r"^\s*(LEFT\s+(?:OUTER\s+)?JOIN|CROSS\s+JOIN|INNER\s+JOIN|JOIN|,)\s*UNNEST\s*\(\s*\$?\{?(\w+)\.(\w+)\}?\s*\)"
     r"\s*(?:AS\s+)?(\w+)\s*$", re.I)
 REVERSED = {"many_to_one": "one_to_many", "one_to_many": "many_to_one", "one_to_one": "one_to_one", "many_to_many": "many_to_many"}
 FAN_SAFE = ("count_distinct", "min", "max", "sum_distinct")  # same result however often a row repeats
@@ -636,24 +636,14 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str 
     return " AND ".join(conds)
 
 
+# a quoted string (backslash escapes, unterminated runs to the end) is kept; a `--` comment outside one is dropped
+SQL_COMMENT = re.compile(r"""('(?:[^'\\]|\\.)*'?|"(?:[^"\\]|\\.)*"?|`[^`]*`?)|--[^\n]*""")
+
+
 def strip_sql_comments(sql: str) -> str:
     """Drop `-- ...` line comments outside quotes: resolved SQL is joined onto one line, where a comment
     would swallow everything after it."""
-    out, quote, i = [], "", 0
-    while i < len(sql):
-        c = sql[i]
-        if quote:
-            quote = "" if c == quote else quote
-        elif c in "'\"`":
-            quote = c
-        elif sql.startswith("--", i):
-            i = sql.find("\n", i)
-            if i < 0:
-                break
-            continue
-        out.append(c)
-        i += 1
-    return "".join(out)
+    return SQL_COMMENT.sub(lambda m: m.group(1) or "", sql)
 
 
 LIQUID_TAG = re.compile(r"(\{%-?.*?-?%\}|\{\{-?.*?-?\}\})", re.S)
@@ -868,22 +858,22 @@ class _Parser:
                 aliases.update({j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])})
                 for j in ex.get("joins", []):
                     m = UNNEST_JOIN.match(str(j.get("sql") or ""))
-                    if not m or j.get("sql_on") or m.group(6) != j["name"]:
+                    if not m or j.get("sql_on") or m.group(4) != j["name"]:
                         continue
-                    child, parent = aliases[j["name"]], aliases.get(m.group(2) or m.group(4))
-                    field = m.group(3) or m.group(5)
+                    parent_alias, field = m.group(2), m.group(3)
+                    child, parent = aliases[j["name"]], aliases.get(parent_alias)
                     cv = self.views.get(child)
                     if parent is None or cv is None or cv.get("sql_table_name") or cv.get("derived_table") or self._pk(parent) is None:
                         continue
-                    plan = (parent, field, m.group(1).strip().upper().startswith("LEFT"))
+                    plan = (parent, field, m.group(1).upper().startswith("LEFT"))
                     plans[child] = plan if plans.get(child, plan) == plan else None  # one parent per child view
-                    rewrites.append((j, child, m.group(2) or m.group(4)))
+                    rewrites.append((j, child, parent_alias))
         built: dict[str, tuple[str, str, bool]] = {}
         for child, plan in plans.items():
             if plan is None:
                 continue
             parent, field, outer = plan
-            pk = self._pk(parent) or {}
+            pk = self._pk(parent)
             key = self.dim_expr(parent, pk)[0]
             f = self._field(parent, field)
             col = self.resolve(parent, f.get("sql") or f"${{TABLE}}.{field}")[0] if f else field
@@ -1166,13 +1156,13 @@ class _Parser:
         """
         problems: list[str] = []
         sql = strip_sql_comments(sql or "")
-        if LIQUID.search(sql or "") and q is not None:
+        if LIQUID.search(sql) and q is not None:
             sql, problems = Liquid(self, q.liquid).render(vname, sql)
             if problems:
                 return sql, problems
-        if LIQUID.search(sql or ""):
+        if LIQUID.search(sql):
             return sql, ["uses Liquid templating"]
-        if CONSTANT.search(sql or ""):
+        if CONSTANT.search(sql):
             return sql, [f"uses constant {CONSTANT.search(sql).group(0)} that manifest.lkml does not define"]
 
         def sub(m: re.Match) -> str:
@@ -1219,7 +1209,7 @@ class _Parser:
             problems.extend(p)
             return expr
 
-        out = REF.sub(sub, sql or "")
+        out = REF.sub(sub, sql)
         out = out.replace("\x00TABLE\x00.", "")
         if "\x00TABLE\x00" in out:
             problems.append("uses ${TABLE} without a column")

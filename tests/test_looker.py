@@ -10,7 +10,7 @@ from unshackle import build
 from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources import get_source
-from unshackle.sources.looker import LookerSource, looker_filter_sql
+from unshackle.sources.looker import LookerSource, looker_filter_sql, strip_sql_comments
 
 FIX = Path(__file__).parent / "fixtures" / "looker"
 
@@ -151,6 +151,18 @@ def test_filter_expressions():
     assert looker_filter_sql(r, ">=10", "number") == f"{r} >= 10"
     assert looker_filter_sql(r, "no", "yesno") == f"NOT COALESCE({r}, false)"
     assert looker_filter_sql(r, "7 days", "time") is None
+
+
+def test_strip_sql_comments():
+    assert strip_sql_comments("a -- note\nb") == "a \nb"
+    assert strip_sql_comments("a -- note") == "a "
+    assert strip_sql_comments("'x -- y' -- z") == "'x -- y' "  # single-quoted
+    assert strip_sql_comments('"x -- y" -- z') == '"x -- y" '  # double-quoted
+    assert strip_sql_comments("`x -- y` -- z") == "`x -- y` "  # backquoted
+    assert strip_sql_comments("'it''s -- y' -- z") == "'it''s -- y' "  # doubled quote
+    assert strip_sql_comments(r"'it\'s -- y' -- z") == r"'it\'s -- y' "  # backslash-escaped quote
+    assert strip_sql_comments(r'"a\"-- y" -- z') == r'"a\"-- y" '
+    assert strip_sql_comments("'open -- y") == "'open -- y"  # unterminated: left alone
 
 
 def test_negated_filters_keep_nulls():

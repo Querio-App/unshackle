@@ -374,12 +374,12 @@ def test_nested_tiles_return_lookers_numbers(tiles, case):
     assert tile.sql, tile.todo
     assert "SUM(DISTINCT" not in tile.sql.split("ev_nested_lines.qty")[0].rsplit("\n", 1)[-1]  # the lines' own sum stays a sum
     cur = con.execute(tile.sql)
-    key = {"nested_by_id": "ev_nested_id", "nested_by_sku": "ev_nested_lines_sku"}.get(case)
     rows = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
-    theirs = looker(case)
-    if key:
-        rows, theirs = sorted(rows, key=lambda r: str(r[key])), sorted(theirs, key=lambda r: str(r[key.replace("_lines_", "_lines.").replace("ev_nested_id", "ev_nested.id")]))
+    theirs = [{k.replace(".", "_"): v for k, v in r.items()} for r in looker(case)]
+    if sorts := NESTED_TILES[case][2]:
+        key = sorts[0].replace(".", "_")
+        rows, theirs = sorted(rows, key=lambda r: str(r[key])), sorted(theirs, key=lambda r: str(r[key]))
     assert len(rows) == len(theirs)
     for o, t in zip(rows, theirs):
-        for field, value in t.items():
-            assert o[field.replace(".", "_")] == value, (case, field)
+        for col, value in t.items():
+            assert o[col] == value, (case, col)
