@@ -19,6 +19,13 @@
   notebook parameters (dates as `<slug>_from` / `<slug>_to`, number ranges as `_min` / `_max`),
   checked against Metabase's own dashboard results in the live test. Relative date defaults,
   `timestamptz` columns and the time-grouping filter keep a TODO.
+- Tableau: the live test publishes a second workbook with 12 LOD sheets (FIXED, INCLUDE,
+  EXCLUDE, FIXED on two dimensions, a FIXED date as a dimension, a FIXED value under a
+  dimension filter) and checks the tiles against Tableau Cloud's own view data; the run is
+  kept as fixtures (`tests/fixtures/tableau_live_lod`). All 9 sheets with tile SQL match.
+  Tableau's numbers also settle how it aggregates a calc over FIXED values, a FIXED inside
+  a ratio and a nested FIXED: once per distinct combination of the view's and the FIXED
+  dimensions, not per row. Those sheets stay TODO; the TODO now says so.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.

@@ -1801,8 +1801,9 @@ class _Parser:
                    "to the FIXED grain; a metric needs a SQL model with that join; see skills/translate-metrics")
             self._todo(ds, f, model, msg, True)
             return _Calc("agg", lod="mixed", todo=msg)
-        msg = ("aggregates a calculation of FIXED LOD values: check whether Tableau weighs it per row or per LOD group, then make it a "
-               "metric on the FIXED grain's semantic model; see skills/translate-metrics")
+        msg = ("aggregates a calculation of FIXED LOD values: Tableau counts each FIXED value once per distinct combination of the "
+               "view's and the FIXED dimensions, not once per row; make it a metric on the FIXED grain's semantic model; "
+               "see skills/translate-metrics")
         self._todo(ds, f, model, msg, True)
         return _Calc("agg", lod=lod.name if lod else "mixed", todo=msg)
 
@@ -2046,8 +2047,9 @@ class _Parser:
                 base = self._row_ref(ds, f.local)  # the FIXED value joined to each row
             elif calc is not None and calc.kind == "row":
                 if calc.lod not in ("", "mixed") and (d in DERIV_AGG or d == "usr"):
-                    raise _NoSQL(f"[{label}] aggregates a calculation of FIXED LOD values: check whether Tableau weighs it per row or per "
-                                 "LOD group, then write it in the tile SQL (skills/source-tableau)")
+                    raise _NoSQL(f"[{label}] aggregates a calculation of FIXED LOD values: Tableau counts each FIXED value once per "
+                                 "distinct combination of the view's and the FIXED dimensions, not once per row; write it in the tile "
+                                 "SQL (skills/source-tableau)")
                 base = self._row_sql(ds, f) if self._sheet is not None and (calc.lod or self._is_joined(ds)) else calc.sql
             else:
                 base = _ident(f.remote) if f.remote else ""

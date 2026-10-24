@@ -14,6 +14,8 @@ Everything goes into one project (`unshackle-live` by default):
   a user filter used as a data source filter), a hierarchy, a default aggregation;
 - workbook "Dunder Mifflin Sales" on it: a bar with a filter, a line by month, a KPI,
   a table filtered by a parameter-driven calc, and a dashboard with all four;
+- workbook "Dunder Mifflin LOD" on it: FIXED, INCLUDE and EXCLUDE LODs in 12 sheets and a dashboard
+  (see LOD_SHEETS);
 - group `unshackle-managers` (empty) with View on the project and the workbook.
 
 `teardown()` deletes the project (and so its content), the group, and the database and tables
@@ -25,6 +27,7 @@ first time; it is Tableau's, so it is left alone.
 from __future__ import annotations
 
 import io
+import re
 import os
 import tempfile
 import time
@@ -375,6 +378,143 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
 """
 
 
+# The LOD workbook: the sheets of tests/fixtures/tableau_lod (same formulas), plus sheets for what that
+# fixture can't settle offline: an aggregate of a calc over FIXED values, a nested FIXED, and a FIXED value
+# under a dimension filter. Its calcs are the workbook's own, on the published data source.
+LOD_WORKBOOK = "Dunder Mifflin LOD"
+LOD_DASHBOARD = "LOD Checks"
+LOD_CALCS = [
+    ("Calculation_3101", "Account Revenue", "real", "measure", "quantitative", "{FIXED [account_id] : SUM([post_discount_revenue])}"),
+    ("Calculation_3102", "Account Tier", "string", "dimension", "nominal",
+     'IF [Calculation_3101] >= 1000000 THEN "Large" ELSEIF [Calculation_3101] >= 250000 THEN "Mid" ELSE "Small" END'),
+    ("Calculation_3103", "Avg Account Revenue", "real", "measure", "quantitative", "AVG({FIXED [account_id] : SUM([post_discount_revenue])})"),
+    ("Calculation_3104", "First Order Date", "date", "dimension", "ordinal", "{FIXED [account_name] : MIN([purchased_at])}"),
+    ("Calculation_3105", "Avg Order Revenue", "real", "measure", "quantitative", "AVG({INCLUDE [order_id] : SUM([post_discount_revenue])})"),
+    ("Calculation_3106", "Cycle Revenue", "real", "measure", "quantitative", "{EXCLUDE [paper_type] : SUM([post_discount_revenue])}"),
+    ("Calculation_3107", "Account Paper Revenue", "real", "measure", "quantitative",
+     "{FIXED [account_id], [paper_type] : SUM([post_discount_revenue])}"),
+    ("Calculation_3108", "Share of Account Revenue", "real", "measure", "quantitative", "[post_discount_revenue] / [Calculation_3101]"),
+    ("Calculation_3109", "Revenue Share", "real", "measure", "quantitative", "SUM([post_discount_revenue]) / SUM([Calculation_3101])"),
+    ("Calculation_3110", "Large Account Orders", "integer", "measure", "quantitative", "IF [Calculation_3101] >= 1000000 THEN 1 ELSE 0 END"),
+    ("Calculation_3111", "Cycle Avg Account Revenue", "real", "measure", "quantitative",
+     "{FIXED [payment_cycle] : AVG({FIXED [account_id] : SUM([post_discount_revenue])})}"),
+]
+# (sheet, mark, rows, cols, text, tooltip, status filter): fields as (local name, derivation)
+LOD_SHEETS = [
+    ("Revenue by Account Tier", "Bar", [("Calculation_3102", "None")], [("post_discount_revenue", "Sum")], None, None, False),
+    ("Average Account Revenue", "Text", [], [], ("Calculation_3103", "User"), None, False),
+    ("Account Revenue by Payment Cycle", "Bar", [("payment_cycle", "None")], [("Calculation_3101", "Avg")], None, ("post_discount_revenue", "Sum"), False),
+    ("Order Size by Paper Type", "Bar", [("paper_type", "None")], [("Calculation_3105", "User")], None, None, False),
+    ("Cycle Revenue by Paper Type", "Text", [("paper_type", "None"), ("payment_cycle", "None")], [], ("Calculation_3106", "Sum"),
+     ("post_discount_revenue", "Sum"), False),
+    ("New Accounts by Month", "Line", [("account_name", "CountD")], [("Calculation_3104", "Month-Trunc")], None, None, False),
+    ("Top Account per Paper Type", "Bar", [("paper_type", "None")], [("Calculation_3107", "Max")], None, None, False),
+    ("Share of Account Revenue by Status", "Bar", [("status", "None")], [("Calculation_3108", "Sum")], None, None, False),
+    ("Revenue Share by Status", "Bar", [("status", "None")], [("Calculation_3109", "User")], None, None, False),
+    ("Large Account Orders by Payment Cycle", "Bar", [("payment_cycle", "None")], [("Calculation_3110", "Sum")], None, None, False),
+    ("Cycle Avg Account Revenue", "Bar", [("payment_cycle", "None")], [("Calculation_3111", "Avg")], None, None, False),
+    ("Account Revenue by Payment Cycle (Completed)", "Bar", [("payment_cycle", "None")], [("Calculation_3101", "Avg")], None, None, True),
+]
+_DERIV = {"None": ("none", "nk"), "Sum": ("sum", "qk"), "Avg": ("avg", "qk"), "Max": ("max", "qk"), "User": ("usr", "qk"),
+          "CountD": ("ctd", "qk"), "Month-Trunc": ("tmn", "qk")}
+_BASE = {"post_discount_revenue": ("real", "measure", "quantitative", "Revenue"), "payment_cycle": ("string", "dimension", "nominal", ""),
+         "paper_type": ("string", "dimension", "nominal", ""), "status": ("string", "dimension", "nominal", ""),
+         "account_name": ("string", "dimension", "nominal", ""), "account_id": ("string", "dimension", "nominal", ""),
+         "order_id": ("string", "dimension", "nominal", ""), "purchased_at": ("date", "dimension", "ordinal", "")}
+
+
+def _sqlproxy(server: str, site: str, ds_content_url: str, columns: str) -> str:
+    """The workbook's copy of the published data source, as Desktop writes it."""
+    path = f"/t/{site}/datasources" if site else "/datasources"
+    return f"""    <datasource caption='{DATASOURCE}' inline='true' name='{DS}' version='18.1'>
+      <repository-location derived-from='{server}{path}/{ds_content_url}?rev=1.0' id='{ds_content_url}' path='{path}' revision='1.0' site='{site}' />
+      <connection channel='https' class='sqlproxy' dbname='{ds_content_url}' directory='/dataserver' port='443' server='{httpx.URL(server).host}' username=''>
+        <relation name='sqlproxy' table='[sqlproxy]' type='table' />
+      </connection>
+      <aliases enabled='yes' />
+{columns}
+    </datasource>"""
+
+
+def lod_workbook_twb(server: str, site: str, ds_content_url: str) -> str:
+    calcs = {c[0]: c for c in LOD_CALCS}
+
+    def dep(local: str) -> str:
+        if local in calcs:
+            _, cap, dt, role, typ, formula = calcs[local]
+            return _dep(local, dt, role, typ, caption=cap, formula=formula)
+        dt, role, typ, cap = _BASE[local]
+        return _dep(local, dt, role, typ, caption=cap)
+
+    def inst(local: str, deriv: str) -> tuple[str, str]:
+        prefix, short = _DERIV[deriv]
+        typ = "nominal" if short == "nk" else "quantitative"
+        return _inst(local, deriv, prefix, typ, short), f"[{DS}].[{prefix}:{local}:{short}]"
+
+    def reads(local: str) -> list[str]:
+        """A field and every column and calc its formula reads, recursively."""
+        if local not in calcs:
+            return [local]
+        found = re.findall(r"\[([A-Za-z_][\w ]*)\]", calcs[local][5])
+        return [local] + [r for f in found if f in calcs or f in _BASE for r in reads(f)]
+
+    sheets = []
+    for name, mark, rows, cols, text, tooltip, completed in LOD_SHEETS:
+        used = list(dict.fromkeys(rows + cols + [f for f in (text, tooltip) if f] + ([("status", "None")] if completed else [])))
+        refs = {f: inst(*f) for f in used}
+        deps = [dep(loc) for loc in dict.fromkeys(r for loc, _ in used for r in reads(loc))]
+        encodings = "".join(f"<{kind} column='{refs[f][1]}' />" for kind, f in (("text", text), ("tooltip", tooltip)) if f)
+        filters = (f"<filter class='categorical' column='[{DS}].[none:status:nk]'>"
+                   "<groupfilter function='member' level='[none:status:nk]' member='&quot;COMPLETED&quot;' user:ui-domain='database' "
+                   "user:ui-enumeration='inclusive' user:ui-marker='enumerate' /></filter>") if completed else ""
+        sheets.append(_sheet(name, deps + [r[0] for r in refs.values()], mark, " / ".join(refs[f][1] for f in rows),
+                             " / ".join(refs[f][1] for f in cols), encodings=encodings, filters=filters))
+    columns = "\n".join(
+        f"      <column caption={quoteattr(cap)} datatype='{dt}' name='[{local}]' role='{role}' type='{typ}'>\n"
+        f"        <calculation class='tableau' formula={quoteattr(formula)} />\n      </column>"
+        for local, cap, dt, role, typ, formula in LOD_CALCS
+    )
+    names = [s[0] for s in LOD_SHEETS]
+    zones = "".join(
+        f"<zone h='33333' id='{i + 2}' name={quoteattr(n)} w='25000' x='{(i % 4) * 25000}' y='{(i // 4) * 33333}' />"
+        for i, n in enumerate(names)  # a 4 x 3 grid
+    )
+    windows = "\n".join(f"    <window class='worksheet' name={quoteattr(s)} />" for s in names)
+    viewpoints = "".join(f"<viewpoint name={quoteattr(s)} />" for s in names)
+    worksheets = "\n".join(sheets)
+    return f"""<?xml version='1.0' encoding='utf-8' ?>
+<workbook original-version='18.1' source-build='2024.2.0 (20242.24.0613.0835)' source-platform='mac' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <repository-location id='DunderMifflinLOD' path='/t/{site}/workbooks' revision='' site='{site}' />
+  <datasources>
+{_sqlproxy(server, site, ds_content_url, columns)}
+  </datasources>
+  <worksheets>
+{worksheets}
+  </worksheets>
+  <dashboards>
+    <dashboard name='{LOD_DASHBOARD}'>
+      <style />
+      <size maxheight='900' maxwidth='1600' minheight='900' minwidth='1600' />
+      <datasources>
+        <datasource caption='{DATASOURCE}' name='{DS}' />
+      </datasources>
+      <zones>
+        <zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>{zones}</zone>
+      </zones>
+      <simple-id uuid='{{{str(uuid.uuid5(uuid.NAMESPACE_URL, LOD_DASHBOARD)).upper()}}}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+{windows}
+    <window class='dashboard' maximized='true' name='{LOD_DASHBOARD}'>
+      <viewpoints>{viewpoints}</viewpoints>
+      <active id='-1' />
+    </window>
+  </windows>
+</workbook>
+"""
+
+
 # ------------------------------------------------------------------ REST
 
 
@@ -461,12 +601,16 @@ def main() -> dict[str, Any]:
             ds = site.publish("datasources", DATASOURCE, project["id"], "dunder_mifflin_orders.tdsx", tdsx.read_bytes())
         twb = workbook_twb(site.server, site.content_url, ds["contentUrl"])
         wb = site.publish("workbooks", WORKBOOK, project["id"], "dunder_mifflin_sales.twb", twb.encode())
+        lod_twb = lod_workbook_twb(site.server, site.content_url, ds["contentUrl"])
+        lod = site.publish("workbooks", LOD_WORKBOOK, project["id"], "dunder_mifflin_lod.twb", lod_twb.encode())
         site.api("PUT", f"/projects/{project['id']}/permissions", json=_permission_body(group["id"], {"Read": "Allow"}))
         site.api("PUT", f"/workbooks/{wb['id']}/permissions",
                  json=_permission_body(group["id"], {"Read": "Allow", "ExportData": "Allow", "Write": "Deny"}))
-        views = {v["name"]: v["id"] for v in site.items(f"/workbooks/{wb['id']}/views", "views", "view")}
-        wait_for_metadata(site, wb["id"])
-        return {"project": project["id"], "group": group["id"], "datasource": ds["id"], "workbook": wb["id"], "views": views}
+        views = {v["name"]: v["id"] for w in (wb, lod) for v in site.items(f"/workbooks/{w['id']}/views", "views", "view")}
+        for w in (wb, lod):
+            wait_for_metadata(site, w["id"])
+        return {"project": project["id"], "group": group["id"], "datasource": ds["id"], "workbook": wb["id"], "lod_workbook": lod["id"],
+                "views": views}
     finally:
         site.close()
 

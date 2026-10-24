@@ -1,0 +1,530 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20263.26.1022.1202                               -->
+<workbook original-version='18.1' source-build='2024.2.0 (20242.24.0613.0835)' source-platform='mac' version='18.1' xml:base='https://example.online.tableau.com' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130?rev=1.0' id='DunderMifflinLOD_17928575335130' path='/t/example/workbooks' revision='1.0' site='example' />
+  <datasources>
+    <datasource caption='Dunder Mifflin Orders' inline='true' name='sqlproxy.0unshackle0live' version='18.1'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/datasources/DunderMifflinOrders_17928575308750?rev=1.0' id='DunderMifflinOrders_17928575308750' path='/t/example/datasources' revision='1.0' site='example' />
+      <connection channel='https' class='sqlproxy' dbname='DunderMifflinOrders_17928575308750' directory='/dataserver' port='443' server='example.online.tableau.com' username=''>
+        <relation name='sqlproxy' table='[sqlproxy]' type='table' />
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+      </column>
+      <column caption='Account Tier' datatype='string' name='[Calculation_3102]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Calculation_3101] &gt;= 1000000 THEN &quot;Large&quot; ELSEIF [Calculation_3101] &gt;= 250000 THEN &quot;Mid&quot; ELSE &quot;Small&quot; END' />
+      </column>
+      <column caption='Avg Account Revenue' datatype='real' name='[Calculation_3103]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='AVG({FIXED [account_id] : SUM([post_discount_revenue])})' />
+      </column>
+      <column caption='First Order Date' datatype='date' name='[Calculation_3104]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='{FIXED [account_name] : MIN([purchased_at])}' />
+      </column>
+      <column caption='Avg Order Revenue' datatype='real' name='[Calculation_3105]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='AVG({INCLUDE [order_id] : SUM([post_discount_revenue])})' />
+      </column>
+      <column caption='Cycle Revenue' datatype='real' name='[Calculation_3106]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{EXCLUDE [paper_type] : SUM([post_discount_revenue])}' />
+      </column>
+      <column caption='Account Paper Revenue' datatype='real' name='[Calculation_3107]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [account_id], [paper_type] : SUM([post_discount_revenue])}' />
+      </column>
+      <column caption='Share of Account Revenue' datatype='real' name='[Calculation_3108]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[post_discount_revenue] / [Calculation_3101]' />
+      </column>
+      <column caption='Revenue Share' datatype='real' name='[Calculation_3109]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([post_discount_revenue]) / SUM([Calculation_3101])' />
+      </column>
+      <column caption='Large Account Orders' datatype='integer' name='[Calculation_3110]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF [Calculation_3101] &gt;= 1000000 THEN 1 ELSE 0 END' />
+      </column>
+      <column caption='Cycle Avg Account Revenue' datatype='real' name='[Calculation_3111]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [payment_cycle] : AVG({FIXED [account_id] : SUM([post_discount_revenue])})}' />
+      </column>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Revenue by Account Tier'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/RevenuebyAccountTier?rev=' id='9119809' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column caption='Account Tier' datatype='string' name='[Calculation_3102]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Calculation_3101] &gt;= 1000000 THEN &quot;Large&quot; ELSEIF [Calculation_3101] &gt;= 250000 THEN &quot;Mid&quot; ELSE &quot;Small&quot; END' />
+            </column>
+            <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3102]' derivation='None' name='[none:Calculation_3102:nk]' pivot='key' type='nominal' />
+            <column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:Calculation_3102:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{303C6EF5-5018-56CC-A2A5-32F2A9DEB47E}' />
+    </worksheet>
+    <worksheet name='Average Account Revenue'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/AverageAccountRevenue?rev=' id='9119810' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column caption='Avg Account Revenue' datatype='real' name='[Calculation_3103]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='AVG({FIXED [account_id] : SUM([post_discount_revenue])})' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3103]' derivation='User' name='[usr:Calculation_3103:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[sqlproxy.0unshackle0live].[usr:Calculation_3103:qk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{6CF6E850-81EC-57AE-A75D-74306B5B99EB}' />
+    </worksheet>
+    <worksheet name='Account Revenue by Payment Cycle'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/AccountRevenuebyPaymentCycle?rev=' id='9119811' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+            <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3101]' derivation='Avg' name='[avg:Calculation_3101:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <tooltip column='[sqlproxy.0unshackle0live].[sum:post_discount_revenue:qk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:payment_cycle:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[avg:Calculation_3101:qk]</cols>
+      </table>
+      <simple-id uuid='{3F5B3BA5-83C9-53C3-9078-80DCD9C3010A}' />
+    </worksheet>
+    <worksheet name='Order Size by Paper Type'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/OrderSizebyPaperType?rev=' id='9119812' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[paper_type]' role='dimension' type='nominal' />
+            <column caption='Avg Order Revenue' datatype='real' name='[Calculation_3105]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='AVG({INCLUDE [order_id] : SUM([post_discount_revenue])})' />
+            </column>
+            <column datatype='string' name='[order_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3105]' derivation='User' name='[usr:Calculation_3105:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:paper_type:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[usr:Calculation_3105:qk]</cols>
+      </table>
+      <simple-id uuid='{3AD05BFC-FD3D-524A-9D1D-7E67F70CD962}' />
+    </worksheet>
+    <worksheet name='Cycle Revenue by Paper Type'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/CycleRevenuebyPaperType?rev=' id='9119813' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[paper_type]' role='dimension' type='nominal' />
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+            <column caption='Cycle Revenue' datatype='real' name='[Calculation_3106]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{EXCLUDE [paper_type] : SUM([post_discount_revenue])}' />
+            </column>
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3106]' derivation='Sum' name='[sum:Calculation_3106:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[sqlproxy.0unshackle0live].[sum:Calculation_3106:qk]' />
+              <tooltip column='[sqlproxy.0unshackle0live].[sum:post_discount_revenue:qk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:paper_type:nk] / [sqlproxy.0unshackle0live].[none:payment_cycle:nk]</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{FE6ABB7C-C68A-5FF9-8D90-EA5CA73FA345}' />
+    </worksheet>
+    <worksheet name='New Accounts by Month'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/NewAccountsbyMonth?rev=' id='9119814' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[account_name]' role='dimension' type='nominal' />
+            <column caption='First Order Date' datatype='date' name='[Calculation_3104]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='{FIXED [account_name] : MIN([purchased_at])}' />
+            </column>
+            <column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' />
+            <column-instance column='[account_name]' derivation='CountD' name='[ctd:account_name:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3104]' derivation='Month-Trunc' name='[tmn:Calculation_3104:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[ctd:account_name:qk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[tmn:Calculation_3104:qk]</cols>
+      </table>
+      <simple-id uuid='{FA661520-7223-5A93-9F6D-0699A38723AA}' />
+    </worksheet>
+    <worksheet name='Top Account per Paper Type'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/TopAccountperPaperType?rev=' id='9119815' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[paper_type]' role='dimension' type='nominal' />
+            <column caption='Account Paper Revenue' datatype='real' name='[Calculation_3107]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id], [paper_type] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3107]' derivation='Max' name='[max:Calculation_3107:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:paper_type:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[max:Calculation_3107:qk]</cols>
+      </table>
+      <simple-id uuid='{24BA88BD-4D55-5A16-8F9B-DCB9DB2C9D38}' />
+    </worksheet>
+    <worksheet name='Share of Account Revenue by Status'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/ShareofAccountRevenuebyStatus?rev=' id='9119816' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' />
+            <column caption='Share of Account Revenue' datatype='real' name='[Calculation_3108]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[post_discount_revenue] / [Calculation_3101]' />
+            </column>
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3108]' derivation='Sum' name='[sum:Calculation_3108:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:status:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[sum:Calculation_3108:qk]</cols>
+      </table>
+      <simple-id uuid='{8A4B84D9-B892-59D1-BC8E-F6D2F8A4D8E4}' />
+    </worksheet>
+    <worksheet name='Revenue Share by Status'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/RevenueSharebyStatus?rev=' id='9119817' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' />
+            <column caption='Revenue Share' datatype='real' name='[Calculation_3109]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([post_discount_revenue]) / SUM([Calculation_3101])' />
+            </column>
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3109]' derivation='User' name='[usr:Calculation_3109:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:status:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[usr:Calculation_3109:qk]</cols>
+      </table>
+      <simple-id uuid='{98A3D6A9-11E4-5767-83EA-F1C375BA1B55}' />
+    </worksheet>
+    <worksheet name='Large Account Orders by Payment Cycle'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/LargeAccountOrdersbyPaymentCycle?rev=' id='9119818' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+            <column caption='Large Account Orders' datatype='integer' name='[Calculation_3110]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF [Calculation_3101] &gt;= 1000000 THEN 1 ELSE 0 END' />
+            </column>
+            <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3110]' derivation='Sum' name='[sum:Calculation_3110:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:payment_cycle:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[sum:Calculation_3110:qk]</cols>
+      </table>
+      <simple-id uuid='{0DDF62B9-E2F5-54DC-8DE8-E762430A3E04}' />
+    </worksheet>
+    <worksheet name='Cycle Avg Account Revenue'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/CycleAvgAccountRevenue?rev=' id='9119819' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+            <column caption='Cycle Avg Account Revenue' datatype='real' name='[Calculation_3111]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [payment_cycle] : AVG({FIXED [account_id] : SUM([post_discount_revenue])})}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3111]' derivation='Avg' name='[avg:Calculation_3111:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:payment_cycle:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[avg:Calculation_3111:qk]</cols>
+      </table>
+      <simple-id uuid='{FF088D1D-118C-5C65-945D-F0F71AFC8F6D}' />
+    </worksheet>
+    <worksheet name='Account Revenue by Payment Cycle (Completed)'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/AccountRevenuebyPaymentCycleCompleted?rev=' id='9119820' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+          </datasources>
+          <datasource-dependencies datasource='sqlproxy.0unshackle0live'>
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+            <column caption='Account Revenue' datatype='real' name='[Calculation_3101]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [account_id] : SUM([post_discount_revenue])}' />
+            </column>
+            <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+            <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+            <column datatype='string' name='[status]' role='dimension' type='nominal' />
+            <column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3101]' derivation='Avg' name='[avg:Calculation_3101:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[sqlproxy.0unshackle0live].[none:status:nk]'>
+            <groupfilter function='member' level='[none:status:nk]' member='&quot;COMPLETED&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+          </pane>
+        </panes>
+        <rows>[sqlproxy.0unshackle0live].[none:payment_cycle:nk]</rows>
+        <cols>[sqlproxy.0unshackle0live].[avg:Calculation_3101:qk]</cols>
+      </table>
+      <simple-id uuid='{23149CE3-A5B0-55C4-A299-3CDC65C95F75}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='LOD Checks'>
+      <repository-location derived-from='https://example.online.tableau.com/t/example/workbooks/DunderMifflinLOD_17928575335130/LODChecks?rev=' id='9119821' path='/t/example/workbooks/DunderMifflinLOD_17928575335130' revision='' site='example' />
+      <style />
+      <size maxheight='900' maxwidth='1600' minheight='900' minwidth='1600' />
+      <datasources>
+        <datasource caption='Dunder Mifflin Orders' name='sqlproxy.0unshackle0live' />
+      </datasources>
+      <zones>
+        <zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='33333' id='2' name='Revenue by Account Tier' w='25000' x='0' y='0' />
+          <zone h='33333' id='3' name='Average Account Revenue' w='25000' x='25000' y='0' />
+          <zone h='33333' id='4' name='Account Revenue by Payment Cycle' w='25000' x='50000' y='0' />
+          <zone h='33333' id='5' name='Order Size by Paper Type' w='25000' x='75000' y='0' />
+          <zone h='33333' id='6' name='Cycle Revenue by Paper Type' w='25000' x='0' y='33333' />
+          <zone h='33333' id='7' name='New Accounts by Month' w='25000' x='25000' y='33333' />
+          <zone h='33333' id='8' name='Top Account per Paper Type' w='25000' x='50000' y='33333' />
+          <zone h='33333' id='9' name='Share of Account Revenue by Status' w='25000' x='75000' y='33333' />
+          <zone h='33333' id='10' name='Revenue Share by Status' w='25000' x='0' y='66666' />
+          <zone h='33333' id='11' name='Large Account Orders by Payment Cycle' w='25000' x='25000' y='66666' />
+          <zone h='33333' id='12' name='Cycle Avg Account Revenue' w='25000' x='50000' y='66666' />
+          <zone h='33333' id='13' name='Account Revenue by Payment Cycle (Completed)' w='25000' x='75000' y='66666' />
+        </zone>
+      </zones>
+      <simple-id uuid='{6AD2670C-3A0C-5C59-8578-C331DD9299AF}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Revenue by Account Tier' />
+    <window class='worksheet' name='Average Account Revenue' />
+    <window class='worksheet' name='Account Revenue by Payment Cycle' />
+    <window class='worksheet' name='Order Size by Paper Type' />
+    <window class='worksheet' name='Cycle Revenue by Paper Type' />
+    <window class='worksheet' name='New Accounts by Month' />
+    <window class='worksheet' name='Top Account per Paper Type' />
+    <window class='worksheet' name='Share of Account Revenue by Status' />
+    <window class='worksheet' name='Revenue Share by Status' />
+    <window class='worksheet' name='Large Account Orders by Payment Cycle' />
+    <window class='worksheet' name='Cycle Avg Account Revenue' />
+    <window class='worksheet' name='Account Revenue by Payment Cycle (Completed)' />
+    <window class='dashboard' maximized='true' name='LOD Checks'>
+      <viewpoints>
+        <viewpoint name='Revenue by Account Tier' />
+        <viewpoint name='Average Account Revenue' />
+        <viewpoint name='Account Revenue by Payment Cycle' />
+        <viewpoint name='Order Size by Paper Type' />
+        <viewpoint name='Cycle Revenue by Paper Type' />
+        <viewpoint name='New Accounts by Month' />
+        <viewpoint name='Top Account per Paper Type' />
+        <viewpoint name='Share of Account Revenue by Status' />
+        <viewpoint name='Revenue Share by Status' />
+        <viewpoint name='Large Account Orders by Payment Cycle' />
+        <viewpoint name='Cycle Avg Account Revenue' />
+        <viewpoint name='Account Revenue by Payment Cycle (Completed)' />
+      </viewpoints>
+      <active id='-1' />
+    </window>
+  </windows>
+</workbook>

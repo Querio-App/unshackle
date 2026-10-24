@@ -1,0 +1,117 @@
+{
+  "description": "",
+  "embeddedDatasources": [
+    {
+      "fields": [
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "SUM([post_discount_revenue]) / SUM([Account Revenue])",
+          "isHidden": false,
+          "name": "Revenue Share",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "{FIXED [account_id] : SUM([post_discount_revenue])}",
+          "isHidden": false,
+          "name": "Account Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "{FIXED [account_id], [paper_type] : SUM([post_discount_revenue])}",
+          "isHidden": false,
+          "name": "Account Paper Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "{FIXED [payment_cycle] : AVG({FIXED [account_id] : SUM([post_discount_revenue])})}",
+          "isHidden": false,
+          "name": "Cycle Avg Account Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "AVG({INCLUDE [order_id] : SUM([post_discount_revenue])})",
+          "isHidden": false,
+          "name": "Avg Order Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "[post_discount_revenue] / [Account Revenue]",
+          "isHidden": false,
+          "name": "Share of Account Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "{EXCLUDE [paper_type] : SUM([post_discount_revenue])}",
+          "isHidden": false,
+          "name": "Cycle Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "STRING",
+          "description": null,
+          "formula": "IF [Account Revenue] >= 1000000 THEN \"Large\" ELSEIF [Account Revenue] >= 250000 THEN \"Mid\" ELSE \"Small\" END",
+          "isHidden": false,
+          "name": "Account Tier",
+          "role": "DIMENSION"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "REAL",
+          "description": null,
+          "formula": "AVG({FIXED [account_id] : SUM([post_discount_revenue])})",
+          "isHidden": false,
+          "name": "Avg Account Revenue",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "INTEGER",
+          "description": null,
+          "formula": "IF [Account Revenue] >= 1000000 THEN 1 ELSE 0 END",
+          "isHidden": false,
+          "name": "Large Account Orders",
+          "role": "MEASURE"
+        },
+        {
+          "__typename": "CalculatedField",
+          "dataType": "DATE",
+          "description": null,
+          "formula": "{FIXED [account_name] : MIN([purchased_at])}",
+          "isHidden": false,
+          "name": "First Order Date",
+          "role": "DIMENSION"
+        }
+      ],
+      "hasExtracts": false,
+      "name": "Dunder Mifflin Orders",
+      "upstreamTables": []
+    }
+  ],
+  "luid": "00000000-0000-4000-8000-000000000005",
+  "name": "Dunder Mifflin LOD",
+  "projectName": "unshackle-live",
+  "updatedAt": "2026-10-24T15:58:53Z",
+  "upstreamDatasources": [],
+  "upstreamTables": []
+}
