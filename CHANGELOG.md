@@ -10,6 +10,8 @@
   OAuth machine-to-machine client or an API key, `unshackle import qlik` for `qlik app unbuild` folders. Plain
   script loads, master measures (set modifiers with listed values, ratios, variables), sheets and inline
   Section Access translate; the rest of the load script, Aggr/TOTAL and searches are TODOs. Verified live.
+- ThoughtSpot: formulas with the two-word `unique count ( x )` parse, and `nullif ( a , b )`
+  translates (a divisor `nullif ( b , 0 )` keeps the formula a ratio metric).
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.

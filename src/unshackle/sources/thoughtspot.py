@@ -26,8 +26,8 @@ parse() translates deterministically:
   * table TML -> Table (catalog) with db column names and types
   * model / worksheet TML -> one SemanticModel per physical table, joins -> entities,
     ATTRIBUTE -> dimensions, MEASURE + aggregation -> measures + simple metrics,
-    formulas: sum/unique_count/average/... -> measures, sum_if -> metric filters,
-    safe_divide or a / b -> ratio metrics, arithmetic over measures -> derived metrics,
+    formulas: sum/unique_count (or `unique count`)/average/... -> measures, sum_if -> metric
+    filters, safe_divide, a / b or a / nullif(b, 0) -> ratio metrics, nullif -> CASE, arithmetic over measures -> derived metrics,
     if/then/else -> CASE dimensions
   * synonyms, ai_context, descriptions, Spotter feedback -> knowledge files
   * liveboards -> notebooks using ThoughtSpot's generated SQL (ca_N aliases renamed to the
@@ -106,6 +106,49 @@ BUCKET = re.compile(r"^(hourly|daily|weekly|monthly|quarterly|yearly|day|week|mo
 AGG_PREFIX = re.compile(r"^(total|unique number of|unique count of|number of|count of|average|avg|max|min|minimum|maximum|sum of)\s+", re.I)
 TABLE_PREFIX = re.compile(r"^(fct|fact|dim|d|f|stg|int)_", re.I)
 TML_KINDS = ("table", "model", "worksheet", "sql_view", "view", "liveboard", "pinboard", "answer", "nls_feedback")
+
+
+_UNIQUE_COUNT = re.compile(r"""(\[[^\]]*\]|'(?:[^']|'')*'|"(?:[^"]|"")*")|\bunique\s+count(?=\s*\()""", re.I)
+
+
+def _parse(expr: str) -> fx.Node:
+    """fx.parse plus ThoughtSpot spellings: `unique count ( x )` and `nullif ( a , b )`."""
+    text = _UNIQUE_COUNT.sub(lambda m: m.group(1) or "unique_count", expr)
+    return _nullif(fx.parse(text))
+
+
+def _nullif(node: fx.Node) -> fx.Node:
+    """nullif(a, b) -> case when a = b then null else a end, built from if() nodes.
+
+    A divisor nullif(x, 0) is dropped: generated division already uses nullif(x, 0), and the
+    bare aggregate lets `sum(a) / nullif(sum(b), 0)` stay a ratio metric.
+    """
+    if isinstance(node, fx.Call):
+        args = list(node.args)
+        if node.name == "safe_divide" and len(args) == 2:
+            args[1] = _unwrap_zero(args[1])
+        args = [_nullif(a) for a in args]
+        if node.name != "nullif":
+            return fx.Call(node.name, args)
+        if len(args) != 2:
+            raise fx.FormulaError("nullif takes two arguments")
+        a, b = args
+        if isinstance(b, (fx.Num, fx.Str)):  # a literal is never null: a <> b is exactly "not equal"
+            return fx.Call("if", [fx.BinOp("<>", a, b), a])
+        # (a = b) is not true, so a null on either side keeps a, as SQL nullif does
+        return fx.Call("if", [fx.Call("if", [fx.BinOp("=", a, b), fx.Bool(False), fx.Bool(True)]), a])
+    if isinstance(node, fx.BinOp):
+        right = _unwrap_zero(node.right) if node.op == "/" else node.right
+        return fx.BinOp(node.op, _nullif(node.left), _nullif(right))
+    if isinstance(node, fx.Unary):
+        return fx.Unary(node.op, _nullif(node.operand))
+    return node
+
+
+def _unwrap_zero(node: fx.Node) -> fx.Node:
+    if isinstance(node, fx.Call) and node.name == "nullif" and len(node.args) == 2 and isinstance(node.args[1], fx.Num) and float(node.args[1].value) == 0:
+        return node.args[0]
+    return node
 
 
 def _ident(value: str) -> str:
@@ -568,7 +611,7 @@ class _Ctx:
                 return target.phys(col or name)
 
             try:
-                pred = fx.strip_outer(fx.to_sql(fx.parse(expr), ref))
+                pred = fx.strip_outer(fx.to_sql(_parse(expr), ref))
                 pred = re.sub(r"(\S+) = __TS_GROUPS__", r"\1 in ({{ user.groups }})", pred)
                 pred = re.sub(r"__TS_GROUPS__ = (\S+)", r"\1 in ({{ user.groups }})", pred)
                 if "__TS_GROUPS__" in pred:
@@ -664,7 +707,7 @@ class _Ctx:
             f = formulas.get(str(c.get("formula_id", "")).casefold())
             if f:
                 try:
-                    return any(x in fx.AGGS[LANG] for x in fx.calls(fx.parse(str(f.get("expr", "")))))
+                    return any(x in fx.AGGS[LANG] for x in fx.calls(_parse(str(f.get("expr", "")))))
                 except fx.FormulaError:
                     return False
             return False
@@ -683,7 +726,7 @@ class _Ctx:
             if c is None:
                 f = formulas.get(name.casefold())
                 if f:
-                    return fx.strip_outer(fx.to_sql(fx.parse(str(f.get("expr", ""))), lambda n: ref_sql(n, depth + 1)))
+                    return fx.strip_outer(fx.to_sql(_parse(str(f.get("expr", ""))), lambda n: ref_sql(n, depth + 1)))
                 raise fx.FormulaError(f"unknown column [{name}]")
             if c.get("column_id"):
                 return ref_sql(str(c["column_id"]), depth + 1)
@@ -692,7 +735,7 @@ class _Ctx:
                 raise fx.FormulaError(f"column [{name}] has no column_id or formula")
             if is_measure_col(c):
                 raise fx.FormulaError(f"[{name}] is a measure")
-            return fx.strip_outer(fx.to_sql(fx.parse(str(f.get("expr", ""))), lambda n: ref_sql(n, depth + 1)))
+            return fx.strip_outer(fx.to_sql(_parse(str(f.get("expr", ""))), lambda n: ref_sql(n, depth + 1)))
 
         def metric_ref(name: str) -> str | None:
             c = by_name.get(name.casefold())
@@ -883,7 +926,7 @@ class _Ctx:
             return mname
 
         try:
-            node = fx.parse(expr)
+            node = _parse(expr)
         except fx.FormulaError as exc:
             node = None
             err = str(exc)
@@ -1053,7 +1096,7 @@ class _Ctx:
         for f in a.get("formulas", []) or []:
             if isinstance(f, dict):
                 try:
-                    hard = sorted(set(fx.calls(fx.parse(str(f.get("expr", ""))))) & HARD_FUNCS)
+                    hard = sorted(set(fx.calls(_parse(str(f.get("expr", ""))))) & HARD_FUNCS)
                 except fx.FormulaError:
                     hard = ["(unparsed)"]
                 if hard:
