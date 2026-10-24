@@ -56,6 +56,18 @@ def checks() -> dict[str, str]:
                 cond = re.sub(r"\{\{ (?:Time)?Dimension\('ev_f__(\w+)'(?:, '\w+')?\) \}\}", lambda x: f"({names[x.group(1)]})", m.filter)
                 counts.append(f"COUNTIF({cond}) AS {m.name}")
         out["filters"] = f"WITH ev_f AS ({rows['ev_f']})\nSELECT {', '.join(counts)} FROM ev_f"
+        # the Ossie document as a consumer runs it: the dataset's fields over its rows, its metrics over those
+        import yaml
+
+        from unshackle.target import ossie
+        from unshackle.target.layout import Layout
+
+        doc = yaml.safe_load(next(v for k, v in ossie.render(b, Layout.load(Path(tmp) / "f")).items() if k.endswith("ev_f.ossie.yaml")))
+        ds = next(x for x in doc["datasets"] if x["name"] == "ev_f")
+        expr = lambda item: item["expression"]["dialects"][0]["expression"]  # noqa: E731
+        fields = ", ".join(f"{expr(f)} AS `{f['name']}`" for f in ds["fields"])
+        metrics = ", ".join(f"{expr(m)} AS {m['name']}" for m in ds.get("metrics", []))
+        out["ossie_ev_f"] = f"WITH ev_f AS ({rows['ev_f']}),\nfields AS (SELECT {fields} FROM ev_f)\nSELECT {metrics} FROM fields"
     return out
 
 

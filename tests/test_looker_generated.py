@@ -566,3 +566,18 @@ def test_ossie_metrics_are_bigquery_sql(tmp_path):
     looker_median = re.search(r"(CASE WHEN COUNT\(ev_f\.n \).*?END) AS ev_f_n_median", (FIX / "stats_total.sql").read_text(), re.S).group(1)
     assert re.sub(r"\s|ev_f\.", "", metrics["n_median"]["expression"]) == re.sub(r"\s|ev_f\.", "", looker_median)
     assert "TIMESTAMP_TRUNC(CAST(`at` AS TIMESTAMP), SECOND)" in metrics["t_before"]["expression"]  # the field `at`, reserved on BigQuery
+
+
+def test_ossie_on_bigquery_returns_lookers_numbers():
+    """The Ossie document for ev_f, run on BigQuery as a consumer runs it (fields over the rows, metrics over
+    the fields): every metric is Looker's number for the same measure."""
+    (ours,) = _check_rows("ossie_ev_f")
+    theirs = {**looker("filters")[0], **looker("stats_total")[0]}
+    compared = 0
+    for name, value in ours.items():
+        field = "ev_f.count" if name == "ev_f_count" else f"ev_f.{name}"
+        if field not in theirs or theirs[field] is None:  # n_max_date: Looker returns no value for a max of a date
+            continue
+        assert value == pytest.approx(theirs[field]), name
+        compared += 1
+    assert compared >= 40
