@@ -7,8 +7,7 @@
 3. `unshackle init / extract / build tableau` in a temp repo
 4. parity: Tableau's own numbers (the view CSVs `extract` saved from GET /views/{id}/data, the same with
    a parameter set through vf_<parameter>, and VizQL Data Service queries on the published data source)
-   against the migrated notebook tiles and the generated Ossie expressions; `unshackle verify`. LOD sheets
-   with no faithful translation must stay TODO
+   against the migrated notebook tiles and the generated Ossie expressions; `unshackle verify`
 5. the project and the group are deleted, even when a step fails, and the deletion is checked
 
 Needs Docker, docker-compose and a site: TABLEAU_SERVER_URL, TABLEAU_SITE, TABLEAU_PAT_NAME and
@@ -89,12 +88,10 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
     lod_nb = "notebooks/lod-checks.ipynb"
     assert (repo / lod_nb).exists()
     assert sorted(p.name for p in (repo / "semantic").glob("*.ossie.yaml")) == [  # the FIXED grains are SQL models
-        "account_id_lod.ossie.yaml", "account_name_lod.ossie.yaml", "accounts.ossie.yaml", "orders.ossie.yaml", "products.ossie.yaml"]
+        "account_id_lod.ossie.yaml", "account_name_lod.ossie.yaml", "accounts.ossie.yaml", "orders.ossie.yaml", "payment_cycle_lod.ossie.yaml",
+        "products.ossie.yaml"]
     _, tile_sql = notebook_queries(repo / lod_nb)
-    # Tableau counts each of these once per distinct combination of the view's and the FIXED dimensions (its
-    # view data shows it); the translation doesn't do that yet, so they must stay TODO rather than give a number.
-    for tile in ("revenue_share_by_status", "large_account_orders_by_payment_cycle", "cycle_avg_account_revenue"):
-        assert not tile_sql[tile], tile
+    assert all(tile_sql.values()), [t for t, s in tile_sql.items() if not s]  # every LOD sheet has SQL
 
     views = ids["views"]
     data = repo / "migration/parity/data"
@@ -122,6 +119,7 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
 
     ossie = yaml.safe_load((repo / "semantic/orders.ossie.yaml").read_text())
     grain = yaml.safe_load((repo / "semantic/account_id_lod.ossie.yaml").read_text())
+    nested = yaml.safe_load((repo / "semantic/payment_cycle_lod.ossie.yaml").read_text())
     joined = "public.orders"  # every order has its account and product, so the inner joins keep all rows
     view_csv = lambda name: f"migration/raw/tableau/views/{views[name]}.csv"  # noqa: E731 - saved by `unshackle extract`
     cases = [
@@ -147,6 +145,11 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
          "source": {"csv": view_csv("Average Account Revenue")},
          "target": {"sql": _ossie_sql(grain, {"avg_account_revenue": "avg_account_revenue"},
                                       f"({grain['datasets'][0]['source']}) as account_id_lod", False)}},
+        {"name": "Cycle Avg Account Revenue (Ossie: a FIXED nested in a FIXED, as its own grain)",
+         "source": {"csv": view_csv("Cycle Avg Account Revenue")},
+         "target": {"sql": _ossie_sql(nested, {"payment_cycle": "payment_cycle", "avg_cycle_avg_account_revenue": "cycle_avg_account_revenue"},
+                                      f"({nested['datasets'][0]['source']}) as payment_cycle_lod", True)},
+         "keys": ["payment_cycle"]},
     ]
     # The LOD workbook: every sheet with tile SQL, against Tableau's view data. Keys are the sheet's dimensions.
     lod_keys = {
@@ -159,6 +162,9 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
         "Top Account per Paper Type": ["paper_type"],  # FIXED on two dimensions
         "Share of Account Revenue by Status": ["status"],  # a row field over a FIXED value
         "Account Revenue by Payment Cycle (Completed)": ["payment_cycle"],  # FIXED ignores the dimension filter
+        "Revenue Share by Status": ["status"],  # a FIXED aggregate inside a ratio
+        "Large Account Orders by Payment Cycle": ["payment_cycle"],  # SUM of a calc over a FIXED value
+        "Cycle Avg Account Revenue": ["payment_cycle"],  # a FIXED nested in a FIXED
     }
     for name, keys in lod_keys.items():
         tile = snake(name)

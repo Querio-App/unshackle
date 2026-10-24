@@ -19,6 +19,12 @@
   notebook parameters (dates as `<slug>_from` / `<slug>_to`, number ranges as `_min` / `_max`),
   checked against Metabase's own dashboard results in the live test. Relative date defaults,
   `timestamptz` columns and the time-grouping filter keep a TODO.
+- Tableau: three more LOD shapes translate, each checked against Tableau Cloud's numbers:
+  an aggregate of a calc over FIXED values (`SUM(IF [Account Revenue] >= 1000000 THEN 1
+  ELSE 0 END)`; a metric on the FIXED grain's model, and tiles), a FIXED aggregate inside
+  an expression (`SUM([Sales]) / SUM([Account Revenue])`; tiles), and a FIXED nested in a
+  FIXED (a `_lod` model of its own). Tableau takes the FIXED values once per distinct
+  combination of the view's and the FIXED dimensions, and so does the generated SQL.
 - Tableau: the live test publishes a second workbook with 12 LOD sheets (FIXED, INCLUDE,
   EXCLUDE, FIXED on two dimensions, a FIXED date as a dimension, a FIXED value under a
   dimension filter) and checks the tiles against Tableau Cloud's own view data; the run is

@@ -74,10 +74,7 @@ def test_what_stays_todo(bundle):
     assert "combines row fields and FIXED LOD values" in todo["revenue_share"]
     assert set(todo) == {"avg_order_revenue", "cycle_revenue", "account_paper_revenue", "share_of_account_revenue", "revenue_share"}
     tiles = _tiles(bundle)
-    assert not tiles["Revenue Share by Status"].sql and "inside a larger expression" in tiles["Revenue Share by Status"].todo
-    assert all(t.sql and not t.todo for name, t in tiles.items() if name != "Revenue Share by Status"), {
-        n: t.todo for n, t in tiles.items() if t.todo
-    }
+    assert all(t.sql and not t.todo for t in tiles.values()), {n: t.todo for n, t in tiles.items() if t.todo}
 
 
 def test_tile_sql_shapes(bundle):
@@ -131,6 +128,10 @@ def test_tiles_match_tableau_semantics(bundle, con):
          rows.groupby(["account_id", "paper_type"]).post_discount_revenue.sum().groupby("paper_type").max())
     same(run("Share of Account Revenue by Status", "status").share_of_account_revenue,
          rows.assign(s=rows.post_discount_revenue / rows.account_id.map(acct)).groupby("status").s.sum())
+    # SUM([Revenue]) / SUM([Account Revenue]): the FIXED sum once per (status, account), as Tableau computes it
+    per_status = rows[["status", "account_id"]].drop_duplicates()
+    same(run("Revenue Share by Status", "status").revenue_share,
+         rows.groupby("status").post_discount_revenue.sum() / per_status.assign(v=per_status.account_id.map(acct)).groupby("status").v.sum())
     for sm in bundle.semantic_models:
         if sm.sql:  # one row per FIXED key
             df = con.sql(sm.sql).df()

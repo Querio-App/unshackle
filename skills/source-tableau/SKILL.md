@@ -150,23 +150,28 @@ over all of the datasource's rows (before the sheet's dimension filters):
 | `AVG({INCLUDE [order_id] : SUM([x])})` | aggregate at the sheet's dimensions plus `order_id`, then `avg` per mark |
 | `SUM({EXCLUDE [paper_type] : SUM([x])})` | aggregate at the sheet's dimensions minus `paper_type`, joined back to each mark |
 | `SUM([x] / [Account Revenue])` (row fields and FIXED values) | an ordinary aggregate over the rows joined to the grain |
+| an aggregate of a calc over FIXED values (`SUM(IF [Account Revenue] >= 1000000 THEN 1 ELSE 0 END)`) | as a FIXED value aggregated: the calc once per distinct (sheet dimensions, FIXED dimensions), not per row |
+| a FIXED aggregate inside an expression (`SUM([x]) / SUM([Account Revenue])`) | each aggregate at its own level (`SUM([x])` over the rows, `SUM([Account Revenue])` as above), then the expression per mark |
+| a FIXED nested in a FIXED (`{FIXED [cycle] : AVG({FIXED [account] : SUM([x])})}`) | a grain of its own: the inner value once per distinct (cycle, account) of the datasource's rows, aggregated per cycle |
 
-Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions.
+Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions. These
+rules are checked against Tableau Cloud's own numbers (`tests/fixtures/tableau_live_lod`):
+counting rows instead can be off by an order of magnitude.
+
+In the semantic layer, a calc over one grain's FIXED values is a metric on that grain's
+model (`large_account_orders` on `account_id_lod`), and a nested FIXED is a `_lod` model
+of its own.
 
 ## Finishing TODOs
 
-**FIXED LODs that stay TODO**: several FIXED dimensions (tiles work; for the semantic
-layer the TODO holds the grain's SQL: save it as a SQL model with a composite key and
-relate it by hand), nested LODs (build the inner one first), a FIXED inside a larger
-aggregate expression (`SUM([Sales]) / SUM([Account Revenue])`: in the tile, compute
-`SUM([Account Revenue])` per mark as above and divide), and aggregates of calculations
-over FIXED values (`SUM(IF [Account Revenue] > 0 THEN 1 END)`). For all of these, Tableau
-takes each FIXED value once per distinct combination of the sheet's dimensions and the
-FIXED dimensions, not once per row: the calc over the FIXED value, a FIXED in a ratio, and
-a FIXED nested in another FIXED alike (checked against Tableau Cloud's own numbers,
-`tests/fixtures/tableau_live_lod`). Counting rows instead can be off by an order of
-magnitude. In dbt projects MetricFlow also needs a
-time dimension on the `_lod` model before its measures load.
+**FIXED LODs that stay TODO**: several FIXED dimensions in the semantic layer (tiles
+work; the TODO holds the grain's SQL: save it as a SQL model with a composite key and
+relate it by hand); a FIXED aggregate inside an expression as a metric (it combines two
+models: tiles compute it, above); other nestings than FIXED in FIXED (INCLUDE or EXCLUDE
+inside, or a nested LOD inside a larger expression: build the inner one first). Tableau
+takes each FIXED value once per distinct combination of the view's dimensions and the
+FIXED dimensions, not once per row; keep that when writing them by hand. In dbt projects
+MetricFlow also needs a time dimension on the `_lod` model before its measures load.
 
 **INCLUDE / EXCLUDE LOD** depend on the view's dimensions, so they are never metrics;
 tiles that show them compute them (above). Elsewhere: `{INCLUDE [Order ID] : SUM([Sales])}`
