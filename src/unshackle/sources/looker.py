@@ -52,6 +52,7 @@ from unshackle.raw import RawStore
 from unshackle.sources import _manual
 from unshackle.sources.base import Inventory, Source
 from unshackle.target.layout import Layout
+from unshackle.target.ossie import FILTER_REF
 
 REF = re.compile(r"\$\{([^}]+)\}")
 LIQUID = re.compile(r"\{%|\{\{")
@@ -152,7 +153,7 @@ LOOKER_VALUE = {
 def timeframe_sql(tf: str, expr: str, dialect: str, week_start: str = "monday") -> str | None:
     """Looker's value for a string or week-based timeframe in `dialect`; None when not known."""
     d = DIALECT_DATES.get(dialect)
-    if d is None or week_start not in WEEKDAYS:
+    if d is None:
         return None
     day = f"CAST({expr} AS DATE)"
     offset = WEEKDAYS.index(week_start)
@@ -988,8 +989,8 @@ class _Parser:
         out = []
         for model in self.models.values():
             for ex in model["explores"]:
-                base = ex.get("from") or ex.get("view_name") or ex["name"]
-                alias = {ex["name"]: base, base: base} | {j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])}
+                base = _base_view(ex)
+                alias = {base: base} | _aliases(ex)
 
                 def on(j: dict[str, Any]) -> str:
                     text = REF.sub(lambda m: "${" + ".".join([alias.get(m.group(1).split(".")[0], m.group(1).split(".")[0]),
@@ -1011,7 +1012,7 @@ class _Parser:
 
     def _other_views(self, vname: str, expr: str) -> set[str]:
         """Views (snake-cased) other than `vname` whose dimensions a cross expression reads."""
-        return {v for v in re.findall(r"Dimension\('(\w+?)__\w+'", expr) if v != snake(vname)}
+        return {v for v, _, _ in FILTER_REF.findall(expr) if v != snake(vname)}
 
     def _join_signatures(self, vname: str, target: str) -> dict[str, str]:
         """How explores put view `target` next to `vname`: "x_to_one|<relationship> on <condition>" -> explore.
@@ -1092,10 +1093,7 @@ class _Parser:
         if kind[0] != "dimension":
             return None
         f = self._field(view, name) or {}
-        t = f.get("type", "string")
-        kind = ("yesno" if t == "yesno" else "number" if t == "number" else "time" if t.startswith("date") or t == "time"
-                else "string" if t in ("string", "zipcode") else "other")
-        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", kind
+        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", _type_kind(f.get("type", "string"), "other")
 
     # ------------------------------------------------------------ views
 
@@ -1557,10 +1555,7 @@ class _Parser:
     def _explore_alias(self, model: str, explore: str) -> dict[str, str]:
         for ex in (self.models.get(model) or {}).get("explores", []):
             if ex["name"] == explore:
-                base = ex.get("from") or ex["name"]
-                out = {ex["name"]: base}
-                out.update({j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])})
-                return out
+                return _aliases(ex)
         return {}
 
     def _dashboard(self, rel: str, d: dict[str, Any], usage: dict) -> None:
@@ -1643,8 +1638,8 @@ class _Parser:
             if p in seen or p not in found:
                 self.b.warn(rel, f"dashboard {d['dashboard']} extends {p}, which is not in the LookML; its elements and filters are missing")
                 continue
-            out = _merge_dashboard(out, self._extend_dashboard(found[p][1], found, seen | {p}, rel))
-        return _merge_dashboard(out, d)
+            out = _merge_view(out, self._extend_dashboard(found[p][1], found, seen | {p}, rel), named=DASHBOARD_LISTS)
+        return _merge_view(out, d, named=DASHBOARD_LISTS)
 
     def _lookml_dashboard(self, rel: str, name: str, d: dict[str, Any]) -> None:
         fdefs = {str(f["name"]): f for f in d.get("filters") or [] if isinstance(f, dict) and f.get("name")}
@@ -1661,9 +1656,8 @@ class _Parser:
         elements = [el for el in d.get("elements") or [] if isinstance(el, dict)]
         tiles = [self._lookml_tile(el, d, fdefs, filters, binds) for el in elements]
         ids = [t.id for t in tiles]
-        if len(set(ids)) != len(ids):
-            for i, t in enumerate(tiles):
-                t.id = f"{t.id}_{i + 1}" if ids.count(t.id) > 1 else t.id
+        for i, t in enumerate(tiles):
+            t.id = f"{t.id}_{i + 1}" if ids.count(t.id) > 1 else t.id
         layout: list[list[str]] = []
         if d.get("layout") == "grid" and d.get("rows"):
             by_name = {str(el.get("name")): t.id for el, t in zip(elements, tiles)}
@@ -1813,7 +1807,7 @@ class _Parser:
             risky = q.risky_joins(snap[0])
             param = filters[fname].name
             default = fdefs[fname].get("default_value")
-            fits = {"string": ("string",), "number": ("number",), "yesno": ("yesno",)}.get(fkind, ()) if value is not None else ("string", "dimension", "number", "yesno", "measure")
+            fits = ((fkind,) if fkind in ("string", "number", "yesno") else ()) if value is not None else ("string", "dimension", "number", "yesno", "measure")
             if p or not sql or risky:
                 q.restore(snap)  # Looker joins for a filter only when it has a value
             if p or not sql:
@@ -1885,19 +1879,22 @@ class _Parser:
         )
 
 
-def _merge_dashboard(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """LookML dashboard `extends`: elements and filters merge by name, other keys are replaced."""
-    out = dict(base)
-    for key, value in override.items():
-        if key in ("elements", "filters") and isinstance(value, list):
-            by_name = {str(x.get("name")): dict(x) for x in out.get(key) or [] if isinstance(x, dict)}
-            for x in value:
-                if isinstance(x, dict):
-                    by_name[str(x.get("name"))] = {**by_name.get(str(x.get("name")), {}), **x}
-            out[key] = list(by_name.values())
-        elif key not in ("extends", "extension"):
-            out[key] = value
-    return out
+def _type_kind(t: str, other: str) -> str:
+    """A dimension's LookML type as a filter kind; `other` for the rest."""
+    if t in ("yesno", "number"):
+        return t
+    if t.startswith("date") or t == "time":
+        return "time"
+    return "string" if t in ("string", "zipcode") else other
+
+
+def _base_view(ex: dict[str, Any]) -> str:
+    return ex.get("from") or ex.get("view_name") or ex["name"]
+
+
+def _aliases(ex: dict[str, Any]) -> dict[str, str]:
+    """Explore alias -> view: the explore's name for its base view, then each join."""
+    return {ex["name"]: _base_view(ex)} | {j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])}
 
 
 def _bind_value(value: Any, kind: str) -> tuple[bool, Any]:
@@ -1937,8 +1934,8 @@ def _dynamic_field_todos(dyn: Any) -> list[str]:
 def _null_propagating(expr: str, vname: str, other: str) -> bool:
     """Arithmetic over fields of both views: NULL when either side has no match, so an inner or full
     join and a left join aggregate the same rows (SUM, AVG, MIN, MAX and COUNT(DISTINCT) skip NULL)."""
-    refs = set(re.findall(r"Dimension\('(\w+?)__\w+'\)", expr))
-    rest = re.sub(r"\{\{\s*Dimension\('\w+'\)\s*\}\}", "", expr)
+    refs = {v for v, _, _ in FILTER_REF.findall(expr)}
+    rest = FILTER_REF.sub("", expr)
     return {snake(vname), snake(other)} <= refs and bool(re.fullmatch(r"[\s\d.+\-*/()]*", rest))
 
 
@@ -1987,13 +1984,9 @@ class _Query:
     def __init__(self, p: _Parser, ex: dict[str, Any]):
         self.p, self.explore = p, ex
         self.base = ex["name"]
-        base_view = ex.get("from") or ex.get("view_name") or ex["name"]
-        self.aliases: dict[str, str] = {ex["name"]: base_view}
-        self.joins: dict[str, dict[str, Any]] = {}
-        for j in ex.get("joins", []):
-            self.aliases[j["name"]] = j.get("from") or j["name"]
-            self.joins[j["name"]] = j
-        self.base_view = base_view
+        self.base_view = _base_view(ex)
+        self.aliases = _aliases(ex)
+        self.joins: dict[str, dict[str, Any]] = {j["name"]: j for j in ex.get("joins", [])}
         self.order: list[str] = []  # joins in SQL order (a join after the joins its ON reads)
         self.join_sql: dict[str, str] = {}
         self.join_reads: dict[str, set[str]] = {}
@@ -2043,9 +2036,7 @@ class _Query:
             problems.append(f"join {a} has sql_where")
         if jtype not in JOIN_TYPE:
             problems.append(f"join {a} has type {jtype}")
-        table, note, problem = self.p.query_table(view)
-        self.notes += [note] if note else []
-        problems += [problem] if problem else []
+        table = self._table(view, problems)
         self.join_reads[a] = (set(re.findall(r"\b(\w+)\.", on)) & set(self.joins)) - {a}
         self.join_sql[a] = f"{JOIN_TYPE.get(jtype, 'LEFT JOIN')} {table} AS {a}" + (f" ON {on}" if on and jtype != "cross" else "")
         self.order.append(a)
@@ -2074,9 +2065,7 @@ class _Query:
         if ftype in ("tier", "location", "distance", "duration"):
             return "", "", problems + [f"{ref} is a type: {ftype} dimension"]
         sql, p = self.p._field_sql(view, name, "query", frozenset({f"{a}.{name}"}), self, a)
-        kind_ = ("yesno" if ftype == "yesno" else "number" if ftype == "number" else "time" if ftype.startswith("date") or ftype == "time"
-                 else "string" if ftype in ("string", "zipcode") else "dimension")
-        return sql, kind_, problems + p
+        return sql, _type_kind(ftype, "dimension"), problems + p
 
     def measure(self, a: str, view: str, m: dict[str, Any], seen: frozenset[str]) -> tuple[str, list[str]]:
         mtype = m.get("type", "count")
@@ -2119,11 +2108,18 @@ class _Query:
         finally:
             self.in_measure -= 1
 
+    def _table(self, view: str, problems: list[str]) -> str:
+        """The view's table; its note goes to `notes`, its problem to `problems`."""
+        table, note, problem = self.p.query_table(view)
+        self.notes += [note] if note else []
+        problems += [problem] if problem else []
+        return table
+
     def snapshot(self) -> tuple:
         return list(self.order), dict(self.join_sql), dict(self.join_reads), list(self.aggs), set(self.tz)
 
     def restore(self, snap: tuple) -> None:
-        self.order, self.join_sql, self.join_reads, self.aggs, self.tz = snap[0], snap[1], snap[2], snap[3], snap[4]
+        self.order, self.join_sql, self.join_reads, self.aggs, self.tz = snap
 
     def risky_joins(self, since: list[str]) -> list[str]:
         """Joins added after `since` that change rows even when nothing is filtered (not a left x_to_one join)."""
@@ -2151,9 +2147,7 @@ class _Query:
 
     def sql(self, select: list[tuple[str, str]], where: list[str], having: list[str], dims: int, order: list[str], limit: str) -> str:
         """`select` is (expression, column) with the dimensions first."""
-        table, note, problem = self.p.query_table(self.aliases[self.base])
-        self.notes += [note] if note else []
-        self.problems += [problem] if problem else []
+        table = self._table(self.aliases[self.base], self.problems)
         lines = ["SELECT"]
         lines += [f"    {e} AS {c}{',' if i < len(select) - 1 else ''}" for i, (e, c) in enumerate(select)]
         lines.append(f"FROM {table} AS {self.base}")
@@ -2171,17 +2165,23 @@ class _Query:
         return "\n".join(lines)
 
 
-def _merge_view(base: dict[str, Any], override: dict[str, Any], refine: bool = False) -> dict[str, Any]:
-    """Merge a view or explore into another: named children (fields, joins) by name, other keys
-    replaced. `extends` from a refinement adds to the base's; through `extends` it is not inherited."""
+VIEW_LISTS = ("dimensions", "dimension_groups", "measures", "filters", "parameters", "sets", "joins")
+DASHBOARD_LISTS = ("elements", "filters")
+
+
+def _merge_view(base: dict[str, Any], override: dict[str, Any], refine: bool = False, named: tuple[str, ...] = VIEW_LISTS) -> dict[str, Any]:
+    """Merge a view, explore or LookML dashboard into another: `named` children (fields, joins; dashboard
+    elements and filters) by name, other keys replaced. `extends` from a refinement adds to the base's;
+    through `extends` it is not inherited."""
     out = {k: v for k, v in base.items()}
     for key, value in override.items():
         if key == "name":
             continue
-        if key in ("dimensions", "dimension_groups", "measures", "filters", "parameters", "sets", "joins") and isinstance(value, list):
-            by_name = {f["name"]: dict(f) for f in out.get(key, [])}
+        if key in named and isinstance(value, list):
+            by_name = {str(f.get("name")): dict(f) for f in out.get(key) or [] if isinstance(f, dict)}
             for f in value:
-                by_name[f["name"]] = {**by_name.get(f["name"], {}), **f}
+                if isinstance(f, dict):
+                    by_name[str(f.get("name"))] = {**by_name.get(str(f.get("name")), {}), **f}
             out[key] = list(by_name.values())
         elif key == "access_filters":
             out[key] = [*out.get(key, []), *(f for f in value if f not in out.get(key, []))]
