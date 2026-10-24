@@ -65,6 +65,14 @@ def test_dbt_parse_all_tools_one_repo(order: str, tmp_path: Path):
     _parse(_dbt_repo(tmp_path, order, tools if order == "forward" else tools[::-1]))
 
 
+def test_generated_sql_models_have_unique_names(tmp_path: Path):
+    """Each generated SQL model is written once, so dbt never sees two models with one name (no dbt needed)."""
+    repo = _dbt_repo(tmp_path, "all", sorted(TOOLS))
+    models = [p.stem for p in (repo / "models").rglob("*.sql")]
+    assert "customer_name_lod" in models  # the Tableau FIXED grain, a SQL model the stubs in _parse must not duplicate
+    assert len(models) == len(set(models))
+
+
 def _parse(repo: Path) -> None:
     refs = set()
     for p in (repo / "models").rglob("*.yml"):
