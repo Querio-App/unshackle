@@ -7,6 +7,7 @@ stay a TODO, and the fix for it turns that assertion into a numeric one.
 
 import json
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 import duckdb
@@ -17,7 +18,7 @@ from test_looker import _by_name
 from unshackle.ir import Bundle
 from unshackle.raw import RawStore
 from unshackle.sources import get_source
-from unshackle.sources.looker import DIALECT_DATES, TF_GRAIN, TIMEFRAME_SQL, timeframe_sql
+from unshackle.sources.looker import DIALECT_DATES, SYM_HASH, TF_GRAIN, TIMEFRAME_SQL, timeframe_sql
 from unshackle.target.ossie import AGGS
 
 FIX = Path(__file__).parent / "fixtures" / "looker_generated"
@@ -189,3 +190,79 @@ def test_percentiles_follow_lookers_bigquery_formula(bundle2, db2, tmp_path):
 def test_sums_show_zero_for_an_empty_group(bundle2):
     assert _by_name(bundle2.metrics)["n_sum_big"].fill_nulls_with == 0
     assert {r["ev_f.n_big"]: r["ev_f.n_sum_big"] for r in looker("stats_by_big")}["No"] == 0
+
+
+# ---------------------------------------------------------------- tile SQL: symmetric aggregates, distinct and window measures (#31)
+
+TILES = {
+    "fanout_by_customer": ("ev_orders", ["ev_orders.customer", "ev_orders.count", "ev_orders.total_shipping", "ev_orders.avg_shipping",
+                                         "ev_items.count", "ev_items.total_price", "ev_items.shipping_sum_distinct",
+                                         "ev_items.shipping_avg_distinct"], ["ev_orders.customer"]),
+    "fanout_total": ("ev_orders", ["ev_orders.count", "ev_orders.total_shipping", "ev_orders.avg_shipping", "ev_items.count",
+                                   "ev_items.total_price"], []),
+    "distinct_total": ("ev_items", ["ev_items.count", "ev_items.total_price", "ev_items.shipping_sum_distinct",
+                                    "ev_items.shipping_avg_distinct", "ev_items.shipping_naive_sum"], []),
+    "measure_types": ("ev_orders", ["ev_orders.customer", "ev_orders.total_shipping", "ev_orders.shipping_pct",
+                                    "ev_orders.shipping_running"], ["ev_orders.customer"]),
+}
+
+
+def evidence_tiles(repo: Path, dialect: str) -> dict:
+    """The TILES queries as a LookML dashboard over the evidence views: unshackle's tile per case."""
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / "unshackle.toml").write_text(f'[datasources.warehouse]\ntype = "{dialect}"\n')
+    store = RawStore(repo, "looker")
+    store.put_text("lookml/unshackle_evidence.view.lkml", (FIX / "evidence.view.lkml").read_text())
+    store.put_text("lookml/evidence.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence.view"\n' + (FIX / "evidence.explores.lkml").read_text())
+    elements = "".join(
+        f"  - name: {name}\n    model: evidence\n    explore: {explore}\n    type: looker_grid\n    fields: [{', '.join(fields)}]\n"
+        + (f"    sorts: [{', '.join(sorts)}]\n" if sorts else "")
+        for name, (explore, fields, sorts) in TILES.items()
+    )
+    store.put_text("lookml/ev.dashboard.lookml", f"- dashboard: ev\n  title: Evidence\n  elements:\n{elements}")
+    (d,) = get_source("looker").parse(store).dashboards
+    return {t.id: t for t in d.tiles}
+
+
+def assert_lookers_numbers(case: str, cols: list[str], rows: list[tuple]) -> None:
+    """Rows of a tile's SQL against Looker's result for the same query on the same rows."""
+    ours = [dict(zip(cols, r)) for r in rows]
+    theirs = looker(case)
+    key = lambda r: str(r.get("ev_orders_customer", r.get("ev_orders.customer")))  # noqa: E731
+    in_order = list(ours)
+    if TILES[case][2]:  # NULL sorts first in BigQuery and last in most warehouses: compare by customer
+        ours, theirs = sorted(ours, key=key), sorted(theirs, key=key)
+    assert len(ours) == len(theirs)
+    for o, t in zip(ours, theirs):
+        for field, value in t.items():
+            col = field.replace(".", "_")
+            if col == "ev_orders_shipping_running" or col not in o:
+                continue  # a running total follows the warehouse's sort order (checked below); fields the tile doesn't select
+            ours_value = float(o[col]) if isinstance(o[col], (int, float, Decimal)) else o[col]
+            assert ours_value == (pytest.approx(value) if isinstance(value, (int, float)) else value), (case, field)
+    running = 0.0
+    for row in in_order if "ev_orders_shipping_running" in cols else []:  # adds up the rows in the order they come back
+        running += float(row["ev_orders_total_shipping"])
+        assert float(row["ev_orders_shipping_running"]) == pytest.approx(running)
+
+
+@pytest.fixture(scope="module")
+def tiles(tmp_path_factory) -> dict:
+    return evidence_tiles(tmp_path_factory.mktemp("tiles"), "duckdb")
+
+
+@pytest.mark.parametrize("case", sorted(TILES))
+def test_tile_sql_returns_lookers_numbers(tiles, db, case):
+    tile = tiles[case]
+    assert tile.sql, tile.todo
+    cur = db.execute(tile.sql)
+    assert_lookers_numbers(case, [c[0] for c in cur.description], cur.fetchall())
+
+
+@pytest.mark.parametrize("dialect", sorted(SYM_HASH))
+def test_tile_sql_parses_in_each_dialect(tmp_path, dialect):
+    import sqlglot
+
+    for case, tile in evidence_tiles(tmp_path, dialect).items():
+        assert tile.sql, (case, tile.todo)
+        sqlglot.parse_one(tile.sql, read=dialect)

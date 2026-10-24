@@ -15,6 +15,7 @@ Every test uses the same data: the fictional Dunder Mifflin paper company in
 | Test | What runs | Time (images cached) |
 | --- | --- | --- |
 | `test_warehouse_live.py` | Postgres + the dataset + `unshackle verify` (no BI tool) | ~5 s |
+| `test_looker_symmetric_live.py` | Postgres + the Looker evidence rows: unshackle's Postgres tile SQL (symmetric aggregates, `sum_distinct`, `percent_of_total`, `running_total`) returns Looker's numbers | ~5 s |
 | `test_lightdash_live.py` | Lightdash 3.23.1, MinIO; dbt + Lightdash CLI deploy; 4 charts, 1 dashboard; 6 parity cases | ~1.5 min |
 | `test_metabase_live.py` | Metabase v0.64.1; native, query-builder and metric cards, a model, a snippet, a two-tab dashboard with filters; 5 parity cases | ~30 s |
 | `test_superset_live.py` | Superset 6.1.0 (built with the Postgres driver); datasets with metrics, 5 charts, a dashboard with a native filter, a role, RLS; 9 parity cases | ~40 s |

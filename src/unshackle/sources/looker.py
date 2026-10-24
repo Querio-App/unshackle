@@ -186,7 +186,7 @@ ALL_TIMEFRAMES = [
     "quarter_of_year", "hour_of_day", "fiscal_month_num", "fiscal_quarter", "fiscal_quarter_of_year", "fiscal_year",
 ]
 REVERSED = {"many_to_one": "one_to_many", "one_to_many": "many_to_one", "one_to_one": "one_to_one", "many_to_many": "many_to_many"}
-FAN_SAFE = ("count_distinct", "min", "max")  # same result however often a row repeats
+FAN_SAFE = ("count_distinct", "min", "max", "sum_distinct")  # same result however often a row repeats
 
 
 class LookerSource(Source):
@@ -1899,6 +1899,8 @@ class _Parser:
             q.notes.append(f"Looker converts {', '.join(sorted(q.tz))} to the query time zone ({tz}) when the connection has one; "
                            "the SQL uses the stored time zone")
         q.problems += q.fanout()
+        if pivots and q.windows:
+            q.problems.append("percent_of_total / running_total with pivots: Looker computes them per pivoted column")
         sql = q.sql(dims + meas, where, having, len(dims), order, limit)
         return sql, list(dict.fromkeys(q.problems)), list(dict.fromkeys(q.notes))
 
@@ -2017,6 +2019,33 @@ def _reachable(start: str, models: dict[str, SemanticModel]) -> set[str]:
 
 
 JOIN_TYPE = {"left_outer": "LEFT JOIN", "inner": "INNER JOIN", "full_outer": "FULL OUTER JOIN", "cross": "CROSS JOIN"}
+# Symmetric aggregates, as Looker writes them: SUM(DISTINCT hash(key) + x) - SUM(DISTINCT hash(key)) in
+# exact decimals counts each key's x once, however often a join repeats its row. hash: the first 15 hex
+# digits of the key's MD5 as an integer.
+SYM_HASH = {
+    "bigquery": "CAST(CONCAT('0x', SUBSTR(TO_HEX(MD5(CAST({} AS STRING))), 1, 15)) AS INT64)",
+    "snowflake": "TO_NUMBER(SUBSTR(MD5(CAST({} AS VARCHAR)), 1, 15), 'XXXXXXXXXXXXXXX')",
+    "postgres": "CAST(CAST('x' || SUBSTR(MD5(CAST({} AS TEXT)), 1, 15) AS BIT(60)) AS BIGINT)",
+    "redshift": "STRTOL(SUBSTRING(MD5(CAST({} AS VARCHAR)), 1, 15), 16)",
+    "databricks": "CAST(CONV(SUBSTRING(MD5(CAST({} AS STRING)), 1, 15), 16, 10) AS BIGINT)",
+    "duckdb": "CAST('0x' || SUBSTR(MD5(CAST({} AS VARCHAR)), 1, 15) AS BIGINT)",
+}
+FLOAT = {"bigquery": "FLOAT64", "postgres": "DOUBLE PRECISION", "redshift": "DOUBLE PRECISION"}
+
+
+def symmetric_sql(agg: str, x: str, key: str, dialect: str) -> str | None:
+    """Looker's symmetric sum / average of `x` counted once per `key`; None for an unknown warehouse."""
+    if dialect not in SYM_HASH:
+        return None
+    h = f"CAST({SYM_HASH[dialect].format(key)} AS DECIMAL(38,9))"
+    # rounded as a decimal (Postgres has no ROUND(double precision, int)), to 6 places as Looker does
+    total = (f"CAST(ROUND(COALESCE(SUM(DISTINCT CAST(COALESCE({x}, 0) AS DECIMAL(38,9)) + {h}) - SUM(DISTINCT {h}), 0), 6)"
+             f" AS {FLOAT.get(dialect, 'DOUBLE')})")
+    if agg == "sum":
+        return total
+    return f"{total} / NULLIF(CAST(COUNT(DISTINCT CASE WHEN {x} IS NOT NULL THEN {key} END) AS {FLOAT.get(dialect, 'DOUBLE')}), 0)"
+
+
 QUERY_AGG = {"sum": "COALESCE(SUM({}), 0)", "average": "AVG({})", "min": "MIN({})", "max": "MAX({})", "count_distinct": "COUNT(DISTINCT {})"}
 
 
@@ -2038,7 +2067,10 @@ class _Query:
         self.join_sql: dict[str, str] = {}
         self.join_reads: dict[str, set[str]] = {}
         self.busy: set[str] = set()
-        self.aggs: list[tuple[str, str, str]] = []  # (alias, aggregation, field) for the fan-out check
+        self.aggs: list[tuple[str, str, str, str]] = []  # (alias, aggregation, field, placeholder) for the fan-out check
+        self.held: dict[str, tuple[str, str]] = {}  # placeholder -> (plain SQL, symmetric SQL), picked once joins are known
+        self.fanned: set[str] = set()  # placeholders whose rows repeat: symmetric
+        self.windows: dict[str, tuple[str, str]] = {}  # placeholder -> (percent_of_total / running_total, measure SQL)
         self.tz: set[str] = set()  # timeframes Looker converts to the query time zone
         self.in_measure = 0
         self.problems: list[str] = []
@@ -2140,21 +2172,52 @@ class _Query:
                 if pk is not None:
                     key, p = self.p._field_sql(view, pk["name"], "query", seen, self, a)
                     problems += p
-                    self.aggs.append((a, "count_distinct", ref))
+                    self.aggs.append((a, "count_distinct", ref, ""))
                     return f"COUNT(DISTINCT {f'CASE WHEN {cond} THEN {key} END' if cond else key})", problems
-                self.aggs.append((a, "count", ref))
+                self.aggs.append((a, "count", ref, ""))
                 return (f"COUNT(CASE WHEN {cond} THEN 1 END)" if cond else "COUNT(*)"), problems
             if mtype in QUERY_AGG:
                 expr, p = self.p._expand(view, m.get("sql") or f"${{TABLE}}.{m['name']}", "query", seen, self, a)
                 problems += p
-                self.aggs.append((a, mtype, ref))
-                return QUERY_AGG[mtype].format(f"CASE WHEN {cond} THEN {expr} END" if cond else expr), problems
+                x = f"CASE WHEN {cond} THEN {expr} END" if cond else expr
+                plain, token = QUERY_AGG[mtype].format(x), ""
+                pk = self.p._pk(view) if mtype in ("sum", "average") else None
+                if pk is not None:
+                    key, kp = self.p._field_sql(view, pk["name"], "query", seen, self, a)
+                    sym = None if kp else symmetric_sql(mtype, x, key, self.p.dialect)
+                    if sym:
+                        token = f"__held{len(self.held)}__"
+                        self.held[token] = (plain, sym)
+                self.aggs.append((a, mtype, ref, token))
+                return token or plain, problems
+            if mtype in ("sum_distinct", "average_distinct"):
+                expr, p = self.p._expand(view, m.get("sql") or f"${{TABLE}}.{m['name']}", "query", seen, self, a)
+                key_sql = m.get("sql_distinct_key") or (f"${{{self.p._pk(view)['name']}}}" if self.p._pk(view) else "")
+                if not key_sql:
+                    return "", problems + p + [f"measure {ref} is type: {mtype} without sql_distinct_key or a primary key"]
+                key, kp = self.p._expand(view, key_sql, "query", seen, self, a)
+                sym = symmetric_sql(mtype.split("_")[0], f"CASE WHEN {cond} THEN {expr} END" if cond else expr, key, self.p.dialect)
+                if sym is None:
+                    return "", problems + p + kp + [f"measure {ref} is type: {mtype}; set the warehouse type in unshackle.toml to write it"]
+                self.aggs.append((a, "sum_distinct", ref, ""))
+                return sym, problems + p + kp
+            if mtype in ("percent_of_total", "running_total"):
+                refs = REF.findall(m.get("sql") or "")
+                inner_types = {str((self.p._field(self.view_of(r.rpartition(".")[0] or a) or view, r.rpartition(".")[2]) or {}).get("type", ""))
+                               for r in refs}
+                if conds or not refs or not inner_types <= {"sum", "count"}:
+                    return "", problems + [f"measure {ref} is type: {mtype} over {', '.join(sorted(inner_types)) or 'SQL'}; "
+                                           "Looker computes it over the result rows, write it in the notebook"]
+                inner, p = self.p._expand(view, m.get("sql") or "", "query", seen, self, a)
+                token = f"__window{len(self.windows)}__"
+                self.windows[token] = (mtype, inner)
+                return token, problems + p
             if mtype == "number":
                 if conds:
                     problems.append(f"measure {ref} is type: number with filters")
                 expr, p = self.p._expand(view, m.get("sql") or "", "query", seen, self, a)
                 if AGG_FN.search(REF.sub("", m.get("sql") or "")):
-                    self.aggs.append((a, "sql", ref))  # aggregates written in SQL: assume rows must not repeat
+                    self.aggs.append((a, "sql", ref, ""))  # aggregates written in SQL: assume rows must not repeat
                 return f"({expr})", problems + p
             return "", problems + [f"measure {ref} is type: {mtype}"]
         finally:
@@ -2183,7 +2246,7 @@ class _Query:
         many = [a for a, r in rel.items() if r in ("one_to_many", "many_to_many")]
         outer = [a for a in self.order if self.joins[a].get("type") == "full_outer"]
         out = []
-        for a, agg, ref in self.aggs:
+        for a, agg, ref, token in self.aggs:
             if agg in ("count", "sql") and outer:
                 out.append(f"{ref} counts rows, and the full outer join of {', '.join(outer)} adds rows without a {self.base}")
                 continue
@@ -2192,6 +2255,9 @@ class _Query:
             direct = rel.get(a) == "one_to_one" and not self.join_reads.get(a)
             if not many and (a == self.base or direct):
                 continue
+            if token:
+                self.fanned.add(token)  # Looker's symmetric aggregate
+                continue
             why = (f"the query joins {', '.join(f'{x} {rel[x]}' for x in many)}" if many
                    else f"{a} is joined {rel.get(a)}" + ("" if rel.get(a) != "one_to_one" else " through another join"))
             out.append(f"{ref} ({agg}) counts repeated rows because {why}; Looker uses symmetric aggregates here")
@@ -2199,6 +2265,25 @@ class _Query:
 
     def sql(self, select: list[tuple[str, str]], where: list[str], having: list[str], dims: int, order: list[str], limit: str) -> str:
         """`select` is (expression, column) with the dimensions first."""
+        by_column = {c: e for e, c in select}
+        order_sql = ", ".join(by_column.get(o.split()[0], o.split()[0]) + (" DESC" if o.endswith(" DESC") else "") for o in order)
+
+        def resolve(text: str) -> str:
+            for token, (kind, inner) in self.windows.items():
+                if kind == "percent_of_total":
+                    window = f"100.0 * {inner} / NULLIF(SUM({inner}) OVER (), 0)"
+                elif order_sql and not any(t in order_sql for t in self.windows):
+                    window = f"SUM({inner}) OVER (ORDER BY {order_sql} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+                else:
+                    self.problems.append("a running_total needs the query sorted by something other than a running total")
+                    window = ""
+                text = text.replace(token, window)
+            for token, (plain, sym) in self.held.items():
+                text = text.replace(token, sym if token in self.fanned else plain)
+            return text
+
+        select = [(resolve(e), c) for e, c in select]
+        having = [resolve(h) for h in having]
         table = self._table(self.aliases[self.base], self.problems)
         lines = ["SELECT"]
         lines += [f"    {e} AS {c}{',' if i < len(select) - 1 else ''}" for i, (e, c) in enumerate(select)]
