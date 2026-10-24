@@ -447,10 +447,6 @@ def _evidence_links():
     return mod.CASES
 
 
-def _yaml_value(v: str) -> str:
-    return json.dumps(v)  # a YAML double-quoted scalar
-
-
 @pytest.fixture(scope="module")
 def tiles3(tmp_path_factory) -> dict:
     """Round 3's captured queries as tiles of a LookML dashboard on BigQuery."""
@@ -465,7 +461,7 @@ def tiles3(tmp_path_factory) -> dict:
     elements = "".join(
         f"  - name: {n}\n    model: m\n    explore: ev_l\n    type: looker_grid\n    fields: [{', '.join(cases[n]['fields'])}]\n"
         + (f"    sorts: [{', '.join(cases[n]['sorts'])}]\n" if cases[n].get("sorts") else "")
-        + ("    filters:\n" + "".join(f"      {k}: {_yaml_value(v)}\n" for k, v in cases[n]["filters"].items()) if cases[n].get("filters") else "")
+        + ("    filters:\n" + "".join(f"      {k}: {json.dumps(v)}\n" for k, v in cases[n]["filters"].items()) if cases[n].get("filters") else "")
         for n in names
     )
     store.put_text("lookml/r3.dashboard.lookml", f"- dashboard: r3\n  title: R3\n  elements:\n{elements}")

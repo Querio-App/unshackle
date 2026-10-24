@@ -152,11 +152,10 @@ DIALECT_DATES: dict[str, dict[str, str]] = {
 }
 # hour '2026-12-31 23', minute '2026-12-31 23:30', time_of_day '23:30' (Looker on BigQuery: FORMAT_TIMESTAMP
 # '%F %H', '%F %H:%M', '%H:%M'), as each warehouse formats a timestamp
+TO_CHAR = ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"})
 TIME_FORMATS = {
     "bigquery": ("FORMAT_TIMESTAMP('{}', CAST({{}} AS TIMESTAMP))", {"hour": "%F %H", "minute": "%F %H:%M", "time_of_day": "%H:%M"}),
-    "snowflake": ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"}),
-    "postgres": ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"}),
-    "redshift": ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"}),
+    "snowflake": TO_CHAR, "postgres": TO_CHAR, "redshift": TO_CHAR,
     "databricks": ("DATE_FORMAT({{}}, '{}')", {"hour": "yyyy-MM-dd HH", "minute": "yyyy-MM-dd HH:mm", "time_of_day": "HH:mm"}),
     "duckdb": ("STRFTIME({{}}, '{}')", {"hour": "%Y-%m-%d %H", "minute": "%Y-%m-%d %H:%M", "time_of_day": "%H:%M"}),
 }
@@ -578,7 +577,8 @@ def relative_bounds(v: str, datatype: str, dialect: str) -> tuple[str, str | Non
         return None
     date = datatype == "date"
     today = "CURRENT_DATE()" if date else "TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY)"
-    add = (lambda x, n, unit: f"DATE_ADD({x}, INTERVAL {n} {unit})") if date else (lambda x, n, unit: f"TIMESTAMP_ADD({x}, INTERVAL {n} {unit})")
+    fn = "DATE_ADD" if date else "TIMESTAMP_ADD"
+    add = lambda x, n, unit: f"{fn}({x}, INTERVAL {n} {unit})"  # noqa: E731
     m = re.fullmatch(r"(\d+)\s+days?", v, re.I)
     if m and int(m.group(1)) > 0:
         n = int(m.group(1))
@@ -720,8 +720,7 @@ class Liquid:
         self.p, self.q, self.values = parser, q, q.liquid  # values: "view.field" -> the query's filter value
 
     def _lookup(self, view: str, name: str, kind: str) -> tuple[str, dict[str, Any]] | None:
-        qual, _, short = name.rpartition(".")
-        v = (self.q.view_of(qual) or qual) if qual else view
+        v, _, short = self.q.key(name, view).rpartition(".")
         f = self.p._field(v, short, (kind,))
         return None if f is None else (f"{v}.{short}", f)
 
@@ -765,9 +764,9 @@ class Liquid:
         text = f"'{bound:%Y-%m-%d %H:%M:%S}'"
         return (f"TIMESTAMP({text})" if self.p.dialect == "bigquery" else f"CAST({text} AS TIMESTAMP)"), ""
 
-    def _field_key(self, view: str, ref: str) -> str:
-        qual, _, name = ref.rpartition(".")
-        return f"{(self.q.view_of(qual) or qual) if qual else view}.{name}"
+    def _dialect_name(self) -> tuple[str | None, str]:
+        value = DIALECT_NAME.get(self.p.dialect)
+        return value, "" if value else "_dialect._name is only known for BigQuery (set the warehouse type in unshackle.toml)"
 
     def render(self, view: str, sql: str) -> tuple[str, list[str]]:
         problems: list[str] = []
@@ -788,26 +787,7 @@ class Liquid:
             if word in stop:
                 return "".join(out), i
             i += 1
-            if part.startswith("{{"):
-                expr = part.strip("{}-").strip()
-                if expr.endswith("._parameter_value"):
-                    value, why = self.param(view, expr[: -len("._parameter_value")])
-                elif expr == "_dialect._name":
-                    value = DIALECT_NAME.get(self.p.dialect)
-                    why = "" if value else "_dialect._name is only known for BigQuery (set the warehouse type in unshackle.toml)"
-                else:
-                    value, why = None, f"Liquid output {part} is not translated"
-                out.append(value if value is not None else "")
-                problems += [why] if why else []
-            elif word == "parameter":
-                value, why = self.param(view, arg)
-                out.append(value if value is not None else "")
-                problems += [why] if why else []
-            elif word in ("date_start", "date_end"):
-                value, why = self._date(view, arg, word == "date_end")
-                out.append(value if value is not None else "")
-                problems += [why] if why else []
-            elif word == "comment":
+            if word == "comment":
                 _, i = self._block(view, parts, i, [], ("endcomment",))
                 i += 1
             elif word == "condition":
@@ -841,7 +821,22 @@ class Liquid:
                     cond = tag[5:].strip() if tag.startswith("elsif") else "true"
                 out.append(taken or "")
             else:
-                problems.append(f"Liquid tag {{% {word} %}} is not translated")
+                if part.startswith("{{"):
+                    expr = part.strip("{}-").strip()
+                    if expr.endswith("._parameter_value"):
+                        value, why = self.param(view, expr[: -len("._parameter_value")])
+                    elif expr == "_dialect._name":
+                        value, why = self._dialect_name()
+                    else:
+                        value, why = None, f"Liquid output {part} is not translated"
+                elif word == "parameter":
+                    value, why = self.param(view, arg)
+                elif word in ("date_start", "date_end"):
+                    value, why = self._date(view, arg, word == "date_end")
+                else:
+                    value, why = None, f"Liquid tag {{% {word} %}} is not translated"
+                out.append(value if value is not None else "")
+                problems += [why] if why else []
         if stop:
             problems.append(f"Liquid block is missing {{% {stop[-1]} %}}")
         return "".join(out), i
@@ -863,21 +858,15 @@ class Liquid:
         m = LIQUID_COMPARE.match(atom)
         if m:
             subject, same = m.group(1), m.group(2) == "=="
-            if subject == "_dialect._name":
-                name = DIALECT_NAME.get(self.p.dialect)
-                if name is None:
-                    problems.append("_dialect._name is only known for BigQuery (set the warehouse type in unshackle.toml)")
-                    return None
-                return (name == m.group(4)) == same
-            if subject.endswith("._parameter_value"):
-                value, why = self.param(view, subject[: -len("._parameter_value")])
+            if subject == "_dialect._name" or subject.endswith("._parameter_value"):
+                value, why = self._dialect_name() if subject == "_dialect._name" else self.param(view, subject[: -len("._parameter_value")])
                 if value is None:
                     problems.append(why)
                     return None
                 return (value == m.group(4)) == same
         m = re.fullmatch(r"([\w.]+)\._(is_filtered|in_query|is_selected)", atom)
         if m:
-            key = self._field_key(view, m.group(1))
+            key = self.q.key(m.group(1), view)
             sets = {"is_filtered": self.q.filtered, "is_selected": self.q.selected,
                     "in_query": self.q.selected | self.q.filtered | self.q.sorted}
             return key in sets[m.group(2)]
@@ -1393,8 +1382,7 @@ class _Parser:
             return f"({TIMEFRAME_SQL[tf].format(expr)})", []
         if tf in ("hour", "minute", "time_of_day") and datatype == "date":
             return "", [f"references timeframe {ref}, a time of a date column"]
-        if tf in ("week", "month", "quarter", "day_of_week", "day_of_week_index", "week_of_year", "day_of_year", "quarter_of_year",
-                  "hour", "minute", "time_of_day"):
+        if tf in LOOKER_VALUE:
             if self.week_start not in ("", *WEEKDAYS):
                 return "", [f"references timeframe {ref}; weeks start on {self.week_start} in this project, write the truncation by hand"]
             sql = timeframe_sql(tf, expr, self.dialect, self.week_start or "monday")
@@ -2193,11 +2181,7 @@ class _Parser:
         # parameters and templated filters first: Liquid in the fields reads them
         tile_filters = el.get("filters") or {}
         templated = set()
-
-        def key(field: str) -> str:
-            qual, _, name = str(field).rpartition(".")
-            return f"{q.view_of(qual or ex['name'])}.{name}"
-
+        key = lambda f: q.key(str(f), q.view_of(ex["name"]))  # noqa: E731
         q.selected = {key(f) for f in fields}
         q.sorted = {key(str(s).split()[0]) for s in el.get("sorts") or [] if str(s).split()} | {key(pv) for pv in pivots}
         q.filtered = {key(f) for f, v in (tile_filters.items() if isinstance(tile_filters, dict) else []) if str(v) != ""}
@@ -2535,6 +2519,11 @@ class _Query:
 
     def view_of(self, a: str) -> str | None:
         return self.aliases.get(self.alias(a))
+
+    def key(self, ref: str, view: str) -> str:
+        """"view.field" of a field reference; `view` when it names none."""
+        qual, _, name = ref.rpartition(".")
+        return f"{(self.view_of(qual) or qual) if qual else view}.{name}"
 
     def use(self, a: str) -> list[str]:
         a = self.alias(a)
