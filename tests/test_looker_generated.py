@@ -515,3 +515,54 @@ def test_hour_timeframes_return_lookers_values():
         for tf in ("hour", "minute", "time_of_day"):
             got = con.execute(f"select {timeframe_sql(tf, 'ts', 'duckdb')} from ev_l where id = {r['ev_l.id']}").fetchone()[0]
             assert got == r[f"ev_l.at_{tf}"], (tf, r["ev_l.id"])
+
+
+def test_sort_on_a_measure_the_tile_does_not_show(db, tmp_path):
+    """Looker adds the sorted measure to the query and orders by it (seen on a real project in a lab: the
+    top 20 brands by order count); a sorted dimension that isn't selected it drops."""
+    repo = tmp_path / "s"
+    repo.mkdir()
+    (repo / "unshackle.toml").write_text('[datasources.warehouse]\ntype = "duckdb"\n')
+    store = RawStore(repo, "looker")
+    store.put_text("lookml/unshackle_evidence.view.lkml", (FIX / "evidence.view.lkml").read_text())
+    store.put_text("lookml/evidence.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence.view"\n' + (FIX / "evidence.explores.lkml").read_text())
+    store.put_text("lookml/s.dashboard.lookml", """- dashboard: s
+  title: S
+  elements:
+  - name: top
+    model: evidence
+    explore: ev_orders
+    type: looker_grid
+    fields: [ev_orders.customer, ev_orders.avg_shipping]
+    sorts: [ev_orders.total_shipping desc, ev_orders.ordered_month]
+    limit: 1
+""")
+    (d,) = get_source("looker").parse(store).dashboards
+    (tile,) = d.tiles
+    assert "ev_orders_total_shipping" in tile.sql and "ordered_month" not in tile.sql, tile.sql
+    assert "sort" not in tile.todo
+    cur = db.execute(tile.sql)
+    (row,) = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
+    assert (row["ev_orders_customer"], float(row["ev_orders_total_shipping"]), float(row["ev_orders_avg_shipping"])) == ("acme", 30.0, 15.0)
+
+
+def test_ossie_metrics_are_bigquery_sql(tmp_path):
+    """The semantic layer on BigQuery: no MEDIAN aggregate (Looker's median instead, as it wrote it), no
+    DATE_TRUNC('grain', x) (TIMESTAMP_TRUNC), no PERCENTILE_CONT aggregate (skipped); all of it parses."""
+    import sqlglot
+    import yaml
+
+    from unshackle.target import ossie
+    from unshackle.target.layout import Layout
+
+    b = _parse_evidence2(tmp_path, "bigquery")
+    files = ossie.render(b, Layout.load(tmp_path))
+    doc = yaml.safe_load(next(v for k, v in files.items() if k.endswith("ev_f.ossie.yaml")))
+    metrics = {m["name"]: m["expression"]["dialects"][0] for ds in doc["datasets"] for m in ds.get("metrics", [])}
+    assert {d["dialect"] for d in metrics.values()} == {"BIGQUERY"}
+    for name, d in metrics.items():
+        sqlglot.parse_one(f"SELECT {d['expression']} FROM t", read="bigquery")
+        assert "DATE_TRUNC('" not in d["expression"] and "MEDIAN(" not in d["expression"], name
+    looker_median = re.search(r"(CASE WHEN COUNT\(ev_f\.n \).*?END) AS ev_f_n_median", (FIX / "stats_total.sql").read_text(), re.S).group(1)
+    assert re.sub(r"\s|ev_f\.", "", metrics["n_median"]["expression"]) == re.sub(r"\s|ev_f\.", "", looker_median)
+    assert "TIMESTAMP_TRUNC(CAST(`at` AS TIMESTAMP), SECOND)" in metrics["t_before"]["expression"]  # the field `at`, reserved on BigQuery

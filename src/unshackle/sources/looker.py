@@ -2309,8 +2309,18 @@ class _Parser:
             if not parts:
                 continue
             if parts[0] not in fields:
-                q.notes.append(f"sort on {parts[0]}, which is not a selected field, is not applied")
-                continue
+                # Looker adds a sorted measure to the query and orders by it; it drops a sorted dimension
+                snap = q.snapshot()
+                sql, kind, p = q.field(parts[0])
+                if kind != "measure":
+                    q.restore(snap)
+                    continue
+                if p or not sql:
+                    q.restore(snap)
+                    q.notes.append(f"sort on {parts[0]}, a measure the tile doesn't show, is not applied: {'; '.join(p) or 'not found'}")
+                    continue
+                meas.append((sql, snake(parts[0])))
+                fields = [*fields, parts[0]]
             desc = len(parts) > 1 and parts[1].lower() == "desc"
             if len(parts) > 2:
                 q.notes.append(f"sort {s!r} orders by one pivoted column; the SQL sorts by {parts[0]}{' desc' if desc else ''}")
