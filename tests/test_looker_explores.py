@@ -178,7 +178,7 @@ def test_timeframe_references_resolve_to_the_group_sql(tmp_path: Path):
     assert dims["created_year_num"].expr == "(EXTRACT(YEAR FROM created_at))"
     assert dims["in_january"].expr == "(EXTRACT(MONTH FROM created_at)) = 1"
     # day_of_week is a name ('Monday') written differently per warehouse
-    assert "day_of_week timeframe is not translated" in dims["created_weekday"].todo
+    assert "the day's name ('Monday')" in dims["created_weekday"].todo and "unshackle.toml" in dims["created_weekday"].todo
     meas = _by_name(_by_name(b.semantic_models)["orders"].measures)
     assert meas["revenue_2024"].expr == "CASE WHEN (EXTRACT(YEAR FROM created_at)) = 2024 THEN amount END"
 
@@ -206,9 +206,11 @@ def test_month_and_week_need_the_warehouse_dialect(tmp_path: Path):
     assert bq["w"].expr == "(FORMAT_DATE('%F', DATE_TRUNC(CAST(ts AS DATE), WEEK(MONDAY))))"
     sf = _by_name(_parse(tmp_path / "c", {"t.view.lkml": view}, "snowflake").semantic_models[0].dimensions)
     assert sf["m"].expr == "(TO_CHAR(CAST(ts AS DATE), 'YYYY-MM'))"
-    # a model whose weeks start on Sunday: no fixed truncation
+    # Snowflake's DATE_TRUNC('week') follows the account's WEEK_START, so weeks are counted back from the weekday
+    assert sf["w"].expr == "(TO_CHAR(DATEADD(day, -((DAYOFWEEKISO(CAST(ts AS DATE)) - 1)), CAST(ts AS DATE)), 'YYYY-MM-DD'))"
+    # a model whose weeks start on Sunday, as Looker writes it on BigQuery
     sunday = _parse(tmp_path / "d", {"t.view.lkml": view, "m.model.lkml": 'connection: "wh"\nweek_start_day: sunday\ninclude: "*.view"\n'}, "bigquery")
-    assert "weeks start on sunday" in _by_name(sunday.semantic_models[0].dimensions)["w"].todo
+    assert _by_name(sunday.semantic_models[0].dimensions)["w"].expr == "(FORMAT_DATE('%F', DATE_TRUNC(CAST(ts AS DATE), WEEK(SUNDAY))))"
 
 
 def test_week_and_month_match_looker_values_in_duckdb(tmp_path: Path):

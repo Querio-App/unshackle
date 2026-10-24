@@ -20,6 +20,7 @@ parse() prefers raw LookML. Without it, it rebuilds views from the explore JSON
 
 from __future__ import annotations
 
+import calendar
 import json
 import posixpath
 import re
@@ -100,24 +101,84 @@ VIS_MARK = {
 }
 COLUMN_TYPE = {"number": "number", "string": "string", "yesno": "boolean", "zipcode": "string", "tier": "string"}
 # `${created_<tf>}` -> SQL on the dimension_group's expression. These give the same value
-# as Looker's SQL in every dialect (a DATE, or an integer part).
+# as Looker's SQL in every dialect (a DATE, an integer part or a fixed name).
 TIMEFRAME_SQL = {
     "date": "CAST({} AS DATE)",
     "year": "EXTRACT(YEAR FROM {})",
     "month_num": "EXTRACT(MONTH FROM {})",
     "day_of_month": "EXTRACT(DAY FROM {})",
     "hour_of_day": "EXTRACT(HOUR FROM {})",
+    "month_name": "CASE EXTRACT(MONTH FROM {}) "
+    + " ".join(f"WHEN {i} THEN '{m}'" for i, m in enumerate(calendar.month_name) if i)
+    + " END",
 }
-# Looker returns these as strings ('2024-01', week start '2024-01-01', weeks starting Monday),
-# written differently per warehouse.
-TIMEFRAME_SQL_DIALECT = {
-    "bigquery": {"month": "FORMAT_DATE('%Y-%m', CAST({} AS DATE))", "week": "FORMAT_DATE('%F', DATE_TRUNC(CAST({} AS DATE), WEEK(MONDAY)))"},
-    "snowflake": {"month": "TO_CHAR(CAST({} AS DATE), 'YYYY-MM')", "week": "TO_CHAR(DATE_TRUNC('week', CAST({} AS DATE)), 'YYYY-MM-DD')"},
-    "postgres": {"month": "TO_CHAR(CAST({} AS DATE), 'YYYY-MM')", "week": "TO_CHAR(DATE_TRUNC('week', CAST({} AS DATE)), 'YYYY-MM-DD')"},
-    "redshift": {"month": "TO_CHAR(CAST({} AS DATE), 'YYYY-MM')", "week": "TO_CHAR(DATE_TRUNC('week', CAST({} AS DATE)), 'YYYY-MM-DD')"},
-    "databricks": {"month": "DATE_FORMAT(CAST({} AS DATE), 'yyyy-MM')", "week": "DATE_FORMAT(DATE_TRUNC('week', CAST({} AS DATE)), 'yyyy-MM-dd')"},
-    "duckdb": {"month": "STRFTIME(CAST({} AS DATE), '%Y-%m')", "week": "STRFTIME(DATE_TRUNC('week', CAST({} AS DATE)), '%Y-%m-%d')"},
+# The rest are strings or week-based numbers that Looker formats (checked against its SQL on
+# BigQuery, tests/fixtures/looker_generated/): month '2026-12', quarter '2026-10' (its first
+# month), week '2026-12-28' (the day it starts), day_of_week 'Thursday', day_of_week_index
+# (0 = week_start_day), week_of_year (ISO, whatever the week start), quarter_of_year 'Q4'.
+# Per warehouse: the type for strings, 'YYYY-MM-DD' / 'YYYY-MM' of a date, the day of the week
+# with Monday = 0, a date minus n days, the quarter's first day, the ISO week, the day of the year.
+DIALECT_DATES: dict[str, dict[str, str]] = {
+    "bigquery": {"str": "STRING", "day": "FORMAT_DATE('%F', {})", "month": "FORMAT_DATE('%Y-%m', {})",
+                 "dow": "MOD(EXTRACT(DAYOFWEEK FROM {}) + 5, 7)", "minus": "DATE_SUB({0}, INTERVAL {1} DAY)",
+                 "quarter": "DATE_TRUNC({}, QUARTER)", "isoweek": "EXTRACT(ISOWEEK FROM {})", "doy": "EXTRACT(DAYOFYEAR FROM {})"},
+    "snowflake": {"str": "VARCHAR", "day": "TO_CHAR({}, 'YYYY-MM-DD')", "month": "TO_CHAR({}, 'YYYY-MM')",
+                  "dow": "(DAYOFWEEKISO({}) - 1)", "minus": "DATEADD(day, -({1}), {0})",
+                  "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "WEEKISO({})", "doy": "DAYOFYEAR({})"},
+    "postgres": {"str": "VARCHAR", "day": "TO_CHAR({}, 'YYYY-MM-DD')", "month": "TO_CHAR({}, 'YYYY-MM')",
+                 "dow": "(CAST(EXTRACT(ISODOW FROM {}) AS INTEGER) - 1)", "minus": "({0} - CAST({1} AS INTEGER))",
+                 "quarter": "CAST(DATE_TRUNC('quarter', {}) AS DATE)", "isoweek": "CAST(EXTRACT(WEEK FROM {}) AS INTEGER)",
+                 "doy": "CAST(EXTRACT(DOY FROM {}) AS INTEGER)"},
+    "redshift": {"str": "VARCHAR", "day": "TO_CHAR({}, 'YYYY-MM-DD')", "month": "TO_CHAR({}, 'YYYY-MM')",
+                 "dow": "MOD(CAST(EXTRACT(DOW FROM {}) AS INTEGER) + 6, 7)", "minus": "DATEADD(day, -({1}), {0})",
+                 "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "CAST(EXTRACT(WEEK FROM {}) AS INTEGER)",
+                 "doy": "CAST(EXTRACT(DOY FROM {}) AS INTEGER)"},
+    "databricks": {"str": "STRING", "day": "DATE_FORMAT({}, 'yyyy-MM-dd')", "month": "DATE_FORMAT({}, 'yyyy-MM')",
+                   "dow": "WEEKDAY({})", "minus": "DATE_SUB({0}, {1})",
+                   "quarter": "DATE_TRUNC('QUARTER', {})", "isoweek": "WEEKOFYEAR({})", "doy": "DAYOFYEAR({})"},
+    "duckdb": {"str": "VARCHAR", "day": "STRFTIME({}, '%Y-%m-%d')", "month": "STRFTIME({}, '%Y-%m')",
+               "dow": "(ISODOW({}) - 1)", "minus": "CAST({0} - CAST({1} AS INTEGER) AS DATE)",
+               "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "WEEKOFYEAR({})", "doy": "DAYOFYEAR({})"},
 }
+WEEKDAYS = [d.lower() for d in calendar.day_name]  # monday first, as Looker's default
+LOOKER_VALUE = {
+    "month": "a 'YYYY-MM' string", "quarter": "a 'YYYY-MM' string of the quarter's first month",
+    "week": "a 'YYYY-MM-DD' string of the day the week starts", "day_of_week": "the day's name ('Monday')",
+    "day_of_week_index": "0-6 from week_start_day", "week_of_year": "the ISO week number",
+    "day_of_year": "the day of the year", "quarter_of_year": "'Q1'-'Q4'",
+}
+
+
+def timeframe_sql(tf: str, expr: str, dialect: str, week_start: str = "monday") -> str | None:
+    """Looker's value for a string or week-based timeframe in `dialect`; None when not known."""
+    d = DIALECT_DATES.get(dialect)
+    if d is None or week_start not in WEEKDAYS:
+        return None
+    day = f"CAST({expr} AS DATE)"
+    offset = WEEKDAYS.index(week_start)
+    dow = d["dow"].format(day)
+    index = dow if offset == 0 else f"MOD({dow} + {7 - offset}, 7)"
+    if tf == "month":
+        return d["month"].format(day)
+    if tf == "quarter":
+        return d["month"].format(d["quarter"].format(day))
+    if tf == "week":
+        if dialect == "bigquery":
+            return d["day"].format(f"DATE_TRUNC({day}, WEEK({week_start.upper()}))")
+        return d["day"].format(d["minus"].format(day, index))
+    if tf == "day_of_week_index":
+        return index
+    if tf == "day_of_week":
+        return f"CASE {dow} " + " ".join(f"WHEN {i} THEN '{n}'" for i, n in enumerate(calendar.day_name)) + " END"
+    if tf == "week_of_year":
+        return d["isoweek"].format(day)
+    if tf == "day_of_year":
+        return d["doy"].format(day)
+    if tf == "quarter_of_year":
+        return f"'Q' || CAST(EXTRACT(QUARTER FROM {day}) AS {d['str']})"  # CONCAT drops NULLs in some warehouses
+    return None
+
+
 ALL_TIMEFRAMES = [
     "raw", "time", "time_of_day", "date", "week", "month", "quarter", "year", "hour", "minute", "second", "millisecond",
     "day_of_week", "day_of_week_index", "day_of_month", "day_of_year", "week_of_year", "month_num", "month_name",
@@ -900,14 +961,13 @@ class _Parser:
             return "", [f"references timeframe {ref}, an hour of a date column"]
         if tf in TIMEFRAME_SQL:
             return f"({TIMEFRAME_SQL[tf].format(expr)})", []
-        if tf in ("week", "month"):
-            if tf == "week" and self.week_start not in ("", "monday"):
+        if tf in ("week", "month", "quarter", "day_of_week", "day_of_week_index", "week_of_year", "day_of_year", "quarter_of_year"):
+            if self.week_start not in ("", *WEEKDAYS):
                 return "", [f"references timeframe {ref}; weeks start on {self.week_start} in this project, write the truncation by hand"]
-            sql = TIMEFRAME_SQL_DIALECT.get(self.dialect, {}).get(tf)
+            sql = timeframe_sql(tf, expr, self.dialect, self.week_start or "monday")
             if sql:
-                return f"({sql.format(expr)})", []
-            fmt = "'YYYY-MM'" if tf == "month" else "'YYYY-MM-DD' of the Monday starting the week"
-            return "", [f"references timeframe {ref}: Looker returns a {fmt} string written in the warehouse's dialect; "
+                return f"({sql})", []
+            return "", [f"references timeframe {ref}: Looker returns {LOOKER_VALUE[tf]}, written in the warehouse's dialect; "
                         f"set [datasources.{self.b.datasource}] type in unshackle.toml and re-run build"]
         return "", [f"references timeframe {ref}: Looker's {tf} timeframe is not translated"]
 
