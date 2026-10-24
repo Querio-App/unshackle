@@ -99,16 +99,13 @@ TIME_INTEL = {
 TO_DATE = {"DATESYTD": "year", "DATESQTD": "quarter", "DATESMTD": "month", "TOTALYTD": "year", "TOTALQTD": "quarter", "TOTALMTD": "month"}
 # construct -> hint for the agent (see skills/source-powerbi "DAX -> MetricFlow / SQL")
 DAX_HINT = {
-    "ALL": "removes filter context (ALL): its value depends on the visual's grouping, so it is no metric; tile SQL computes it",
-    "ALLEXCEPT": "removes filter context (ALLEXCEPT): its value depends on the visual's grouping, so it is no metric; tile SQL computes it",
+    **{f: f"removes filter context ({f}): its value depends on the visual's grouping, so it is no metric; tile SQL computes it"
+       for f in ("ALL", "ALLEXCEPT", "REMOVEFILTERS")},
     "ALLSELECTED": "depends on visual filter context (ALLSELECTED): no metric; tile SQL computes it inside CALCULATE",
-    "REMOVEFILTERS": "removes filter context (REMOVEFILTERS): its value depends on the visual's grouping, so it is no metric; tile SQL computes it",
     "FILTER": "table FILTER inside CALCULATE: FILTER(ALL(..)/ALLSELECTED(..), ..) (running totals) is computed in tile SQL; "
               "a column predicate is a simple metric filter; else a SQL model",
-    "SUMX": "iterator over another table, VALUES(..) or RELATED columns: tile SQL computes VALUES(T[c]); as a metric, a SQL model joining the tables, then a measure",
-    "AVERAGEX": "iterator over another table, VALUES(..) or RELATED columns: tile SQL computes VALUES(T[c]); as a metric, a SQL model, then a measure",
-    "MINX": "iterator over another table, VALUES(..) or RELATED columns: tile SQL computes VALUES(T[c]); as a metric, a SQL model, then a measure",
-    "MAXX": "iterator over another table, VALUES(..) or RELATED columns: tile SQL computes VALUES(T[c]); as a metric, a SQL model, then a measure",
+    **{f: "iterator over another table, VALUES(..) or RELATED columns: tile SQL computes VALUES(T[c]); as a metric, a SQL model"
+          + (" joining the tables" if f == "SUMX" else "") + ", then a measure" for f in DAX_ITER},
     "RANKX": "ranking (RANKX): window SQL (RANK() OVER ...) in the tile",
     "TOPN": "TOPN: ORDER BY ... LIMIT in the tile SQL",
     "USERELATIONSHIP": "activates an inactive relationship (USERELATIONSHIP): add a second foreign entity / time dimension",
@@ -1275,22 +1272,28 @@ def dax_parse(text: str) -> Any:
     return _inline_vars(_DaxParser(text).parse())
 
 
-def dax_functions(node: Any) -> list[str]:
+def dax_functions(node: Any, expand: Callable[[Any], Any] | None = None) -> list[str]:
+    """The DAX functions an expression uses; `expand` maps a measure reference to its parsed DAX to look through it."""
     out: list[str] = []
 
-    def walk(n: Any) -> None:
-        if isinstance(n, DCall):
+    def walk(n: Any, depth: int = 0) -> None:
+        sub = expand(n) if expand else None
+        if sub is not None:
+            if depth > 8:
+                raise DaxError("measure nesting too deep")
+            walk(sub, depth + 1)
+        elif isinstance(n, DCall):
             out.append(n.name)
             for a in n.args:
-                walk(a)
+                walk(a, depth)
         elif isinstance(n, DBin):
-            walk(n.left)
-            walk(n.right)
+            walk(n.left, depth)
+            walk(n.right, depth)
         elif isinstance(n, DUn):
-            walk(n.operand)
+            walk(n.operand, depth)
         elif isinstance(n, DSet):
             for a in n.items:
-                walk(a)
+                walk(a, depth)
 
     walk(node)
     return out
@@ -1581,6 +1584,13 @@ class _Recorder:
         return _qi(physical)
 
 
+def _cols_read(fn: Callable[[Any], Any]) -> frozenset[tuple[str, str]]:
+    """The model columns `fn(q)` reads, (table, column lower)."""
+    r = _Recorder()
+    fn(r)
+    return frozenset(r.cols)
+
+
 class _Qualified(_Recorder):
     def __init__(self, aliases: dict[str, str]):
         super().__init__()
@@ -1644,9 +1654,6 @@ class _TileCtx:
 
     def from_sql(self, q: Any) -> str:
         return " ".join(self.parser._from_lines(self.pm, self.base, self.joins, q))
-
-    def outer(self, alias: str) -> str:
-        return f"g.{alias}"
 
     def hoist(self, sql: str, q: Any) -> str:
         """An aggregate of the tile's own query: a column of g when the tile groups in g."""
@@ -2431,13 +2438,12 @@ class _Parser:
             keep = isinstance(x, DCall) and x.name == "KEEPFILTERS" and len(x.args) == 1
             if keep:
                 x = x.args[0]
+            filter_all = isinstance(x, DCall) and x.name == "FILTER" and len(x.args) == 2 and isinstance(x.args[0], DCall) and x.args[0].name in ("ALL", "ALLSELECTED") and x.args[0].args
+            if keep and (filter_all or isinstance(x, DCall) and x.name in REMOVERS):
+                raise DaxError(f"KEEPFILTERS({x.name}(..))")
             if isinstance(x, DCall) and x.name in REMOVERS:
-                if keep:
-                    raise DaxError(f"KEEPFILTERS({x.name}(..))")
                 removals.append(self._removal(pm, x))
-            elif isinstance(x, DCall) and x.name == "FILTER" and len(x.args) == 2 and isinstance(x.args[0], DCall) and x.args[0].name in ("ALL", "ALLSELECTED") and x.args[0].args:
-                if keep:
-                    raise DaxError("KEEPFILTERS(FILTER(..))")
+            elif filter_all:
                 over = x.args[0]
                 matcher, kinds = self._removal(pm, over)
                 table, cols = self._filter_table(pm, over)
@@ -2446,9 +2452,7 @@ class _Parser:
                 lifted = True  # its MAX()/MIN() compare to the outer row, so it can't sit in the outer query's own aggregates
             else:
                 self.filter_jinja(pm, x)  # a plain column predicate, else DaxError
-                r = _Recorder()
-                self.row_sql(pm, x, None, r)
-                cols = frozenset(r.cols)
+                cols = _cols_read(lambda r: self.row_sql(pm, x, None, r))
                 if not keep:
                     removals += [((lambda c, cols=cols: c in cols), ALL_KINDS), *self._auto_all(pm, cols, ALL_KINDS)]
                 added.append(_Pred(lambda q, x=x: self.row_sql(pm, x, None, q), cols, "calc", False))
@@ -2534,15 +2538,18 @@ class _Parser:
         where = [p.sql(sq) for p in use]
         return f"(SELECT {fn}({self.column_sql(pm, table, col, sq)}) {frm}" + (f" WHERE {' AND '.join(where)}" if where else "") + ")"
 
-    def _context_sql(self, pm: PModel, inner: Any, ctx: list[_Pred], depth: int, tile: _TileCtx) -> str:
+    def _context_sql(self, pm: PModel, inner: Any, ctx: list[_Pred], depth: int, tile: _TileCtx, per: tuple[str, str] | None = None) -> str:
         """CALCULATE that lifts a filter the query applies: a correlated subquery over the tile's tables with
-        the filters that are left (the visual's grouping as equalities to the outer row)."""
+        the filters that are left (the visual's grouping as equalities to the outer row). `per`: (table, column)
+        to compute it per value of, as `_v`."""
         tile.need()
         sq = tile.sub()
         sub_ctx = [replace(p, enforced=True) for p in ctx]
-        body = self.agg_sql(pm, inner, sq, sub_ctx, depth + 1, tile)
+        key = self.column_sql(pm, *per, sq) if per else ""
+        body = self.agg_sql(pm, inner, sq, sub_ctx, depth + 1, tile) + (" AS _v" if per else "")
         where = [p.sql(sq) for p in sub_ctx]
-        return f"(SELECT {body} {tile.from_sql(sq)}" + (f" WHERE {' AND '.join(where)}" if where else "") + ")"
+        return (f"(SELECT {body} {tile.from_sql(sq)}" + (f" WHERE {' AND '.join(where)}" if where else "")
+                + (f" GROUP BY {key}" if per else "") + ")")
 
     def _iter_values(self, pm: PModel, n: DCall, q: Any, preds: list[_Pred], depth: int, tile: _TileCtx | None) -> str:
         """SUMX/AVERAGEX/MINX/MAXX(VALUES(T[c]), <measure>): the measure per value of T[c] in the context, then
@@ -2557,40 +2564,12 @@ class _Parser:
         if tile is None:
             self.column_sql(pm, table, col, q)  # the tile joins T
             return self.agg_sql(pm, body, q, preds, depth + 1, None)
-        tile.need()
-        sq = tile.sub()
-        sub_ctx = [replace(p, enforced=True) for p in preds]
-        key = self.column_sql(pm, table, col, sq)
-        value = self.agg_sql(pm, body, sq, sub_ctx, depth + 1, tile)
-        where = [p.sql(sq) for p in sub_ctx]
-        return (f"(SELECT {SQL_AGG[DAX_ITER[n.name]]}(_v) FROM (SELECT {value} AS _v {tile.from_sql(sq)}"
-                + (f" WHERE {' AND '.join(where)}" if where else "") + f" GROUP BY {key}) AS _values_{tile.n})")
+        per_value = self._context_sql(pm, body, preds, depth, tile, (table, col))
+        return f"(SELECT {SQL_AGG[DAX_ITER[n.name]]}(_v) FROM {per_value} AS _values_{tile.n})"
 
-    def _functions_deep(self, pm: PModel, n: Any, depth: int = 0) -> set[str]:
+    def _functions_deep(self, pm: PModel, n: Any) -> set[str]:
         """The DAX functions an expression uses, through the measures it references."""
-        out: set[str] = set()
-
-        def walk(x: Any) -> None:
-            ref = self._measure_ref(pm, x)
-            if ref is not None:
-                if depth > 8:
-                    raise DaxError("measure nesting too deep")
-                out.update(self._functions_deep(pm, dax_parse(ref.expression), depth + 1))
-            elif isinstance(x, DCall):
-                out.add(x.name)
-                for y in x.args:
-                    walk(y)
-            elif isinstance(x, DBin):
-                walk(x.left)
-                walk(x.right)
-            elif isinstance(x, DUn):
-                walk(x.operand)
-            elif isinstance(x, DSet):
-                for y in x.items:
-                    walk(y)
-
-        walk(n)
-        return out
+        return set(dax_functions(n, lambda x: dax_parse(m.expression) if (m := self._measure_ref(pm, x)) is not None else None))
 
     # ------------------------------------------------------------ roles -> row filters / permissions
 
@@ -3122,14 +3101,10 @@ class _Parser:
         tables = [base] + list(joins)
         q: Any = _Recorder() if len(tables) == 1 else _Qualified({t: _alias(t) for t in tables})
         tile = _TileCtx(self, pm, base, joins, q)
-        for fn in where:
-            r = _Recorder()
-            fn(r)
-            tile.preds.append(_Pred(fn, frozenset(r.cols), "where"))
+        tile.preds += [_Pred(fn, _cols_read(fn), "where") for fn in where]
         for a, f in dims:
-            r = _Recorder()
-            self._field_sql(pm, f, r)
-            tile.preds.append(_Pred(lambda sq, f=f, a=a: f"{self._field_sql(pm, f, sq)} IS NOT DISTINCT FROM {tile.outer(a)}", frozenset(r.cols), "group"))
+            cols = _cols_read(lambda r, f=f: self._field_sql(pm, f, r))
+            tile.preds.append(_Pred(lambda sq, f=f, a=a: f"{self._field_sql(pm, f, sq)} IS NOT DISTINCT FROM g.{a}", cols, "group"))
         values = [(a, self._field_sql(pm, f, q, tile)) for a, f in vals]
         if tile.used:  # a measure changes the filter context: group in g, then the subqueries per row of g
             tile.grouped, tile.n = True, 0
