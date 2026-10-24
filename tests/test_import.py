@@ -292,8 +292,9 @@ def test_reimport_replaces_raw(tmp_path: Path):
     assert [p.name for p in (repo / "migration/raw/tableau/workbooks").iterdir()] == ["B.twb"]
 
 
-def _superset_zip(tmp_path: Path, top: str = "dashboard_export_20261022T104713") -> Path:
+def _superset_zip(tmp_path: Path) -> Path:
     """What Export on Superset's Dashboards list downloads: the bundle under one dated top folder."""
+    top = "dashboard_export_20261022T104713"
     archive = tmp_path / f"{top}.zip"
     with zipfile.ZipFile(archive, "w") as z:
         for p in sorted((FIX / "superset/export").rglob("*.yaml")):
@@ -343,7 +344,7 @@ def test_superset_drops_database_secrets(tmp_path: Path):
 def test_superset_rejects_other_files(tmp_path: Path):
     (tmp_path / "dashboard.json").write_text("{}")
     r = _cli("import", "superset", tmp_path / "dashboard.json", "--repo", tmp_path)
-    assert r.exit_code != 0 and "Superset import accepts" in r.output
+    assert r.exit_code != 0 and "accepts" in r.output
     (tmp_path / "empty").mkdir()
     (tmp_path / "empty/readme.md").write_text("hi\n")
     r = _cli("import", "superset", tmp_path / "empty", "--repo", tmp_path)

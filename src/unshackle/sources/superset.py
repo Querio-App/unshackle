@@ -88,6 +88,12 @@ EXPORT_DIRS = {"databases", "datasets", "charts", "dashboards", "queries"}
 DROP_DB_KEYS = {"encrypted_extra", "masked_encrypted_extra", "ssh_tunnel", "server_cert"}
 
 
+def _scrub_db(data: bytes) -> bytes:
+    """A database export file without passwords, service-account JSON or SSH tunnel settings."""
+    db = {k: v for k, v in (yaml.safe_load(data) or {}).items() if k not in DROP_DB_KEYS}
+    return yaml.safe_dump(db, sort_keys=False, allow_unicode=True).encode()
+
+
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [] if value is None else [value]
 
@@ -299,8 +305,7 @@ class SupersetSource(Source):
                     files.update(self._export(f"/api/v1/{kind}/export/", params={"q": f"!({','.join(map(str, ids))})"}))
         for rel, data in sorted(files.items()):
             if rel.startswith("databases/"):
-                db = {k: v for k, v in (yaml.safe_load(data) or {}).items() if k not in DROP_DB_KEYS}
-                data = yaml.safe_dump(db, sort_keys=False, allow_unicode=True).encode()
+                data = _scrub_db(data)
             store.put_bytes(f"export/{rel}", data)
 
         charts = [yaml.safe_load(d) for r, d in files.items() if r.startswith("charts/")]
@@ -361,13 +366,12 @@ class SupersetSource(Source):
 
     def import_path(self, path: Path) -> dict[str, bytes]:
         """An export bundle (zip already unpacked) -> export/<path below the folder holding metadata.yaml>."""
-        if path.is_file():
-            raise SourceError(f"{path.name}: Superset import accepts {self.manual_files}")
         files = list(_manual.files_of(path))
-        roots = [rel.removesuffix("metadata.yaml") for rel, _ in files if rel.rsplit("/", 1)[-1] == "metadata.yaml"]
+        roots = sorted((rel.removesuffix("metadata.yaml") for rel, _ in files if rel.rsplit("/", 1)[-1] == "metadata.yaml"),
+                       key=len, reverse=True)
         out: dict[str, bytes] = {}
         for rel, p in files:
-            root = next((r for r in sorted(roots, key=len, reverse=True) if rel.startswith(r)), None)
+            root = next((r for r in roots if rel.startswith(r)), None)
             if root is None:
                 continue
             inner = rel[len(root):]
@@ -384,7 +388,7 @@ class SupersetSource(Source):
             if not isinstance(doc, dict) or not doc.get("uuid"):
                 raise SourceError(f"{rel}: not a Superset export file (no uuid)")
             if inner.startswith("databases/"):
-                data = yaml.safe_dump({k: v for k, v in doc.items() if k not in DROP_DB_KEYS}, sort_keys=False, allow_unicode=True).encode()
+                data = _scrub_db(data)
             out[f"export/{inner}"] = data
         return out
 
