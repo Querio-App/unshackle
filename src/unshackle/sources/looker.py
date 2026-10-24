@@ -51,7 +51,6 @@ from unshackle.ir import (
 )
 from unshackle.raw import RawStore
 from unshackle.sources import _manual
-from unshackle.sources._semyaml import op_sql
 from unshackle.sources.base import Inventory, Source
 from unshackle.target.layout import Layout
 from unshackle.target.ossie import FILTER_REF
@@ -151,12 +150,23 @@ DIALECT_DATES: dict[str, dict[str, str]] = {
                "dow": "(ISODOW({}) - 1)", "minus": "CAST({0} - CAST({1} AS INTEGER) AS DATE)",
                "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "WEEKOFYEAR({})", "doy": "DAYOFYEAR({})"},
 }
+# hour '2026-12-31 23', minute '2026-12-31 23:30', time_of_day '23:30' (Looker on BigQuery: FORMAT_TIMESTAMP
+# '%F %H', '%F %H:%M', '%H:%M'), as each warehouse formats a timestamp
+TIME_FORMATS = {
+    "bigquery": ("FORMAT_TIMESTAMP('{}', CAST({{}} AS TIMESTAMP))", {"hour": "%F %H", "minute": "%F %H:%M", "time_of_day": "%H:%M"}),
+    "snowflake": ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"}),
+    "postgres": ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"}),
+    "redshift": ("TO_CHAR({{}}, '{}')", {"hour": "YYYY-MM-DD HH24", "minute": "YYYY-MM-DD HH24:MI", "time_of_day": "HH24:MI"}),
+    "databricks": ("DATE_FORMAT({{}}, '{}')", {"hour": "yyyy-MM-dd HH", "minute": "yyyy-MM-dd HH:mm", "time_of_day": "HH:mm"}),
+    "duckdb": ("STRFTIME({{}}, '{}')", {"hour": "%Y-%m-%d %H", "minute": "%Y-%m-%d %H:%M", "time_of_day": "%H:%M"}),
+}
 WEEKDAYS = [d.lower() for d in calendar.day_name]  # monday first, as Looker's default
 LOOKER_VALUE = {
     "month": "a 'YYYY-MM' string", "quarter": "a 'YYYY-MM' string of the quarter's first month",
     "week": "a 'YYYY-MM-DD' string of the day the week starts", "day_of_week": "the day's name ('Monday')",
     "day_of_week_index": "0-6 from week_start_day", "week_of_year": "the ISO week number",
     "day_of_year": "the day of the year", "quarter_of_year": "'Q1'-'Q4'",
+    "hour": "a 'YYYY-MM-DD HH' string", "minute": "a 'YYYY-MM-DD HH:MM' string", "time_of_day": "an 'HH:MM' string",
 }
 
 
@@ -165,6 +175,9 @@ def timeframe_sql(tf: str, expr: str, dialect: str, week_start: str = "monday") 
     d = DIALECT_DATES.get(dialect)
     if d is None:
         return None
+    if tf in ("hour", "minute", "time_of_day"):
+        template, formats = TIME_FORMATS[dialect]
+        return template.format(formats[tf]).format(expr)
     day = f"CAST({expr} AS DATE)"
     offset = WEEKDAYS.index(week_start)
     dow = d["dow"].format(day)
@@ -557,11 +570,41 @@ def _date_bounds(text: str) -> tuple[datetime, datetime | None] | None:
     return None
 
 
-def _date_filter(ref: str, v: str, datatype: str) -> str | None:
-    """Absolute date filters as Looker writes them: a period is [start, start of the next), `before` is <,
-    `after` is >= and `A to B` is [A, B). Relative ones (`7 days`, `last month`) depend on the day: None."""
+def relative_bounds(v: str, datatype: str, dialect: str) -> tuple[str, str | None] | None:
+    """(start, end) SQL of a relative date filter as Looker writes it on BigQuery (filters.sql, date_start_relative):
+    `N days` (today and the N-1 days before), `before N days ago` (end only: start None), `this month`,
+    `last month` (dates only). None for other forms, columns and warehouses."""
+    if dialect != "bigquery" or datatype not in ("date", "timestamp"):
+        return None
+    date = datatype == "date"
+    today = "CURRENT_DATE()" if date else "TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY)"
+    add = (lambda x, n, unit: f"DATE_ADD({x}, INTERVAL {n} {unit})") if date else (lambda x, n, unit: f"TIMESTAMP_ADD({x}, INTERVAL {n} {unit})")
+    m = re.fullmatch(r"(\d+)\s+days?", v, re.I)
+    if m and int(m.group(1)) > 0:
+        n = int(m.group(1))
+        start = add(today, -(n - 1), "DAY")
+        return start, add(start, n, "DAY")
+    m = re.fullmatch(r"before\s+(\d+)\s+days?\s+ago", v, re.I)
+    if m:
+        return "", add(today, -int(m.group(1)), "DAY")
+    if date and v.lower() in ("this month", "last month"):
+        month = "DATE_TRUNC(CURRENT_DATE(), MONTH)"
+        start = month if v.lower() == "this month" else add(month, -1, "MONTH")
+        return start, add(start, 1, "MONTH")
+    return None
+
+
+def _date_filter(ref: str, v: str, datatype: str, dialect: str = "") -> str | None:
+    """Date filters as Looker writes them: a period is [start, start of the next), `before` is <, `after` is
+    >= and `A to B` is [A, B); relative ones in relative_bounds. `day`: a time compared at day grain, with
+    dates only (no relative dates: the grain's type is not checked)."""
+    rel = relative_bounds(v.strip(), datatype, dialect)
+    if rel:
+        start, end = rel
+        return f"{ref} < {end}" if not start else f"({ref} >= {start} AND {ref} < {end})"
+
     def lit(d: datetime) -> str | None:
-        if datatype == "date":
+        if datatype in ("date", "day"):
             return None if (d.hour, d.minute, d.second) != (0, 0, 0) else f"'{d:%Y-%m-%d}'"
         return f"'{d:%Y-%m-%d %H:%M:%S}'"
 
@@ -582,7 +625,16 @@ def _date_filter(ref: str, v: str, datatype: str) -> str | None:
     return None if lo is None or hi is None else f"({ref} >= {lo} AND {ref} < {hi})"
 
 
-def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str = "timestamp") -> str | None:
+def sql_string(text: str, dialect: str = "") -> str:
+    """A string literal: BigQuery and Databricks escape a quote with a backslash (Looker writes 'Levi\\'s'
+    on BigQuery, where 'Levi''s' is a syntax error); the others double it."""
+    if dialect in ("bigquery", "databricks"):
+        return "'" + text.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    return "'" + text.replace("'", "''") + "'"
+
+
+def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str = "timestamp", dialect: str = "",
+                      relative: bool = True) -> str | None:
     """Translate a Looker filter expression to SQL on `ref`. None when it needs a person.
 
     Checked against Looker's generated SQL (BigQuery): string "is not" filters keep NULL rows
@@ -609,25 +661,34 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str 
     if kind == "number":
         return _number_filter(ref, v)
     if kind == "time":
-        return _date_filter(ref, v, datatype)
-    # anything that reads like a relative date needs a person; brackets are literal in a string
-    # filter ("(5) Purchase")
-    if kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
+        return _date_filter(ref, v, datatype, dialect if relative else "")
+    # dates, number ranges and anything that reads like a relative date need a person; brackets
+    # are literal in a string filter ("(5) Purchase")
+    if kind in ("time", "number") or (kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I)):
         return None
-    if '"' in v:  # quoting in a filter value: leave it to a person
+    quoted = re.fullmatch(r'"([^"]*)"', v)
+    if quoted:  # "Levi's": the text itself, no list, wildcard or negation
+        return f"{ref} = {sql_string(quoted.group(1), dialect)}"
+    if '"' in v:  # other quoting in a filter value: leave it to a person
         return None
     parts = [p.strip().replace("^,", ",") for p in re.split(r"(?<!\^),", v)]
     if any(p in ("", "-") or p.startswith("--") for p in parts):
         return None
     include = [p for p in parts if not p.startswith("-")]
     exclude = [p[1:] for p in parts if p.startswith("-")]
-    lit = lambda s: "'" + s.replace("'", "''") + "'"  # noqa: E731
+    lit = lambda s: sql_string(s, dialect)  # noqa: E731
     if any("%" in p for p in parts):
         if len(parts) > 1:
             return None
         return f"({ref} NOT LIKE {lit(exclude[0])} OR {ref} IS NULL)" if exclude else f"{ref} LIKE {lit(include[0])}"
-    eq, ne = op_sql(ref, "equals", include), op_sql(ref, "notEquals", exclude)
-    return " AND ".join(c for c in (eq, ne and f"({ne} OR {ref} IS NULL)") if c)
+    # not _semyaml.op_sql: its literals ignore the dialect's quote escaping
+    conds = []
+    if include:
+        conds.append(f"{ref} = {lit(include[0])}" if len(include) == 1 else f"{ref} IN ({', '.join(map(lit, include))})")
+    if exclude:
+        cond = f"{ref} <> {lit(exclude[0])}" if len(exclude) == 1 else f"{ref} NOT IN ({', '.join(map(lit, exclude))})"
+        conds.append(f"({cond} OR {ref} IS NULL)")
+    return " AND ".join(conds)
 
 
 # a quoted string (backslash escapes, unterminated runs to the end) is kept; a `--` comment outside one is dropped
@@ -641,38 +702,72 @@ def strip_sql_comments(sql: str) -> str:
 
 
 LIQUID_TAG = re.compile(r"(\{%-?.*?-?%\}|\{\{-?.*?-?\}\})", re.S)
-LIQUID_COND = re.compile(r"""^([\w.]+)\._parameter_value\s*(==|!=)\s*(['"])(.*?)\3$""")
+LIQUID_COMPARE = re.compile(r"""^([\w.]+)\s*(==|!=)\s*(['"])(.*?)\3$""")
+DIALECT_NAME = {"bigquery": "bigquery_standard_sql"}  # _dialect._name, as Looker reported it
 
 
 class Liquid:
-    """Looker's Liquid in SQL, rendered for one query: the parts checked against Looker's own SQL
-    (tests/fixtures/looker_generated/liquid_*): `{% parameter p %}` and `{{ p._parameter_value }}` of an
-    unquoted parameter, `{% if p._parameter_value == 'x' %}` branches, `{% condition f %} sql {% endcondition %}`
-    with the filter's expression (`1=1` without one), comments. Anything else is a problem."""
+    """Looker's Liquid in SQL, rendered for one query, as Looker's own SQL showed it
+    (tests/fixtures/looker_generated/liquid_*, dialect, date_start_*, filter_field_sql):
+    - `{% parameter p %}` / `{{ p._parameter_value }}`: an unquoted or number parameter as written, a string
+      parameter as a quoted literal; `{% if %}` / `elsif` / `else` on `p._parameter_value == '...'`, on
+      `_dialect._name` and on `f._is_filtered` / `_in_query` / `_is_selected`, joined by `or` or by `and`;
+    - `{% condition f %} sql {% endcondition %}` with the filter's expression (`1=1` without one);
+    - `{% date_start f %}` / `{% date_end f %}` of an absolute date filter (`NULL` without one);
+    - comments. Anything else is a problem."""
 
-    def __init__(self, parser: "_Parser", values: dict[str, str]):
-        self.p, self.values = parser, values  # "view.field" -> the query's filter value
+    def __init__(self, parser: "_Parser", q: "_Query"):
+        self.p, self.q, self.values = parser, q, q.liquid  # values: "view.field" -> the query's filter value
 
     def _lookup(self, view: str, name: str, kind: str) -> tuple[str, dict[str, Any]] | None:
         qual, _, short = name.rpartition(".")
-        v = qual or view
+        v = (self.q.view_of(qual) or qual) if qual else view
         f = self.p._field(v, short, (kind,))
         return None if f is None else (f"{v}.{short}", f)
 
-    def param(self, view: str, name: str, problems: list[str]) -> str | None:
+    def param(self, view: str, name: str) -> tuple[str | None, str]:
         found = self._lookup(view, name, "parameters")
         if found is None:
-            problems.append(f"Liquid reads {name}, which is not a parameter")
-            return None
+            return None, f"Liquid reads {name}, which is not a parameter"
         key, f = found
-        if str(f.get("type", "string")) != "unquoted":
-            problems.append(f"parameter {name} is type: {f.get('type', 'string')}; only unquoted parameters are checked against Looker")
-            return None
         value = self.values.get(key, f.get("default_value"))
         if value is None:
-            problems.append(f"parameter {name} has no value in this query and no default_value")
-            return None
-        return str(value)
+            return None, f"parameter {name} has no value in this query and no default_value"
+        ptype = str(f.get("type", "string"))
+        if ptype == "unquoted":
+            return str(value), ""
+        if ptype == "number" and re.fullmatch(NUM, str(value).strip()):
+            return str(value).strip(), ""
+        if ptype == "string":
+            return sql_string(str(value), self.p.dialect), ""
+        return None, f"parameter {name} is type: {ptype}, which is not translated"
+
+    def _date(self, view: str, name: str, end: bool) -> tuple[str | None, str]:
+        found = self._lookup(view, name, "filters")
+        if found is None or str(found[1].get("type")) != "date":
+            return None, f"{{% date_{'end' if end else 'start'} {name} %}} reads a field that is not a date filter"
+        value = str(self.values.get(found[0]) or "").strip()
+        if not value:
+            return "NULL", ""
+        m = re.fullmatch(r"(.+?)\s+to\s+(.+)", value, re.I)
+        if m:  # A to B: from the start of A to the start of B
+            a, b = _date_bounds(m.group(1)), _date_bounds(m.group(2))
+            first, last = (a[0] if a else None), (b[0] if b else None)
+        else:  # one period: its start and the start of the next
+            a = _date_bounds(value)
+            first, last = (a[0], a[1]) if a else (None, None)
+        bound = last if end else first
+        rel = relative_bounds(value, "timestamp", self.p.dialect)
+        if rel and rel[0]:  # a relative range: Looker's TIMESTAMP_ADD(TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY), ...)
+            return rel[1] if end else rel[0], ""
+        if bound is None:
+            return None, f"date filter {name}: {value!r} is not an absolute range (relative dates are not translated)"
+        text = f"'{bound:%Y-%m-%d %H:%M:%S}'"
+        return (f"TIMESTAMP({text})" if self.p.dialect == "bigquery" else f"CAST({text} AS TIMESTAMP)"), ""
+
+    def _field_key(self, view: str, ref: str) -> str:
+        qual, _, name = ref.rpartition(".")
+        return f"{(self.q.view_of(qual) or qual) if qual else view}.{name}"
 
     def render(self, view: str, sql: str) -> tuple[str, list[str]]:
         problems: list[str] = []
@@ -696,30 +791,40 @@ class Liquid:
             if part.startswith("{{"):
                 expr = part.strip("{}-").strip()
                 if expr.endswith("._parameter_value"):
-                    out.append(self.param(view, expr[: -len("._parameter_value")], problems) or "")
+                    value, why = self.param(view, expr[: -len("._parameter_value")])
+                elif expr == "_dialect._name":
+                    value = DIALECT_NAME.get(self.p.dialect)
+                    why = "" if value else "_dialect._name is only known for BigQuery (set the warehouse type in unshackle.toml)"
                 else:
-                    problems.append(f"Liquid output {part} is not translated")
+                    value, why = None, f"Liquid output {part} is not translated"
+                out.append(value if value is not None else "")
+                problems += [why] if why else []
             elif word == "parameter":
-                out.append(self.param(view, arg, problems) or "")
+                value, why = self.param(view, arg)
+                out.append(value if value is not None else "")
+                problems += [why] if why else []
+            elif word in ("date_start", "date_end"):
+                value, why = self._date(view, arg, word == "date_end")
+                out.append(value if value is not None else "")
+                problems += [why] if why else []
             elif word == "comment":
                 _, i = self._block(view, parts, i, [], ("endcomment",))
                 i += 1
             elif word == "condition":
-                name = arg
                 inner, i = self._block(view, parts, i, problems, ("endcondition",))
                 i += 1
-                found = self._lookup(view, name, "filters")
+                found = self._lookup(view, arg, "filters")
                 if found is None:
-                    problems.append(f"{{% condition {name} %}} reads a field that is not a filter")
+                    problems.append(f"{{% condition {arg} %}} reads a field that is not a filter")
                     continue
                 key, f = found
                 value = self.values.get(key)
                 if value in (None, ""):
                     out.append("1=1")
                     continue
-                cond = looker_filter_sql(inner.strip(), str(value), str(f.get("type", "string")))
+                cond = looker_filter_sql(inner.strip(), str(value), str(f.get("type", "string")), dialect=self.p.dialect)
                 if cond is None:
-                    problems.append(f"filter {name}: {value!r} is not translated (a Looker filter expression)")
+                    problems.append(f"filter {arg}: {value!r} is not translated (a Looker filter expression)")
                 else:
                     out.append(f"({cond})")
             elif word == "if":
@@ -742,16 +847,42 @@ class Liquid:
         return "".join(out), i
 
     def _test(self, view: str, cond: str, problems: list[str]) -> bool:
-        if cond == "true":
+        joiners = set(re.findall(r"\s(or|and)\s", cond))
+        if len(joiners) > 1:
+            problems.append(f"Liquid condition {cond!r} mixes and / or")
+            return False
+        atoms = re.split(r"\s+(?:or|and)\s+", cond)
+        results = [self._atom(view, a.strip(), problems) for a in atoms]
+        if any(r is None for r in results):
+            return False
+        return all(results) if joiners == {"and"} else any(results)
+
+    def _atom(self, view: str, atom: str, problems: list[str]) -> bool | None:
+        if atom == "true":
             return True
-        m = LIQUID_COND.match(cond)
-        if not m:
-            problems.append(f"Liquid condition {cond!r} is not translated")
-            return False
-        value = self.param(view, m.group(1), problems)
-        if value is None:
-            return False
-        return (value == m.group(4)) == (m.group(2) == "==")
+        m = LIQUID_COMPARE.match(atom)
+        if m:
+            subject, same = m.group(1), m.group(2) == "=="
+            if subject == "_dialect._name":
+                name = DIALECT_NAME.get(self.p.dialect)
+                if name is None:
+                    problems.append("_dialect._name is only known for BigQuery (set the warehouse type in unshackle.toml)")
+                    return None
+                return (name == m.group(4)) == same
+            if subject.endswith("._parameter_value"):
+                value, why = self.param(view, subject[: -len("._parameter_value")])
+                if value is None:
+                    problems.append(why)
+                    return None
+                return (value == m.group(4)) == same
+        m = re.fullmatch(r"([\w.]+)\._(is_filtered|in_query|is_selected)", atom)
+        if m:
+            key = self._field_key(view, m.group(1))
+            sets = {"is_filtered": self.q.filtered, "is_selected": self.q.selected,
+                    "in_query": self.q.selected | self.q.filtered | self.q.sorted}
+            return key in sets[m.group(2)]
+        problems.append(f"Liquid condition {atom!r} is not translated")
+        return None
 
 
 def tier_sql(expr: str, field: dict[str, Any]) -> str | None:
@@ -1115,7 +1246,7 @@ class _Parser:
             return raw.strip(), "", ""
         dt_sql = str((v.get("derived_table") or {}).get("sql") or "")
         if q is not None and LIQUID.search(dt_sql):
-            rendered, problems = Liquid(self, q.liquid).render(vname, dt_sql)
+            rendered, problems = Liquid(self, q).render(vname, dt_sql)
             if problems or LIQUID.search(rendered) or "${" in rendered:
                 return snake(vname), "", f"derived table {vname}: " + ("; ".join(problems) or "reads other views (${...}) inside Liquid")
             return f"({rendered.strip()})", "", ""
@@ -1151,7 +1282,7 @@ class _Parser:
         problems: list[str] = []
         sql = strip_sql_comments(sql or "")
         if LIQUID.search(sql) and q is not None:
-            sql, problems = Liquid(self, q.liquid).render(vname, sql)
+            sql, problems = Liquid(self, q).render(vname, sql)
             if problems:
                 return sql, problems
         if LIQUID.search(sql):
@@ -1260,7 +1391,10 @@ class _Parser:
             return "", [f"references timeframe {ref}, an hour of a date column"]
         if tf in TIMEFRAME_SQL:
             return f"({TIMEFRAME_SQL[tf].format(expr)})", []
-        if tf in ("week", "month", "quarter", "day_of_week", "day_of_week_index", "week_of_year", "day_of_year", "quarter_of_year"):
+        if tf in ("hour", "minute", "time_of_day") and datatype == "date":
+            return "", [f"references timeframe {ref}, a time of a date column"]
+        if tf in ("week", "month", "quarter", "day_of_week", "day_of_week_index", "week_of_year", "day_of_year", "quarter_of_year",
+                  "hour", "minute", "time_of_day"):
             if self.week_start not in ("", *WEEKDAYS):
                 return "", [f"references timeframe {ref}; weeks start on {self.week_start} in this project, write the truncation by hand"]
             sql = timeframe_sql(tf, expr, self.dialect, self.week_start or "monday")
@@ -1372,10 +1506,9 @@ class _Parser:
         for w in case.get("whens", []):
             expr, p = self._expand(vname, w.get("sql", ""), mode, seen, q, at)
             problems += p
-            label = str(w.get("label", "")).replace("'", "''")
-            parts.append(f"WHEN {expr} THEN '{label}'")
+            parts.append(f"WHEN {expr} THEN {sql_string(str(w.get('label', '')), self.dialect)}")
         if case.get("else"):
-            parts.append("ELSE '" + str(case["else"]).replace("'", "''") + "'")
+            parts.append(f"ELSE {sql_string(str(case['else']), self.dialect)}")
         parts.append("END")
         return " ".join(parts), list(dict.fromkeys(problems))
 
@@ -1390,7 +1523,7 @@ class _Parser:
             # Looker filters the time itself, whatever the timeframe: the dimension at second grain when it
             # has one (the time itself), else at day grain, compared with dates
             exact = _grain(self._group(view, kind[1])) == "second"
-            grain, datatype = ("second", "timestamp") if exact else ("day", "date")
+            grain, datatype = ("second", "timestamp") if exact else ("day", "day")
             return f"{{{{ TimeDimension('{snake(view)}__{snake(kind[1])}', '{grain}') }}}}", "time", datatype
         if kind[0] != "dimension":
             return None
@@ -1578,7 +1711,8 @@ class _Parser:
             filters, bad = [], []
             for field, value in _filter_pairs(m):
                 ref = self.field_ref(vname, field)
-                sql = looker_filter_sql(ref[0], value, *ref[1:]) if ref else None
+                # metrics: no relative dates (MetricFlow's type for a time grain is not checked on BigQuery)
+                sql = looker_filter_sql(ref[0], value, ref[1], ref[2] or "date", self.dialect, relative=False) if ref else None
                 if sql is None:
                     bad.append(f"{field}: {value!r}")
                 else:
@@ -2060,6 +2194,16 @@ class _Parser:
         tile_filters = el.get("filters") or {}
         templated = set()
 
+        def key(field: str) -> str:
+            qual, _, name = str(field).rpartition(".")
+            return f"{q.view_of(qual or ex['name'])}.{name}"
+
+        q.selected = {key(f) for f in fields}
+        q.sorted = {key(str(s).split()[0]) for s in el.get("sorts") or [] if str(s).split()} | {key(pv) for pv in pivots}
+        q.filtered = {key(f) for f, v in (tile_filters.items() if isinstance(tile_filters, dict) else []) if str(v) != ""}
+        q.filtered |= {key(f) for n, f in (el.get("listen") or {}).items() if str(n) in fdefs and fdefs[str(n)].get("default_value") not in (None, "")}
+        filter_sql: list[tuple[str, str, str]] = []  # filter fields with their own sql: (view, alias, sql)
+
         def kind_of(field: Any) -> tuple[str | None, str, str]:
             qual, _, name = str(field).rpartition(".")
             view = q.view_of(qual or ex["name"])
@@ -2069,8 +2213,9 @@ class _Parser:
             view, name, kind = kind_of(field)
             if kind in ("parameter", "filter"):
                 templated.add(str(field))
-                if kind == "filter" and (self._field(view or "", name, ("filters",)) or {}).get("sql"):
-                    q.problems.append(f"filter field {field} has its own sql:, which Looker adds to the WHERE clause")
+                fsql = (self._field(view or "", name, ("filters",)) or {}).get("sql")
+                if kind == "filter" and fsql and str(value) != "":
+                    filter_sql.append((view, q.alias(str(field).rpartition(".")[0] or ex["name"]), fsql))
                 q.liquid[f"{view}.{name}"] = str(value)
         for fname, field in (el.get("listen") or {}).items():
             view, name, kind = kind_of(field)
@@ -2108,7 +2253,7 @@ class _Parser:
             datatype = "timestamp"
             if kind == "time":  # Looker filters the time itself, whatever the timeframe
                 sql, datatype = q.raw_time(field) or (sql, "date")
-            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind, datatype)
+            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind, datatype, self.dialect)
             if cond is None:
                 q.problems.append(f"{origin} filter {field}: {str(value)!r} is not translated (a Looker filter expression)")
             else:
@@ -2131,6 +2276,11 @@ class _Parser:
         if ex.get("sql_always_where"):
             expr, p = self._expand(q.base_view, ex["sql_always_where"], "query", frozenset(), q, q.base)
             q.problems += [f"sql_always_where: {x}" for x in p]
+            where.append(f"({expr})")
+        for view, alias, fsql in filter_sql:  # Looker adds a filter field's own sql to the WHERE clause
+            q.problems += q.use(alias)
+            expr, p = self._expand(view, fsql, "query", frozenset(), q, alias)
+            q.problems += [f"filter field sql: {x}" for x in p]
             where.append(f"({expr})")
         if ex.get("sql_always_having"):
             q.in_measure += 1
@@ -2371,6 +2521,9 @@ class _Query:
         self.held: dict[str, tuple[str, str]] = {}  # placeholder -> (SQL used, symmetric SQL); fanout() picks symmetric when rows repeat
         self.windows: dict[str, tuple[str, str]] = {}  # placeholder -> (percent_of_total / running_total, measure SQL)
         self.liquid: dict[str, str] = {}  # "view.parameter_or_filter" -> the query's value, for Liquid
+        self.selected: set[str] = set()  # "view.field" selected, filtered, sorted: for _is_selected and the like
+        self.filtered: set[str] = set()
+        self.sorted: set[str] = set()
         self.tz: set[str] = set()  # timeframes Looker converts to the query time zone
         self.in_measure = 0
         self.problems: list[str] = []
@@ -2461,7 +2614,7 @@ class _Query:
         for field, value in _filter_pairs(m):
             sql, kind, p = self.field(field if "." in field else f"{a}.{field}")
             problems += p
-            cond = looker_filter_sql(_paren(sql), value, kind) if sql and kind != "measure" else None
+            cond = looker_filter_sql(_paren(sql), value, kind, dialect=self.p.dialect) if sql and kind != "measure" else None
             if cond is None:
                 problems.append(f"measure {ref} filter {field}: {value!r} not translated")
             else:
