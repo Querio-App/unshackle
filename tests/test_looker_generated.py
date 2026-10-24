@@ -229,7 +229,7 @@ def assert_lookers_numbers(case: str, cols: list[str], rows: list[tuple]) -> Non
     ours = [dict(zip(cols, r)) for r in rows]
     theirs = looker(case)
     key = lambda r: str(r.get("ev_orders_customer", r.get("ev_orders.customer")))  # noqa: E731
-    in_order = list(ours)
+    in_order = ours
     if TILES[case][2]:  # NULL sorts first in BigQuery and last in most warehouses: compare by customer
         ours, theirs = sorted(ours, key=key), sorted(theirs, key=key)
     assert len(ours) == len(theirs)
@@ -240,10 +240,11 @@ def assert_lookers_numbers(case: str, cols: list[str], rows: list[tuple]) -> Non
                 continue  # a running total follows the warehouse's sort order (checked below); fields the tile doesn't select
             ours_value = float(o[col]) if isinstance(o[col], (int, float, Decimal)) else o[col]
             assert ours_value == (pytest.approx(value) if isinstance(value, (int, float)) else value), (case, field)
-    running = 0.0
-    for row in in_order if "ev_orders_shipping_running" in cols else []:  # adds up the rows in the order they come back
-        running += float(row["ev_orders_total_shipping"])
-        assert float(row["ev_orders_shipping_running"]) == pytest.approx(running)
+    if "ev_orders_shipping_running" in cols:  # adds up the rows in the order they come back
+        running = 0.0
+        for row in in_order:
+            running += float(row["ev_orders_total_shipping"])
+            assert float(row["ev_orders_shipping_running"]) == pytest.approx(running)
 
 
 @pytest.fixture(scope="module")
