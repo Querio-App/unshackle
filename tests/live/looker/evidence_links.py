@@ -4,13 +4,16 @@ Paste tests/fixtures/looker_generated/evidence.view.lkml into a view file of a d
 project on BigQuery (a Cloud Skills Boost Looker lab is enough), add evidence.explores.lkml to the
 model, then:
 
-    python tests/live/looker/evidence_links.py https://<looker host> [model]
+    python tests/live/looker/evidence_links.py https://<looker host> [case ...]   # one link per file
+    python tests/live/looker/evidence_links.py --console [case ...] | pbcopy      # or all at once
 
 Open each link while logged in (Development Mode on) and save the page as the name shown into
-tests/fixtures/looker_generated/. Explore URLs ending in .json return the result rows and .sql
+tests/fixtures/looker_generated/, or paste the --console snippet into the browser console on the
+Looker tab: it downloads every case as one looker-evidence.json. Explore URLs ending in .json return the result rows and .sql
 the SQL Looker generates. Never commit the host.
 """
 
+import json
 import sys
 from urllib.parse import urlencode
 
@@ -75,15 +78,70 @@ CASES: dict[str, dict] = {
 }
 
 
-def main(host: str, model: str) -> None:
+F_FILTERS = ["s_starts", "s_ends", "s_contains", "s_not_starts", "s_eq_lower", "s_eq_upper", "s_list", "s_escaped_comma",
+             "s_empty", "s_null", "n_closed", "n_open", "n_half_open", "n_to", "n_and", "n_or", "n_not", "n_minus", "n_list",
+             "n_not_list", "n_null", "n_not_null", "n_gt", "d_day", "d_month", "d_year", "d_before", "d_after", "d_range",
+             "d_null", "d_not_null", "d_last_7", "d_this_month", "d_last_month", "d_ago", "t_day", "t_before", "t_month",
+             "tier_filtered"]
+F_STATS = ["count", "n_median", "n_p25", "n_p90", "s_distinct", "n_sum", "n_avg", "n_min", "n_max_date", "n_per_row", "n_sum_big"]
+
+# round 2: evidence2.*.lkml
+CASES.update({
+    "filters": {"view": "ev_f", "fields": ["ev_f.count", *(f"ev_f.{m}" for m in F_FILTERS)]},
+    "dimension_types": {
+        "view": "ev_f",
+        "fields": ["ev_f.id", "ev_f.s", "ev_f.n", "ev_f.y", "ev_f.n_big", "ev_f.n_tier", "ev_f.n_tier_classic", "ev_f.s_case"],
+        "sorts": ["ev_f.id"],
+    },
+    "stats_total": {"view": "ev_f", "fields": [f"ev_f.{m}" for m in F_STATS]},
+    "stats_by_big": {"view": "ev_f", "fields": ["ev_f.n_big", *(f"ev_f.{m}" for m in F_STATS)], "sorts": ["ev_f.n_big"]},
+    "time_new_york": {
+        "view": "ev_time",
+        "fields": ["ev_time.id", "ev_time.created_time", "ev_time.created_date", "ev_time.created_tz_time",
+                   "ev_time.created_tz_date", "ev_time.created_tz_week", "ev_time.created_tz_month"],
+        "sorts": ["ev_time.id"],
+        "params": {"query_timezone": "America/New_York"},
+    },
+    # captured with week_start_day: sunday in the model
+    "time_week_sunday": {
+        "view": "ev_time",
+        "fields": ["ev_time.id", "ev_time.created_week", "ev_time.created_day_of_week_index", "ev_time.created_week_of_year",
+                   "ev_time.day_week"],
+        "sorts": ["ev_time.id"],
+    },
+    "explore_filters": {"view": "ev_af", "fields": ["ev_af.id", "ev_af.s", "ev_af.count"], "sorts": ["ev_af.id"]},
+})
+
+
+def links(model: str, only: list[str]) -> dict[str, str]:
+    out = {}
     for name, case in CASES.items():
+        if only and name not in only:
+            continue
         q = {"fields": ",".join(case["fields"]), "limit": "500"}
         if case.get("sorts"):
             q["sorts"] = ",".join(case["sorts"])
         q.update({f"f[{k}]": v for k, v in case.get("filters", {}).items()})
+        q.update(case.get("params", {}))
         for ext in (".json", ".sql"):
-            print(f"{name}{ext}  {host.rstrip('/')}/explore/{model}/{case['view']}{ext}?{urlencode(q)}&apply_formatting=false")
+            out[name + ext] = f"/explore/{model}/{case['view']}{ext}?{urlencode(q)}&apply_formatting=false"
+    return out
+
+
+def console(model: str, only: list[str]) -> str:
+    """One snippet for the browser console on the Looker tab: fetches every case with the logged-in
+    session and downloads looker-evidence.json ({"<case>.json": "...", "<case>.sql": "..."})."""
+    return (
+        f"(async () => {{ const urls = {json.dumps(links(model, only))}; const out = {{}};\n"
+        "for (const [name, url] of Object.entries(urls)) { const r = await fetch(url); out[name] = await r.text(); }\n"
+        "const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(out)]));\n"
+        "a.download = 'looker-evidence.json'; a.click(); })();"
+    )
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "training_ecommerce")
+    if sys.argv[1] == "--console":
+        print(console("training_ecommerce", sys.argv[2:]))
+    else:
+        for name, url in links("training_ecommerce", sys.argv[2:]).items():
+            print(f"{name}  {sys.argv[1].rstrip('/')}{url}")

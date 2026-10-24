@@ -1,0 +1,15 @@
+[
+ {
+  "ev_f.count": 7,
+  "ev_f.n_median": 3.75,
+  "ev_f.n_p25": 1,
+  "ev_f.n_p90": 10,
+  "ev_f.s_distinct": 6,
+  "ev_f.n_sum": 20.5,
+  "ev_f.n_avg": 3.416666666666667,
+  "ev_f.n_min": -5,
+  "ev_f.n_max_date": null,
+  "ev_f.n_per_row": 2.9285714285714284,
+  "ev_f.n_sum_big": 22
+ }
+]
