@@ -20,6 +20,12 @@ from urllib.parse import urlencode
 TIME = ["raw", "time", "date", "week", "month", "quarter", "year", "day_of_week", "day_of_week_index", "month_num",
         "month_name", "quarter_of_year", "week_of_year", "day_of_month", "day_of_year", "hour_of_day"]
 ORDERS = ["count", "total_shipping", "avg_shipping"]
+F_FILTERS = ["s_starts", "s_ends", "s_contains", "s_not_starts", "s_eq_lower", "s_eq_upper", "s_list", "s_escaped_comma",
+             "s_empty", "s_null", "n_closed", "n_open", "n_half_open", "n_to", "n_and", "n_or", "n_not", "n_minus", "n_list",
+             "n_not_list", "n_null", "n_not_null", "n_gt", "d_day", "d_month", "d_year", "d_before", "d_after", "d_range",
+             "d_null", "d_not_null", "d_last_7", "d_this_month", "d_last_month", "d_ago", "t_day", "t_before", "t_month",
+             "tier_filtered"]
+F_STATS = ["count", "n_median", "n_p25", "n_p90", "s_distinct", "n_sum", "n_avg", "n_min", "n_max_date", "n_per_row", "n_sum_big"]
 
 CASES: dict[str, dict] = {
     "time": {
@@ -58,7 +64,7 @@ CASES: dict[str, dict] = {
     "liquid_set": {
         "view": "ev_liquid",
         "fields": ["ev_liquid.customer", "ev_liquid.count", "ev_liquid.chosen_total", "ev_liquid.chosen_label"],
-        "filters": {"ev_liquid.customer_filter": "-acme", "ev_liquid.metric_choice": "shipping"},
+        "params": {"f[ev_liquid.customer_filter]": "-acme", "f[ev_liquid.metric_choice]": "shipping"},
         "sorts": ["ev_liquid.customer"],
     },
     "nested_by_id": {
@@ -75,18 +81,6 @@ CASES: dict[str, dict] = {
         "view": "ev_nested",
         "fields": ["ev_nested.count", "ev_nested_lines.count", "ev_nested_lines.total_qty"],
     },
-}
-
-
-F_FILTERS = ["s_starts", "s_ends", "s_contains", "s_not_starts", "s_eq_lower", "s_eq_upper", "s_list", "s_escaped_comma",
-             "s_empty", "s_null", "n_closed", "n_open", "n_half_open", "n_to", "n_and", "n_or", "n_not", "n_minus", "n_list",
-             "n_not_list", "n_null", "n_not_null", "n_gt", "d_day", "d_month", "d_year", "d_before", "d_after", "d_range",
-             "d_null", "d_not_null", "d_last_7", "d_this_month", "d_last_month", "d_ago", "t_day", "t_before", "t_month",
-             "tier_filtered"]
-F_STATS = ["count", "n_median", "n_p25", "n_p90", "s_distinct", "n_sum", "n_avg", "n_min", "n_max_date", "n_per_row", "n_sum_big"]
-
-# round 2: evidence2.*.lkml
-CASES.update({
     "filters": {"view": "ev_f", "fields": ["ev_f.count", *(f"ev_f.{m}" for m in F_FILTERS)]},
     "dimension_types": {
         "view": "ev_f",
@@ -110,7 +104,7 @@ CASES.update({
         "sorts": ["ev_time.id"],
     },
     "explore_filters": {"view": "ev_af", "fields": ["ev_af.id", "ev_af.s", "ev_af.count"], "sorts": ["ev_af.id"]},
-})
+}
 
 
 def links(model: str, only: list[str]) -> dict[str, str]:
@@ -121,7 +115,6 @@ def links(model: str, only: list[str]) -> dict[str, str]:
         q = {"fields": ",".join(case["fields"]), "limit": "500"}
         if case.get("sorts"):
             q["sorts"] = ",".join(case["sorts"])
-        q.update({f"f[{k}]": v for k, v in case.get("filters", {}).items()})
         q.update(case.get("params", {}))
         for ext in (".json", ".sql"):
             out[name + ext] = f"/explore/{model}/{case['view']}{ext}?{urlencode(q)}&apply_formatting=false"

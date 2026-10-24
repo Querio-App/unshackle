@@ -12,14 +12,15 @@ from pathlib import Path
 import duckdb
 import lkml
 import pytest
+from test_looker import _by_name
 
 from unshackle.ir import Bundle
 from unshackle.raw import RawStore
 from unshackle.sources import get_source
 from unshackle.sources.looker import TF_GRAIN
+from unshackle.target.ossie import AGGS
 
 FIX = Path(__file__).parent / "fixtures" / "looker_generated"
-AGG_SQL = {"count": "COUNT({})", "sum": "SUM({})", "average": "AVG({})"}
 
 
 def looker(case: str) -> list[dict]:
@@ -46,10 +47,6 @@ def db() -> duckdb.DuckDBPyConnection:
     return con
 
 
-def _by_name(items):
-    return {i.name: i for i in items}
-
-
 def test_fixtures_hold_no_instance_details():
     for f in FIX.iterdir():
         text = f.read_text()
@@ -70,7 +67,7 @@ def test_time_grains_match_looker(bundle, db):
 
 def test_plain_measures_match_looker(bundle, db):
     measures = _by_name(_by_name(bundle.semantic_models)["ev_orders"].measures)
-    cols = {name: AGG_SQL[m.agg].format(m.expr) for name, m in measures.items()}
+    cols = {name: AGGS[m.agg].format(m.expr) for name, m in measures.items()}
     rows = db.execute(f"select customer, {', '.join(cols.values())} from ev_orders group by 1 order by 1 nulls first").fetchall()
     ours = [dict(zip(["customer", *cols], r)) for r in rows]
     theirs = looker("measure_types")
