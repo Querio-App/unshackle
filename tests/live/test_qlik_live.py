@@ -27,6 +27,7 @@ import pytest
 import yaml
 from harness import DATA, ENABLED, SKIP_REASON, Stack, bootstrap_module, run_unshackle, write_csv
 
+from unshackle.ir import snake
 from unshackle.sources.qlik import Engine, engine_url
 
 TENANT = os.environ.get("QLIK_TENANT_URL", "").rstrip("/")
@@ -126,7 +127,7 @@ def _extract_build_verify(created: dict, token: str, stack: Stack, tmp_path: Pat
     with Engine(engine_url(TENANT, app), token) as e:
         doc = e.handle(e.call(-1, "OpenDoc", app))
         for title, (cols, dates) in charts.items():
-            write_csv(data / f"{_snake(title)}.csv", cols, _cube(e, doc, objects[title], cols, dates))
+            write_csv(data / f"{snake(title)}.csv", cols, _cube(e, doc, objects[title], cols, dates))
         for name, expr in {**metrics, **{f"reduced_{k}": v for k, v in reduced.items()}}.items():
             write_csv(data / f"{name}.csv", [name], [[_value(e, doc, expr)]])
         status = e.handle(e.call(doc, "GetField", "status"))
@@ -169,7 +170,3 @@ def _extract_build_verify(created: dict, token: str, stack: Stack, tmp_path: Pat
     print(out)
     results = json.loads((repo / "migration/parity/results.json").read_text())
     assert len(results) == len(cases) and all(r["status"] == "pass" for r in results), out
-
-
-def _snake(name: str) -> str:
-    return re.sub(r"[^0-9a-z]+", "_", name.lower()).strip("_")

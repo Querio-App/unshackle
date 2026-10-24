@@ -125,23 +125,21 @@ def engine(tenant: str, token: str, app: str) -> Engine:
     return Engine(engine_url(tenant, app), token)
 
 
-def _dimension(title: str) -> dict[str, Any]:
-    return {"qLibraryId": "", "qDef": {"qGrouping": "N", "qFieldDefs": [], "qFieldLabels": [], "autoSort": True, "cId": _id(),
-                                       "othersLabel": "Others"},
+def _dimension() -> dict[str, Any]:
+    return {"qDef": {"qGrouping": "N", "qFieldDefs": [], "qFieldLabels": [], "autoSort": True, "cId": _id(),
+                     "othersLabel": "Others"},
             "qNullSuppression": False, "qOtherTotalSpec": {"qOtherMode": "OTHER_OFF", "qTotalMode": "TOTAL_OFF"},
-            "qOtherLabel": {"qv": "Others"}, "_title": title}
+            "qOtherLabel": {"qv": "Others"}}
 
 
 def _hypercube(dims: list[str], measures: list[str], library: dict[str, str]) -> dict[str, Any]:
     """Dims and measures name master items (by title) or, prefixed with "=", are inline."""
     qdims = []
     for d in dims:
-        x = _dimension(d)
-        x.pop("_title")
+        x = _dimension()
         if d in library:
             x["qLibraryId"] = library[d]
         else:
-            x.pop("qLibraryId")
             x["qDef"]["qFieldDefs"], x["qDef"]["qFieldLabels"] = [d], [""]
         qdims.append(x)
     qmeas = []

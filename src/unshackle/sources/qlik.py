@@ -79,7 +79,7 @@ from unshackle.ir import (
 )
 from unshackle.raw import RawStore
 from unshackle.sources._manual import files_of, safe_name
-from unshackle.sources._semyaml import NField, NJoin, NTable, build_semantic, grid_rows
+from unshackle.sources._semyaml import NField, NJoin, NTable, build_semantic, grid_rows, sql_literal
 from unshackle.sources.base import Inventory, Source
 
 APP_FILES = ("app-properties.json", "script.qvs", "connections.yml", "dimensions.json", "measures.json", "variables.json",
@@ -400,10 +400,6 @@ def aggregates_of(node: Node) -> list[Call]:
     return []
 
 
-def sql_str(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
 def quote(name: str) -> str:
     return name if SIMPLE_IDENT.match(name) else '"' + name.replace('"', '""') + '"'
 
@@ -413,7 +409,7 @@ def row_sql(node: Node, col: Callable[[str], str], cond: bool = False) -> str:
     if isinstance(node, Num):
         return node.value
     if isinstance(node, Str):
-        return sql_str(node.value)
+        return sql_literal(node.value)
     if isinstance(node, Fld):
         return col(node.name)
     if isinstance(node, Un):
@@ -456,7 +452,7 @@ def _row_call(node: Call, col: Callable[[str], str], cond: bool) -> str:
     if n == "if" and len(args) in (2, 3):
         other = row_sql(args[2], col) if len(args) == 3 else "NULL"
         return f"CASE WHEN {row_sql(args[0], col, True)} THEN {row_sql(args[1], col)} ELSE {other} END"
-    if n in ROW_FN and len(args) == (len(args) if n == "coalesce" else 1):
+    if n in ROW_FN and (n == "coalesce" or len(args) == 1):
         return f"{ROW_FN[n]}({', '.join(row_sql(a, col) for a in args)})"
     if n in TRUNC and len(args) == 1:
         return f"DATE_TRUNC('{TRUNC[n]}', {row_sql(args[0], col)})"
@@ -550,7 +546,7 @@ def _split_top(text: str, sep: str) -> list[str]:
 
 def set_predicate(f: SetFilter, col: Callable[[str], str]) -> str:
     ref = col(f.field)
-    lits = [v.value if isinstance(v, Num) else sql_str(v.value.upper() if f.insensitive else v.value) for v in f.values]
+    lits = [v.value if isinstance(v, Num) else sql_literal(v.value.upper() if f.insensitive else v.value) for v in f.values]
     if f.insensitive:
         ref = f"UPPER({ref})"
     if len(lits) == 1:
@@ -682,7 +678,7 @@ def parse_fields(text: str) -> tuple[list[tuple[str, str]], bool]:
         if item == "*":
             star = True
             continue
-        hits = [h for h in _keyword_at(item, ("AS",))]
+        hits = _keyword_at(item, ("AS",))
         if hits:
             pos = hits[-1][0]
             out.append((item[:pos].strip(), _name(item[pos + 2:])))
@@ -994,11 +990,12 @@ class AppModel:
         raise Untranslatable(f"key field {f} is in {', '.join(tables)} and no one table holds all its values; "
                              "Qlik aggregates it across the association")
 
-    def path(self, base: str, target: str) -> list[tuple[str, str, str]] | None:
-        """Many-to-one hops (from table, key, to table) from base to target, or None."""
+    def path(self, base: str, target: str, step: Callable[[str], list[tuple[str, str]]] | None = None
+             ) -> list[tuple[str, str, str]] | None:
+        """Hops (from table, key, to table) from base to target, or None; many-to-one unless `step` says otherwise."""
         seen, queue = {base: []}, [base]
         for t in queue:
-            for key, other in self.joins(t):
+            for key, other in (step or self.joins)(t):
                 if other not in seen:
                     seen[other] = seen[t] + [(t, key, other)]
                     queue.append(other)
@@ -1125,14 +1122,17 @@ def _relation(t: QTable) -> str:
     return t.relation if t.relation == t.model else f"{t.relation} AS {t.model}"
 
 
-def measure_sql(node: Node, plan: Plan) -> str:
-    """SQL for a chart measure: aggregations (with set modifiers as CASE WHEN) and arithmetic between them."""
+def arith(node: Node, leaf: Callable[[Call], str | None], post: bool = False) -> str:
+    """Arithmetic over aggregations; `leaf` renders an aggregation (None: not one). `post`: a post-aggregate
+    expression over ${metric} references, where a plain ratio is left to Ossie."""
     if isinstance(node, Num):
         return node.value
-    if isinstance(node, Call) and node.name in AGGS:
-        return _agg_sql(node, plan)
+    if isinstance(node, Call) and (s := leaf(node)) is not None:
+        return s
     if isinstance(node, Bin) and node.op in ("+", "-", "*", "/"):
-        left, right = measure_sql(node.left, plan), measure_sql(node.right, plan)
+        left, right = arith(node.left, leaf, post), arith(node.right, leaf, post)
+        if node.op == "/" and post and isinstance(node.left, Call) and isinstance(node.right, Call):
+            return f"{left} / {right}"  # a ratio metric: Ossie divides it as 1.0 * a / nullif(b, 0)
         if isinstance(node.left, Bin):
             left = f"({left})"
         if node.op == "/":
@@ -1141,23 +1141,22 @@ def measure_sql(node: Node, plan: Plan) -> str:
             right = f"({right})"
         return f"{left} {node.op} {right}"
     if isinstance(node, Un) and node.op == "-":
-        return f"-({measure_sql(node.operand, plan)})"
-    if isinstance(node, Call) and node.name in NOT_TRANSLATED:
-        raise Untranslatable(NOT_TRANSLATED[node.name])
+        return f"-({arith(node.operand, leaf, post)})"
     if isinstance(node, Call) and node.name in ("num", "money") and node.args:
-        return measure_sql(node.args[0], plan)
-    raise Untranslatable("not an aggregation, or arithmetic over aggregations")
+        return arith(node.args[0], leaf, post)
+    raise Untranslatable("not arithmetic over aggregations" if post else "not an aggregation, or arithmetic over aggregations")
+
+
+def measure_sql(node: Node, plan: Plan) -> str:
+    """SQL for a chart measure (after measure_base has checked it): aggregations, with set modifiers as CASE WHEN,
+    and arithmetic between them."""
+    return arith(node, lambda c: _agg_sql(c, plan) if c.name in AGGS else None)
 
 
 def _agg_sql(node: Call, plan: Plan) -> str:
-    if node.total:
-        raise Untranslatable("TOTAL (aggregates over all chart rows)")
     if len(node.args) != 1:
         raise Untranslatable(f"{node.name}() with {len(node.args)} arguments")
     arg = node.args[0]
-    if aggregates_of(arg) or any(isinstance(c, Call) and c.name in NOT_TRANSLATED for c in _calls(arg)):
-        bad = next((c.name for c in _calls(arg) if c.name in NOT_TRANSLATED or c.name in AGGS), "")
-        raise Untranslatable(NOT_TRANSLATED.get(bad, "nested aggregation"))
     filters, _, _ = parse_set(node.set)
     home = _home(arg, plan.model)
     inner = row_sql(arg, lambda f: plan.col(f, home))
@@ -1561,11 +1560,11 @@ class _App:
                     if hit and hit[0] == base:
                         refs[id(agg)] = hit[1]
                         continue
-                    part = f"{key}_part{i + 1}" if i else f"{key}_part1"
+                    part = f"{key}_part{i + 1}"
                     self._agg_field(nt, base, part, agg, f"{title} (part {i + 1})", f"Part of {title}: {agg_text}", agg_text, post)
                     simple[_norm(agg_text)] = (base, part)
                     refs[id(agg)] = part
-                expr = _post_expr(node, refs)
+                expr = arith(node, lambda c: f"${{{refs[id(c)]}}}" if id(c) in refs else None, post=True)
                 nt.metrics[key] = NField(key, expr, "post", title, desc, source=text)
             except Untranslatable as exc:
                 table = self._guess_table(text)
@@ -1580,13 +1579,8 @@ class _App:
 
     def _agg_field(self, nt: NTable, base: str, key: str, node: Call, title: str, desc: str, text: str,
                    post: list[tuple[str, str]]) -> None:
-        if node.total:
-            raise Untranslatable("TOTAL (aggregates over all chart rows)")
-        if len(node.args) != 1 or aggregates_of(node.args[0]):
+        if len(node.args) != 1:
             raise Untranslatable("nested aggregation" if node.args else f"{node.name}() without an argument")
-        bad = [c.name for c in _calls(node.args[0]) if c.name in NOT_TRANSLATED]
-        if bad:
-            raise Untranslatable(NOT_TRANSLATED[bad[0]])
         filters, ignores, _ = parse_set(node.set)
         sql = row_sql(node.args[0], lambda f: self.model.field_sql(base, f))
         agg = "count_distinct" if node.name == "count" and node.distinct else MF_AGG[node.name]
@@ -1607,8 +1601,9 @@ class _App:
         if base in tables:
             return base
         for t in tables:
-            if self.model.path(base, t) is not None:
-                if len(self.model.path(base, t) or []) > 1:
+            hops = self.model.path(base, t)
+            if hops is not None:
+                if len(hops) > 1:
                     raise Untranslatable(f"set modifier on {f}, more than one join away from {base}")
                 return t
         raise Untranslatable(f"set modifier on {f}, which {base} doesn't join to many-to-one (Qlik filters through the association)")
@@ -1706,11 +1701,10 @@ class _App:
                 tile.encodings = {"text": mcols[0]}
             if len(mcols) > 1:
                 todos.append("KPI with a comparison measure; only the first value is shown")
-        elif kind in ("table", "sn-table"):
+        elif kind in ("table", "sn-table", "pivot-table", "sn-pivot-table"):
             tile.kind, tile.mark = "table", "table"
-        elif kind in ("pivot-table", "sn-pivot-table"):
-            tile.kind, tile.mark = "table", "table"
-            todos.append("pivot table: pivot the result with pandas (pivot_table) to match Qlik")
+            if "pivot" in kind:
+                todos.append("pivot table: pivot the result with pandas (pivot_table) to match Qlik")
         elif kind == "piechart":
             tile.mark = "arc"
             tile.encodings = {k: v for k, v in (("theta", mcols[0] if mcols else None), ("color", dcols[0] if dcols else None)) if v}
@@ -1950,10 +1944,10 @@ class _App:
             return None, f"reduction field {f} is a key in several tables"
         home, real = homes[0], f
         try:
-            base = f"{self.model.field_sql(home, real)} IN ({', '.join(sql_str(v) for v in values)})"
+            base = f"{self.model.field_sql(home, real)} IN ({', '.join(sql_literal(v) for v in values)})"
             if table == home:
                 return base, ""
-            path = self._assoc_path(table, home)
+            path = self.model.path(table, home, self.model.neighbours)
             if path is None:
                 return "", ""  # not associated: Qlik doesn't reduce it
             pred = base
@@ -1963,16 +1957,6 @@ class _App:
             return pred, ""
         except Untranslatable as exc:
             return None, f"reduction on {f}: {exc}"
-
-    def _assoc_path(self, start: str, goal: str) -> list[tuple[str, str, str]] | None:
-        seen: dict[str, list[tuple[str, str, str]]] = {start: []}
-        queue = [start]
-        for t in queue:
-            for key, other in self.model.neighbours(t):
-                if other not in seen:
-                    seen[other] = seen[t] + [(t, key, other)]
-                    queue.append(other)
-        return seen.get(goal)
 
     # --- knowledge
 
@@ -2068,7 +2052,7 @@ def _render(node: Node) -> str:
     if isinstance(node, Num):
         return node.value
     if isinstance(node, Str):
-        return sql_str(node.value)
+        return sql_literal(node.value)
     if isinstance(node, Fld):
         return node.name if re.fullmatch(r"[A-Za-z_][\w.]*", node.name) else f"[{node.name}]"
     if isinstance(node, Call):
@@ -2076,26 +2060,6 @@ def _render(node: Node) -> str:
     if isinstance(node, Bin):
         return f"({_render(node.left)} {node.op} {_render(node.right)})"
     return f"{node.op} {_render(node.operand)}"  # type: ignore[union-attr]
-
-
-def _post_expr(node: Node, refs: dict[int, str]) -> str:
-    """Arithmetic over aggregations -> a post-aggregate expression over ${metric} references."""
-    if isinstance(node, Call) and id(node) in refs:
-        return f"${{{refs[id(node)]}}}"
-    if isinstance(node, Num):
-        return node.value
-    if isinstance(node, Bin) and node.op in ("+", "-", "*", "/"):
-        left, right = _post_expr(node.left, refs), _post_expr(node.right, refs)
-        if node.op == "/":
-            if isinstance(node.left, Call) and isinstance(node.right, Call):
-                return f"{left} / {right}"  # a ratio metric: Ossie divides it as 1.0 * a / nullif(b, 0)
-            return f"1.0 * {left if not isinstance(node.left, Bin) else f'({left})'} / nullif({right}, 0)"
-        return f"{left if not isinstance(node.left, Bin) else f'({left})'} {node.op} {right if not isinstance(node.right, Bin) else f'({right})'}"
-    if isinstance(node, Un) and node.op == "-":
-        return f"-({_post_expr(node.operand, refs)})"
-    if isinstance(node, Call) and node.name in ("num", "money") and node.args:
-        return _post_expr(node.args[0], refs)
-    raise Untranslatable("not arithmetic over aggregations")
 
 
 def _expr_type(node: Node, default: str) -> str:
