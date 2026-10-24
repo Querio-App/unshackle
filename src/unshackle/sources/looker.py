@@ -562,7 +562,7 @@ def tier_sql(expr: str, field: dict[str, Any]) -> str | None:
     if not tiers or tiers != sorted(tiers):
         return None
     if style == "integer":
-        if any(t != int(t) for t in tiers):
+        if not all(t.is_integer() for t in tiers):
             return None
         b = [int(t) for t in tiers]
         whens = [f"WHEN {expr} < {b[0]} THEN 'Below {b[0]}'"]
