@@ -43,6 +43,8 @@ import json
 import re
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from typing import Any, Callable
 
@@ -821,21 +823,15 @@ def _sources(src: dict) -> list[dict]:
 
 def _dm_order(specs: dict[str, dict]) -> list[str]:
     """Data models that others build on come first, so their elements are registered when referenced."""
-    out: list[str] = []
+    def deps(dm_id: str, spec: dict) -> set[str]:
+        els = [e for p in spec.get("pages", []) or [] if isinstance(p, dict) for e in p.get("elements", []) or []] + list(spec.get("elements", []) or [])
+        srcs = [s for el in els if isinstance(el, dict) and isinstance(el.get("source"), dict) for s in _sources(el["source"])]
+        return {str(s.get("dataModelId") or "") for s in srcs} & specs.keys() - {dm_id}
 
-    def visit(dm_id: str, stack: set[str]) -> None:
-        if dm_id in out or dm_id in stack or dm_id not in specs:
-            return
-        spec = specs[dm_id]
-        for el in [e for p in spec.get("pages", []) or [] if isinstance(p, dict) for e in p.get("elements", []) or []] + list(spec.get("elements", []) or []):
-            src = el.get("source") if isinstance(el, dict) and isinstance(el.get("source"), dict) else {}
-            for s in _sources(src):
-                visit(str(s.get("dataModelId") or ""), stack | {dm_id})
-        out.append(dm_id)
-
-    for dm_id in specs:
-        visit(dm_id, set())
-    return out
+    try:
+        return list(TopologicalSorter({dm_id: deps(dm_id, spec) for dm_id, spec in specs.items()}).static_order())
+    except CycleError:
+        return list(specs)
 
 
 def _union_prefix(el: dict) -> str:
@@ -850,8 +846,8 @@ def _union_prefix(el: dict) -> str:
 
 
 class _Element:
-    def __init__(self, el: dict, model: SemanticModel | None, name: str, prefix: str, parent: _Element | None = None,
-                 owner: _DataModel | None = None):
+    def __init__(self, el: dict, model: SemanticModel | None, name: str, prefix: str, parent: _Element | None,
+                 owner: _DataModel):
         self.el = el
         self.owner = owner  # the data model that defines this element (parents can live in another one)
         self.model = model
@@ -866,30 +862,27 @@ class _Element:
         self.metric_by_name = {_text(m.get("name")).casefold(): m for m in self.metrics}
         self.entity = ""
 
+    def ancestors(self) -> Iterator[_Element]:
+        """This element, then its parent, grandparent, ..."""
+        e: _Element | None = self
+        while e is not None:
+            yield e
+            e = e.parent
+
     def filtered(self) -> str:
         """Name of this element or an ancestor with its own filters/groupings (rows differ from the table), else ""."""
-        e: _Element | None = self
-        while e is not None:
-            if e.el.get("filters") or e.el.get("groupings"):
-                return e.name
-            e = e.parent
-        return ""
+        return next((a.name for a in self.ancestors() if a.el.get("filters") or a.el.get("groupings")), "")
 
     def has_col(self, name: str) -> bool:
-        e: _Element | None = self
-        while e is not None:
-            if name.casefold() in e.by_name:
-                return True
-            e = e.parent
-        return False
+        return any(name.casefold() in a.by_name for a in self.ancestors())
 
 
 class _DataModel:
-    def __init__(self, b: Bundle, dm_id: str, spec: dict, registry: dict[tuple[str, str], _Element] | None = None):
+    def __init__(self, b: Bundle, dm_id: str, spec: dict, registry: dict[tuple[str, str], _Element]):
         self.b = b
         self.dm_id = dm_id
         self.spec = spec
-        self.registry = registry if registry is not None else {}
+        self.registry = registry
         self.name = _text(spec.get("name")) or dm_id
         self.elements: dict[str, _Element] = {}
         self.element_names: set[str] = set()
@@ -920,7 +913,7 @@ class _DataModel:
 
     def ctx(self, e: _Element) -> Callable[..., str]:
         """Column resolver of an element in whichever data model defines it."""
-        return (e.owner or self).ref_ctx(e)
+        return e.owner.ref_ctx(e)
 
     def ref_ctx(self, e: _Element) -> Callable[..., str]:
         def own(name: str, depth: int) -> str:
@@ -945,14 +938,12 @@ class _DataModel:
                 return self.phys(e, col) if col is not None else _phys(rest)
             if pf == e.name.casefold():
                 return own(rest, depth)
-            anc = e.parent
-            while anc is not None:
+            for anc in e.parent.ancestors() if e.parent else ():
                 if pf in (anc.name.casefold(), anc.prefix.casefold()):
                     return self.ctx(anc)(name, depth + 1)
-                anc = anc.parent
             if pf in self.element_names:
                 raise fx.FormulaError(f"references another element ({prefix}); needs a join through an entity")
-            if e.parent is not None and e.parent.owner not in (None, self) and e.parent.has_col(rest):
+            if e.parent is not None and e.parent.owner is not self and e.parent.has_col(rest):
                 return self.ctx(e.parent)(rest, depth + 1)  # parent from another data model, named as that model shows it
             return _phys(rest)
 
@@ -1095,7 +1086,7 @@ class _DataModel:
         """The element a `table` / `data-model` source points at, in this data model or an extracted one."""
         el_id = str(src.get("elementId", ""))
         dm_id = str(src.get("dataModelId") or self.dm_id)
-        found = self.registry.get((dm_id, el_id)) if dm_id != self.dm_id else self.elements.get(el_id)
+        found = self.registry.get((dm_id, el_id))
         if found is None and (dm_id != self.dm_id or str(src.get("kind") or "").lower() in ("data-model", "datamodel")):
             self.b.warn(where, f"source is element {el_id} of data model {dm_id}, which was not extracted or not migrated; "
                                f"run `unshackle extract sigma --only {dm_id}` (or recreate the element on its table); skipped")
@@ -1166,7 +1157,7 @@ class _DataModel:
             return table, _phys
         if skind in ("table", "element", "data-model", "datamodel") and s.get("elementId"):
             dm_id = str(s.get("dataModelId") or self.dm_id)
-            e = self.registry.get((dm_id, str(s["elementId"]))) if dm_id != self.dm_id else self.elements.get(str(s["elementId"]))
+            e = self.registry.get((dm_id, str(s["elementId"])))
             if e is None or e.model is None:
                 return None, ""
             if e.filtered():
