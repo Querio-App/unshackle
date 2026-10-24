@@ -552,7 +552,7 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
     return " AND ".join(conds)
 
 
-LIQUID_TAG = re.compile(r"(\{%-?.*?-?%\}|\{\{-?.*?-?\}\})", re.S)
+LIQUID_TAG = re.compile(r"(\{%.*?%\}|\{\{.*?\}\})", re.S)
 LIQUID_COND = re.compile(r"""^([\w.]+)\._parameter_value\s*(==|!=)\s*(['"])(.*?)\3$""")
 
 
@@ -568,22 +568,23 @@ class Liquid:
     def _lookup(self, view: str, name: str, kind: str) -> tuple[str, dict[str, Any]] | None:
         qual, _, short = name.rpartition(".")
         v = qual or view
-        for f in (self.p.views.get(v) or {}).get(kind, []):
-            if f.get("name") == short:
-                return f"{v}.{short}", f
-        return None
+        f = self.p._field(v, short, (kind,))
+        return None if f is None else (f"{v}.{short}", f)
 
-    def param(self, view: str, name: str) -> tuple[str | None, str]:
+    def param(self, view: str, name: str, problems: list[str]) -> str | None:
         found = self._lookup(view, name, "parameters")
         if found is None:
-            return None, f"Liquid reads {name}, which is not a parameter"
+            problems.append(f"Liquid reads {name}, which is not a parameter")
+            return None
         key, f = found
         if str(f.get("type", "string")) != "unquoted":
-            return None, f"parameter {name} is type: {f.get('type', 'string')}; only unquoted parameters are checked against Looker"
+            problems.append(f"parameter {name} is type: {f.get('type', 'string')}; only unquoted parameters are checked against Looker")
+            return None
         value = self.values.get(key, f.get("default_value"))
         if value is None:
-            return None, f"parameter {name} has no value in this query and no default_value"
-        return str(value), ""
+            problems.append(f"parameter {name} has no value in this query and no default_value")
+            return None
+        return str(value)
 
     def render(self, view: str, sql: str) -> tuple[str, list[str]]:
         problems: list[str] = []
@@ -600,27 +601,23 @@ class Liquid:
                 i += 1
                 continue
             body = part.strip("{}%-").strip() if part.startswith("{%") else ""
-            word = body.split()[0] if body else ""
+            word, arg = (body.split() + ["", ""])[:2]
             if word in stop:
                 return "".join(out), i
             i += 1
             if part.startswith("{{"):
                 expr = part.strip("{}-").strip()
                 if expr.endswith("._parameter_value"):
-                    value, why = self.param(view, expr[: -len("._parameter_value")])
-                    out.append(value if value is not None else "")
-                    problems += [why] if why else []
+                    out.append(self.param(view, expr[: -len("._parameter_value")], problems) or "")
                 else:
                     problems.append(f"Liquid output {part} is not translated")
             elif word == "parameter":
-                value, why = self.param(view, body.split()[1] if len(body.split()) > 1 else "")
-                out.append(value if value is not None else "")
-                problems += [why] if why else []
+                out.append(self.param(view, arg, problems) or "")
             elif word == "comment":
                 _, i = self._block(view, parts, i, [], ("endcomment",))
                 i += 1
             elif word == "condition":
-                name = body.split()[1] if len(body.split()) > 1 else ""
+                name = arg
                 inner, i = self._block(view, parts, i, problems, ("endcondition",))
                 i += 1
                 found = self._lookup(view, name, "filters")
@@ -638,14 +635,12 @@ class Liquid:
                 else:
                     out.append(f"({cond})")
             elif word == "if":
-                taken, branch_done = None, False
+                taken = None
                 cond = body[2:].strip()
                 while True:
                     text, i = self._block(view, parts, i, problems, ("elsif", "else", "endif"))
-                    if not branch_done and cond is not None:
-                        hit = self._test(view, cond, problems)
-                        if hit:
-                            taken, branch_done = text, True
+                    if taken is None and self._test(view, cond, problems):
+                        taken = text
                     tag = parts[i].strip("{}%-").strip() if i < len(parts) else "endif"
                     i += 1
                     if tag.startswith("endif"):
@@ -665,9 +660,8 @@ class Liquid:
         if not m:
             problems.append(f"Liquid condition {cond!r} is not translated")
             return False
-        value, why = self.param(view, m.group(1))
+        value = self.param(view, m.group(1), problems)
         if value is None:
-            problems.append(why)
             return False
         return (value == m.group(4)) == (m.group(2) == "==")
 
@@ -955,9 +949,9 @@ class _Parser:
                 n = self.metric_names[key] = f"{n}_{i}"
             taken.add(n)
 
-    def _field(self, vname: str, name: str) -> dict[str, Any] | None:
+    def _field(self, vname: str, name: str, kinds: tuple[str, ...] = ("dimensions", "measures", "dimension_groups")) -> dict[str, Any] | None:
         v = self.views.get(vname) or {}
-        for kind in ("dimensions", "measures", "dimension_groups"):
+        for kind in kinds:
             for f in v.get(kind, []):
                 if f["name"] == name:
                     return f
@@ -989,9 +983,6 @@ class _Parser:
         if v.get("derived_table") or raw:
             return snake(vname), f"reads {vname}, a derived table: materialize it as `{snake(vname)}` first (see its query in queries/)", ""
         return snake(vname), "", f"view {vname} has no table"
-
-    def _templated(self, view: str | None, name: str) -> dict[str, Any] | None:
-        return next((f for f in (self.views.get(view or "") or {}).get("filters", []) if f.get("name") == name), None)
 
     def model_table(self, vname: str) -> str:
         """The table the view's semantic model reads: its table, or the view name for SQL-backed views."""
@@ -1925,19 +1916,22 @@ class _Parser:
         # parameters and templated filters first: Liquid in the fields reads them
         tile_filters = el.get("filters") or {}
         templated = set()
-        for field, value in (tile_filters.items() if isinstance(tile_filters, dict) else []):
+
+        def kind_of(field: Any) -> tuple[str | None, str, str]:
             qual, _, name = str(field).rpartition(".")
             view = q.view_of(qual or ex["name"])
-            kind = self.fields.get(f"{view}.{name}", ("",))[0]
+            return view, name, self.fields.get(f"{view}.{name}", ("",))[0]
+
+        for field, value in (tile_filters.items() if isinstance(tile_filters, dict) else []):
+            view, name, kind = kind_of(field)
             if kind in ("parameter", "filter"):
                 templated.add(str(field))
-                if kind == "filter" and (self._templated(view, name) or {}).get("sql"):
+                if kind == "filter" and (self._field(view or "", name, ("filters",)) or {}).get("sql"):
                     q.problems.append(f"filter field {field} has its own sql:, which Looker adds to the WHERE clause")
                 q.liquid[f"{view}.{name}"] = str(value)
         for fname, field in (el.get("listen") or {}).items():
-            qual, _, name = str(field).rpartition(".")
-            view = q.view_of(qual or ex["name"])
-            if self.fields.get(f"{view}.{name}", ("",))[0] in ("parameter", "filter") and str(fname) in fdefs:
+            view, name, kind = kind_of(field)
+            if kind in ("parameter", "filter") and str(fname) in fdefs:
                 templated.add(str(field))
                 default = fdefs[str(fname)].get("default_value")
                 if default not in (None, ""):

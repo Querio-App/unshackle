@@ -218,7 +218,7 @@ def evidence_tiles(repo: Path, dialect: str) -> dict:
         f"  - name: {name}\n    model: evidence\n    explore: {explore}\n    type: looker_grid\n    fields: [{', '.join(fields)}]\n"
         + (f"    sorts: [{', '.join(sorts)}]\n" if sorts else "")
         + ("    filters:\n" + "".join(f"      {k}: \"{v}\"\n" for k, v in filters.items()) if filters else "")
-        for name, (explore, fields, sorts, filters) in {**{k: (*v, {}) for k, v in TILES.items()}, **LIQUID_TILES}.items()
+        for name, (explore, fields, sorts, filters) in ALL_TILES.items()
     )
     store.put_text("lookml/ev.dashboard.lookml", f"- dashboard: ev\n  title: Evidence\n  elements:\n{elements}")
     (d,) = get_source("looker").parse(store).dashboards
@@ -231,7 +231,7 @@ def assert_lookers_numbers(case: str, cols: list[str], rows: list[tuple]) -> Non
     theirs = looker(case)
     key = lambda r: str(next((v for k, v in r.items() if k.endswith("customer")), ""))  # noqa: E731
     in_order = ours
-    if {**TILES, **LIQUID_TILES}[case][2]:  # NULL sorts first in BigQuery and last in most warehouses: compare by customer
+    if ALL_TILES[case][2]:  # NULL sorts first in BigQuery and last in most warehouses: compare by customer
         ours, theirs = sorted(ours, key=key), sorted(theirs, key=key)
     assert len(ours) == len(theirs)
     for o, t in zip(ours, theirs):
@@ -257,6 +257,7 @@ LIQUID_TILES = {
                    ["ev_liquid.customer"], {"ev_liquid.customer_filter": "-acme", "ev_liquid.metric_choice": "shipping"}),
     "liquid_user_attribute": ("ev_liquid", ["ev_liquid.customer", "ev_liquid.user_locale", "ev_liquid.count"], [], {}),
 }
+ALL_TILES = {**{k: (*v, {}) for k, v in TILES.items()}, **LIQUID_TILES}
 
 
 @pytest.fixture(scope="module")
