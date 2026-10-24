@@ -213,13 +213,19 @@ TILES = {
 }
 
 
-def evidence_tiles(repo: Path, dialect: str) -> dict:
-    """The TILES queries as a LookML dashboard over the evidence views: unshackle's tile per case."""
+def _evidence_store(repo: Path, dialect: str) -> RawStore:
+    """A raw store holding the evidence views and explores, with the warehouse set to `dialect`."""
     repo.mkdir(parents=True, exist_ok=True)
     (repo / "unshackle.toml").write_text(f'[datasources.warehouse]\ntype = "{dialect}"\n')
     store = RawStore(repo, "looker")
     store.put_text("lookml/unshackle_evidence.view.lkml", (FIX / "evidence.view.lkml").read_text())
     store.put_text("lookml/evidence.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence.view"\n' + (FIX / "evidence.explores.lkml").read_text())
+    return store
+
+
+def evidence_tiles(repo: Path, dialect: str) -> dict:
+    """The TILES queries as a LookML dashboard over the evidence views: unshackle's tile per case."""
+    store = _evidence_store(repo, dialect)
     elements = "".join(
         f"  - name: {name}\n    model: evidence\n    explore: {explore}\n    type: looker_grid\n    fields: [{', '.join(fields)}]\n"
         + (f"    sorts: [{', '.join(sorts)}]\n" if sorts else "")
@@ -520,12 +526,7 @@ def test_hour_timeframes_return_lookers_values():
 def test_sort_on_a_measure_the_tile_does_not_show(db, tmp_path):
     """Looker adds the sorted measure to the query and orders by it (seen on a real project in a lab: the
     top 20 brands by order count); a sorted dimension that isn't selected it drops."""
-    repo = tmp_path / "s"
-    repo.mkdir()
-    (repo / "unshackle.toml").write_text('[datasources.warehouse]\ntype = "duckdb"\n')
-    store = RawStore(repo, "looker")
-    store.put_text("lookml/unshackle_evidence.view.lkml", (FIX / "evidence.view.lkml").read_text())
-    store.put_text("lookml/evidence.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence.view"\n' + (FIX / "evidence.explores.lkml").read_text())
+    store = _evidence_store(tmp_path / "s", "duckdb")
     store.put_text("lookml/s.dashboard.lookml", """- dashboard: s
   title: S
   elements:

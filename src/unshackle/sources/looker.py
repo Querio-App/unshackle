@@ -2312,12 +2312,10 @@ class _Parser:
                 # Looker adds a sorted measure to the query and orders by it; it drops a sorted dimension
                 snap = q.snapshot()
                 sql, kind, p = q.field(parts[0])
-                if kind != "measure":
+                if kind != "measure" or p or not sql:
                     q.restore(snap)
-                    continue
-                if p or not sql:
-                    q.restore(snap)
-                    q.notes.append(f"sort on {parts[0]}, a measure the tile doesn't show, is not applied: {'; '.join(p) or 'not found'}")
+                    if kind == "measure":
+                        q.notes.append(f"sort on {parts[0]}, a measure the tile doesn't show, is not applied: {'; '.join(p) or 'not found'}")
                     continue
                 meas.append((sql, snake(parts[0])))
                 fields = [*fields, parts[0]]
