@@ -26,6 +26,7 @@ import pytest
 import yaml
 from harness import ENABLED, SKIP_REASON, Stack, bootstrap_module, run_unshackle, write_case, write_csv
 
+from unshackle.ir import snake
 from unshackle.run import notebook_queries
 
 SITE_VARS = ("TABLEAU_SERVER_URL", "TABLEAU_PAT_NAME", "TABLEAU_PAT_SECRET")
@@ -160,7 +161,7 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
         "Account Revenue by Payment Cycle (Completed)": ["payment_cycle"],  # FIXED ignores the dimension filter
     }
     for name, keys in lod_keys.items():
-        tile = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        tile = snake(name)
         cases.append({"name": f"LOD: {name}", "source": {"csv": view_csv(name)}, "target": {"notebook": lod_nb, "tile": tile},
                       **({"keys": keys} if keys else {})})
     for i, case in enumerate(cases):

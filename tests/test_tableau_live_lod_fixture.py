@@ -59,11 +59,6 @@ def _tiles(b):
     return {t.title: t for t in d.tiles if t.kind != "text"}
 
 
-def _view(name: str) -> pd.DataFrame:
-    view = VIEW[name][0] if name in VIEW else TODO[name]
-    return pd.read_csv(FIX / "views" / f"{view}.csv", dtype=str, keep_default_na=False)
-
-
 def test_translated_sheets_match_tableau(tmp_path: Path, bundle, warehouse):
     from unshackle.run import notebook_queries, query
 
@@ -98,21 +93,21 @@ def test_tableau_weighs_aggregated_fixed_values_once_per_lod_group(warehouse):
                    join public.accounts a using (account_id) join public.products p using (product_id)""")
     con.execute("create temp view acct as select account_id, sum(post_discount_revenue) as v from r group by 1")
 
-    def per_group(dim: str, agg: str, num: str = "") -> dict:
-        sql = (f"select {dim}, {agg} from (select distinct {dim}, account_id from r) join acct using (account_id) group by 1"
-               if not num else
-               f"select {dim}, {num} / (select sum(v) from (select distinct {dim} as d, account_id from r) g join acct using (account_id) "
-               f"where g.d = r.{dim}) from r group by 1")
+    def rows(sql: str) -> dict:
         return {k or "": float(v) for k, v in con.execute(sql).fetchall()}
 
+    def per_group(dim: str, agg: str) -> dict:
+        return rows(f"select {dim}, {agg} from (select distinct {dim}, account_id from r) join acct using (account_id) group by 1")
+
     def tableau(name: str) -> dict:
-        df = _view(name)
+        df = pd.read_csv(FIX / "views" / f"{TODO[name]}.csv", dtype=str, keep_default_na=False)
         return {k: float(v.replace(",", "")) for k, v in zip(df.iloc[:, 0], df.iloc[:, 1])}
 
     expected = {
         "Large Account Orders by Payment Cycle": per_group("payment_cycle", "sum(case when v >= 1000000 then 1 else 0 end)"),
         "Cycle Avg Account Revenue": per_group("payment_cycle", "avg(v)"),
-        "Revenue Share by Status": per_group("status", "", num="sum(post_discount_revenue)"),
+        "Revenue Share by Status": rows("select status, sum(post_discount_revenue) / (select sum(v) from (select distinct status as d, "
+                                        "account_id from r) g join acct using (account_id) where g.d = r.status) from r group by 1"),
     }
     for name, exp in expected.items():
         got = tableau(name)

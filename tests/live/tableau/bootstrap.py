@@ -273,8 +273,6 @@ def _sheet(name: str, deps: list[str], mark: str, rows: str, cols: str, encoding
 
 
 def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
-    host = httpx.URL(server).host
-    path = f"/t/{site}/datasources" if site else "/datasources"
     rev = "[post_discount_revenue]"
     rev_dep = _dep("post_discount_revenue", "real", "measure", "quantitative", caption="Revenue")
     sum_rev = _inst("post_discount_revenue", "Sum", "sum", "quantitative", "qk")
@@ -315,6 +313,9 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
                  "</filter>"),
         params=True,
     )
+    ds_cols = ("      <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />\n"
+               "      <column datatype='integer' name='[days_to_close]' role='measure' type='quantitative' />\n"
+               f"      {large_dep}")
     zones = [
         ("<zone h='8000' id='2' type-v2='text' w='100000' x='0' y='0'><formatted-text><run bold='true'>Dunder Mifflin sales. </run>"
          "<run>Revenue is after discounts.</run></formatted-text></zone>"),
@@ -334,16 +335,7 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
       <aliases enabled='yes' />
       {PARAM_COLUMN}
     </datasource>
-    <datasource caption='{DATASOURCE}' inline='true' name='{DS}' version='18.1'>
-      <repository-location derived-from='{server}{path}/{ds_content_url}?rev=1.0' id='{ds_content_url}' path='{path}' revision='1.0' site='{site}' />
-      <connection channel='https' class='sqlproxy' dbname='{ds_content_url}' directory='/dataserver' port='443' server='{host}' username=''>
-        <relation name='sqlproxy' table='[sqlproxy]' type='table' />
-      </connection>
-      <aliases enabled='yes' />
-      <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
-      <column datatype='integer' name='[days_to_close]' role='measure' type='quantitative' />
-      {large_dep}
-    </datasource>
+{_sqlproxy(server, site, ds_content_url, ds_cols)}
   </datasources>
   <worksheets>
 {bar}
