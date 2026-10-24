@@ -12,6 +12,9 @@
   Section Access translate; the rest of the load script, Aggr/TOTAL and searches are TODOs. Verified live.
 - ThoughtSpot: formulas with the two-word `unique count ( x )` parse, and `nullif ( a , b )`
   translates (a divisor `nullif ( b , 0 )` keeps the formula a ratio metric).
+- Superset: `unshackle import superset` reads the export ZIP Superset's UI downloads (or
+  the unzipped folder). Chart SQL, roles, row-level security and usage aren't in the
+  export; tiles get a TODO and the report lists those gaps.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.

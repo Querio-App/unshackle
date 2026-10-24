@@ -25,6 +25,9 @@ Raw layout under migration/raw/superset/:
                                       and chart data requests (ChartDataRestApi.data with a slice_id) per id
   _errors.json                        items that failed to extract; parse() turns them into warnings
 
+`unshackle import superset <export.zip | folder>` writes only export/ (from the zip Superset's UI downloads) plus
+_import.json; tiles then have no SQL and carry a TODO, and there are no ids, usage, roles or RLS.
+
 Auth: SUPERSET_API_KEY (sent as a bearer token) or SUPERSET_USERNAME / SUPERSET_PASSWORD, exchanged at
 POST /api/v1/security/login (SUPERSET_AUTH_PROVIDER: db, the default, or ldap). Extract only reads, plus
 POST /api/v1/chart/data, which Superset exempts from CSRF.
@@ -37,7 +40,7 @@ import json
 import re
 import zipfile
 from datetime import datetime, timedelta, timezone
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -58,6 +61,7 @@ from unshackle.ir import (
     snake,
 )
 from unshackle.raw import RawStore
+from unshackle.sources import _manual
 from unshackle.sources._semyaml import AGG_FN, NField, NTable, build_semantic
 from unshackle.sources.base import Inventory, Source
 
@@ -78,6 +82,9 @@ INT_TYPES = re.compile(r"^(SMALLINT|INTEGER|INT|BIGINT|INT2|INT4|INT8|TINYINT)\b
 FLOAT_CAST = re.compile(r"\b1\.0*\s*\*|\bcast\s*\(|::\s*(float|double|numeric|decimal|real)", re.I)
 DATA_PERMS = {"all_datasource_access", "all_database_access", "database_access", "schema_access", "catalog_access",
               "datasource_access"}
+NO_SQL_MANUAL = ("the export zip has no compiled SQL for this chart: write it from source_config, or run "
+                 "`unshackle extract superset` to get the SQL Superset runs")
+EXPORT_DIRS = {"databases", "datasets", "charts", "dashboards", "queries"}
 DROP_DB_KEYS = {"encrypted_extra", "masked_encrypted_extra", "ssh_tunnel", "server_cert"}
 
 
@@ -177,6 +184,14 @@ class SupersetSource(Source):
     label = "Apache Superset"
     env_vars = ("SUPERSET_URL", "SUPERSET_API_KEY", "SUPERSET_USERNAME", "SUPERSET_PASSWORD")
     docs = "https://superset.apache.org/docs/api"
+    manual_files = ("the export .zip Superset downloads (Export on the Dashboards, Charts or Datasets list, or "
+                    "`superset export-dashboards`), or that zip unzipped")
+    manual_gaps = (
+        "chart SQL: the export has form data, not the SQL Superset compiles, so tiles and charts carry a TODO to write it",
+        "dashboard filters: without compiled SQL, select filters are not bound as :params; each tile lists them as a TODO",
+        "permissions: roles and row-level security are not in the export",
+        "usage: no view counts, and no instance URL or ids, so nothing links back to Superset",
+    )
 
     def __init__(self, client: Client | None = None):
         self._client = client
@@ -344,10 +359,40 @@ class SupersetSource(Source):
 
     # ------------------------------------------------------------ parse
 
+    def import_path(self, path: Path) -> dict[str, bytes]:
+        """An export bundle (zip already unpacked) -> export/<path below the folder holding metadata.yaml>."""
+        if path.is_file():
+            raise SourceError(f"{path.name}: Superset import accepts {self.manual_files}")
+        files = list(_manual.files_of(path))
+        roots = [rel.removesuffix("metadata.yaml") for rel, _ in files if rel.rsplit("/", 1)[-1] == "metadata.yaml"]
+        out: dict[str, bytes] = {}
+        for rel, p in files:
+            root = next((r for r in sorted(roots, key=len, reverse=True) if rel.startswith(r)), None)
+            if root is None:
+                continue
+            inner = rel[len(root):]
+            if inner == "metadata.yaml":
+                out["export/metadata.yaml"] = p.read_bytes()
+                continue
+            if inner.split("/", 1)[0] not in EXPORT_DIRS or not inner.endswith(".yaml"):
+                continue
+            data = p.read_bytes()
+            try:
+                doc = yaml.safe_load(data.decode("utf-8"))
+            except (yaml.YAMLError, UnicodeDecodeError) as exc:
+                raise SourceError(f"{rel}: not readable YAML: {exc}") from exc
+            if not isinstance(doc, dict) or not doc.get("uuid"):
+                raise SourceError(f"{rel}: not a Superset export file (no uuid)")
+            if inner.startswith("databases/"):
+                data = yaml.safe_dump({k: v for k, v in doc.items() if k not in DROP_DB_KEYS}, sort_keys=False, allow_unicode=True).encode()
+            out[f"export/{inner}"] = data
+        return out
+
     def parse(self, store: RawStore) -> Bundle:
         b = Bundle(tool="superset")
         self.store = store
         self.instance = store.get_json("instance.json") if store.exists("instance.json") else {}
+        self.manual = store.exists(_manual.IMPORT_META)  # an export zip downloaded by hand: no compiled SQL
         load = lambda pattern: [yaml.safe_load(store.get_text(r)) for r in store.glob(pattern)]  # noqa: E731
         self.datasets = {d["uuid"]: d for d in load("export/datasets/*/*.yaml")}
         self.charts = {c["uuid"]: c for c in load("export/charts/*.yaml")}
@@ -538,8 +583,8 @@ class SupersetSource(Source):
         else:
             tile.kind = "unknown"
             todos.append(f"Superset {viz} chart has no Altair mapping; pick a mark or rebuild")
-        if not sql and qc:
-            todos.append("no SQL for this chart; re-run extract or write it")
+        if not sql and (qc or self.manual):
+            todos.append(NO_SQL_MANUAL if self.manual else "no SQL for this chart; re-run extract or write it")
         tile.todo = "; ".join(dict.fromkeys(todos))
         return tile
 
@@ -649,7 +694,8 @@ class SupersetSource(Source):
                 continue
             sql = self._sql(f"sql/{uuid}.sql")
             if not sql:
-                b.warn(f"chart {ch.get('slice_name')}", "chart without compiled SQL (no query_context); not migrated")
+                b.warn(f"chart {ch.get('slice_name')}", f"{NO_SQL_MANUAL}; not migrated" if self.manual
+                       else "chart without compiled SQL (no query_context); not migrated")
                 continue
             b.queries.append(VerifiedQuery(ch.get("slice_name") or uuid, sql, ch.get("description") or "", datasource=b.datasource,
                                            source_ref=self._ref("chart", uuid)))

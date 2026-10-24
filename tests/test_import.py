@@ -290,3 +290,61 @@ def test_reimport_replaces_raw(tmp_path: Path):
     r = _cli("import", "tableau", tmp_path / "B.twb", "--repo", repo)
     assert r.exit_code == 0 and "replacing 1 earlier" in r.output
     assert [p.name for p in (repo / "migration/raw/tableau/workbooks").iterdir()] == ["B.twb"]
+
+
+def _superset_zip(tmp_path: Path, top: str = "dashboard_export_20261022T104713") -> Path:
+    """What Export on Superset's Dashboards list downloads: the bundle under one dated top folder."""
+    archive = tmp_path / f"{top}.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        for p in sorted((FIX / "superset/export").rglob("*.yaml")):
+            z.write(p, f"{top}/{p.relative_to(FIX / 'superset/export').as_posix()}")
+    return archive
+
+
+def test_superset_export_zip(tmp_path: Path):
+    api = api_build(tmp_path, "superset")
+    repo, man = manual_build(tmp_path, "superset", _superset_zip(tmp_path))
+
+    raw = repo / "migration/raw/superset"
+    assert sorted(p.relative_to(raw).as_posix() for p in raw.rglob("*.yaml")) == \
+        sorted("export/" + p.relative_to(FIX / "superset/export").as_posix() for p in (FIX / "superset/export").rglob("*.yaml"))
+    same(api, man, "tables", "semantic_models", "metrics")
+    [a], [m] = api.dashboards, man.dashboards
+    assert [(t.id, t.title, t.kind, t.mark) for t in a.tiles] == [(t.id, t.title, t.kind, t.mark) for t in m.tiles]
+    assert [f.name for f in a.filters] == [f.name for f in m.filters]
+    charts = [t for t in m.tiles if t.kind != "text"]
+    assert charts and all(not t.sql and "export zip has no compiled SQL" in t.todo for t in charts)
+    assert api.permissions and not man.permissions and not man.row_filters  # roles and RLS are API-only
+    text = report(repo)
+    assert "## superset: imported manually" in text and "row-level security" in text
+
+
+def test_superset_unzipped_folder(tmp_path: Path):
+    folder = tmp_path / "downloads" / "dashboard_export_20261022T104713"
+    shutil.copytree(FIX / "superset/export", folder)
+    (folder.parent / "notes.txt").write_text("not part of the export\n")
+    repo, man = manual_build(tmp_path, "superset", folder.parent)
+    assert (repo / "migration/raw/superset/export/metadata.yaml").exists()
+    assert not list((repo / "migration/raw/superset").rglob("notes.txt"))
+    assert [d.name for d in man.dashboards] == ["Sales overview"]
+
+
+def test_superset_drops_database_secrets(tmp_path: Path):
+    folder = tmp_path / "export"
+    shutil.copytree(FIX / "superset/export", folder)
+    db = folder / "databases/Dunder_Mifflin.yaml"
+    db.write_text(db.read_text() + "encrypted_extra: '{\"credentials\": \"x\"}'\nssh_tunnel:\n  password: x\n")
+    repo = tmp_path / "repo"
+    assert _cli("import", "superset", folder, "--repo", repo).exit_code == 0
+    text = (repo / "migration/raw/superset/export/databases/Dunder_Mifflin.yaml").read_text()
+    assert "encrypted_extra" not in text and "ssh_tunnel" not in text
+
+
+def test_superset_rejects_other_files(tmp_path: Path):
+    (tmp_path / "dashboard.json").write_text("{}")
+    r = _cli("import", "superset", tmp_path / "dashboard.json", "--repo", tmp_path)
+    assert r.exit_code != 0 and "Superset import accepts" in r.output
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "empty/readme.md").write_text("hi\n")
+    r = _cli("import", "superset", tmp_path / "empty", "--repo", tmp_path)
+    assert r.exit_code != 0 and "nothing Apache Superset can use" in r.output

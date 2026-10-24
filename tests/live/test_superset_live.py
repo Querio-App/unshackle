@@ -110,6 +110,32 @@ def _extract_build_verify(ids: dict[str, int], stack: Stack, tmp_path: Path) -> 
     print(out)
     results = json.loads((repo / "migration/parity/results.json").read_text())
     assert len(results) == len(cases) and all(r["status"] == "pass" for r in results), out
+    _import_export_zip(http, repo, tmp_path)
+
+
+def _import_export_zip(http: httpx.Client, api_repo: Path, tmp_path: Path) -> None:
+    """The dashboard's Export download from Superset's UI, through `unshackle import superset`."""
+    [dash] = http.get("/api/v1/dashboard/").json()["result"]
+    r = http.get("/api/v1/dashboard/export/", params={"q": f"!({dash['id']})"})
+    r.raise_for_status()
+    archive = tmp_path / "dashboard_export.zip"
+    archive.write_bytes(r.content)
+    repo = tmp_path / "manual"
+    run_unshackle(repo, "init")
+    run_unshackle(repo, "import", "superset", str(archive))
+    print(run_unshackle(repo, "build", "superset"))
+    assert (repo / "notebooks/sales-overview.ipynb").exists()
+    assert _without_refs(yaml.safe_load((repo / "semantic/orders.ossie.yaml").read_text())) == \
+        _without_refs(yaml.safe_load((api_repo / "semantic/orders.ossie.yaml").read_text()))
+    report = (repo / "migration/report.md").read_text()
+    assert "## superset: imported manually" in report and "export zip has no compiled SQL" in report
+
+
+def _without_refs(x):
+    """An Ossie model without custom_extensions (they carry source refs: ids from the API, uuids from the zip)."""
+    if isinstance(x, dict):
+        return {k: _without_refs(v) for k, v in x.items() if k != "custom_extensions"}
+    return [_without_refs(v) for v in x] if isinstance(x, list) else x
 
 
 def snake(name: str) -> str:
