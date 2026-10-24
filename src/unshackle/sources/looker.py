@@ -87,6 +87,14 @@ TIMEFRAME_GRAIN = [
     ("year", "year"),
 ]
 TF_GRAIN = dict(TIMEFRAME_GRAIN)
+
+
+def _grain(g: dict[str, Any]) -> str:
+    """A dimension_group's grain: its smallest timeframe, at least a day for a date."""
+    grain = next((gr for tf, gr in TIMEFRAME_GRAIN if tf in (g.get("timeframes") or ["time"])), "day")
+    return "day" if g.get("datatype") in ("date", "yyyymmdd") and grain in ("second", "minute", "hour") else grain
+
+
 VIS_MARK = {
     "looker_column": ("chart", "bar"),
     "looker_bar": ("chart", "bar"),
@@ -520,10 +528,9 @@ def _number_filter(ref: str, v: str) -> str | None:
     if m:
         return f"{ref} BETWEEN {m.group(1)} AND {m.group(2)}"
     for joiner in ("AND", "OR"):
-        parts = re.split(rf"\s+{joiner}\s+", v, flags=re.I)
-        if len(parts) > 1 and all(re.fullmatch(rf"(>=|<=|<>|!=|>|<|=)\s*{NUM}", p.strip()) for p in parts):
-            return "(" + f" {joiner} ".join(f"{ref} {re.match(r'(>=|<=|<>|!=|>|<|=)', p.strip()).group(1)} "
-                                             f"{re.search(NUM, p).group(0)}" for p in parts) + ")"
+        ms = [re.fullmatch(rf"(>=|<=|<>|!=|>|<|=)\s*({NUM})", p.strip()) for p in re.split(rf"\s+{joiner}\s+", v, flags=re.I)]
+        if len(ms) > 1 and all(ms):
+            return "(" + f" {joiner} ".join(f"{ref} {m[1]} {m[2]}" for m in ms) + ")"
     return None
 
 
@@ -592,16 +599,16 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str 
         return f"({ref} IS NULL OR {ref} = '')"
     if v.upper() == "-EMPTY":
         return f"({ref} IS NOT NULL AND {ref} <> '')"
-    m = re.fullmatch(r"(>=|<=|<>|!=|>|<|=)?\s*(-?\d+(?:\.\d+)?)", v)
+    m = re.fullmatch(rf"(>=|<=|<>|!=|>|<|=)?\s*({NUM})", v)
     if m and (kind == "number" or m.group(1)):
         return f"{ref} {m.group(1) or '='} {m.group(2)}"
     if kind == "number":
         return _number_filter(ref, v)
     if kind == "time":
         return _date_filter(ref, v, datatype)
-    # dates, number ranges and anything that reads like a relative date need a person; brackets
-    # are literal in a string filter ("(5) Purchase")
-    if kind in ("time", "number") or (kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I)):
+    # anything that reads like a relative date needs a person; brackets are literal in a string
+    # filter ("(5) Purchase")
+    if kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
         return None
     if '"' in v:  # quoting in a filter value: leave it to a person
         return None
@@ -1031,6 +1038,9 @@ class _Parser:
                     return f
         return None
 
+    def _group(self, vname: str, name: str) -> dict[str, Any]:
+        return next((x for x in (self.views.get(vname) or {}).get("dimension_groups", []) if x["name"] == name), {})
+
     def _pk(self, vname: str) -> dict[str, Any] | None:
         for d in (self.views.get(vname) or {}).get("dimensions", []):
             if _yes(d.get("primary_key")):
@@ -1171,7 +1181,7 @@ class _Parser:
     def _timeframe(self, view: str, group: str, tf: str, mode: str, seen: frozenset[str], q: _Query | None, at: str) -> tuple[str, list[str]]:
         """`${created_month}`: the dimension_group's SQL with Looker's truncation for the timeframe."""
         ref = f"{group}_{tf}" if mode == "table" else f"{at}.{group}_{tf}"
-        g = next((x for x in (self.views.get(view) or {}).get("dimension_groups", []) if x["name"] == group), {})
+        g = self._group(view, group)
         datatype = str(g.get("datatype") or "timestamp")
         if datatype in ("epoch", "yyyymmdd"):
             return "", [f"references timeframe {ref} of a datatype: {datatype} dimension_group (the column is a number, not a date)"]
@@ -1323,9 +1333,7 @@ class _Parser:
         if kind[0] == "time":
             # Looker filters the time itself, whatever the timeframe: the dimension at second grain when it
             # has one (the time itself), else at day grain, compared with dates
-            g = next((x for x in (self.views.get(view) or {}).get("dimension_groups", []) if x["name"] == kind[1]), {})
-            tfs = g.get("timeframes") or ["time"]  # as _view sets the dimension's grain
-            exact = g.get("datatype") not in ("date", "yyyymmdd") and next((gr for tf, gr in TIMEFRAME_GRAIN if tf in tfs), "day") == "second"
+            exact = _grain(self._group(view, kind[1])) == "second"
             grain, datatype = ("second", "timestamp") if exact else ("day", "date")
             return f"{{{{ TimeDimension('{snake(view)}__{snake(kind[1])}', '{grain}') }}}}", "time", datatype
         if kind[0] != "dimension":
@@ -1423,10 +1431,7 @@ class _Parser:
                 )
                 continue
             expr, problems = self.resolve(vname, g.get("sql") or f"${{TABLE}}.{g['name']}")
-            tfs = g.get("timeframes") or ["time"]
-            grain = next((gr for tf, gr in TIMEFRAME_GRAIN if tf in tfs), "day")
-            if g.get("datatype") in ("date", "yyyymmdd") and grain in ("second", "minute", "hour"):
-                grain = "day"
+            grain = _grain(g)
             dim = Dimension(g["name"], "time", "" if expr == g["name"] else expr, g.get("description", ""), _label(g), grain)
             if g.get("datatype") in ("epoch", "yyyymmdd"):
                 problems.append(f"datatype: {g['datatype']} (the column is a number, not a date); convert it to a date or timestamp in the expression")
@@ -1517,7 +1522,7 @@ class _Parser:
             filters, bad = [], []
             for field, value in _filter_pairs(m):
                 ref = self.field_ref(vname, field)
-                sql = looker_filter_sql(ref[0], value, ref[1], ref[2] or "date") if ref else None
+                sql = looker_filter_sql(ref[0], value, *ref[1:]) if ref else None
                 if sql is None:
                     bad.append(f"{field}: {value!r}")
                 else:
@@ -2480,7 +2485,7 @@ class _Query:
         if not kind or kind[0] != "time":
             return None
         sql, p = self.p._timeframe(view, kind[1], "raw", "query", frozenset(), self, a)
-        g = next((x for x in (self.p.views.get(view) or {}).get("dimension_groups", []) if x["name"] == kind[1]), {})
+        g = self.p._group(view, kind[1])
         return (sql, "date" if g.get("datatype") == "date" else "timestamp") if sql and not p else None
 
     def snapshot(self) -> tuple:
