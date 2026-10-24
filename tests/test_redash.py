@@ -54,10 +54,18 @@ def test_render_parameters():
     assert sql == "SELECT * FROM t WHERE s = :status AND n > :n AND d >= :d_start AND d < :d_end" and todos == []
     sql, todos = render("SELECT {{ col }} FROM t WHERE r IN ({{ region }}) AND x = '{{ nope }}' AND y LIKE '%{{ status }}%'",
                         params, binds, {})
-    assert sql.count("{{") == 4
-    assert any("{{ col }} (text) is spliced into the SQL as raw text" in t for t in todos)
-    assert any("allows several values" in t for t in todos) and any("{{ nope }} is not a declared parameter" in t for t in todos)
-    assert any("{{ status }} (text)" in t for t in todos)  # inside a LIKE pattern: not a whole quoted value
+    assert sql == "SELECT {{ col }} FROM t WHERE r IN :region AND x = '{{ nope }}' AND y LIKE '%{{ status }}%'"
+    assert any("{{ col }} (text) is spliced into the SQL as raw text, without quotes" in t for t in todos)
+    assert any("{{ nope }} is not a declared parameter" in t for t in todos)
+    assert any("{{ status }} (text) is spliced inside a string literal" in t and "'%' || :status || '%'" in t for t in todos)
+    # several values: only IN ({{ p }}) with single quotes is a list bind; anything else stays TODO
+    raw = {**params, "ids": {"name": "ids", "type": "enum", "multiValuesOptions": {"prefix": "", "suffix": "", "separator": ","}}}
+    sql, todos = render("SELECT * FROM t WHERE r not in ( {{region}} ) AND id IN ({{ ids }}) AND s = '{{ region }}'", raw, binds | {"ids": "ids"}, {})
+    assert sql == "SELECT * FROM t WHERE r not in :region AND id IN ({{ ids }}) AND s = '{{ region }}'"
+    assert any("{{ ids }} allows several values, which Redash splices into the SQL unquoted" in t for t in todos)
+    assert any("{{ region }} allows several values, which Redash splices into the SQL quoted with '" in t for t in todos)
+    sql, todos = render("SELECT * FROM t WHERE r IN ({{ region }})", params, {}, {"region": ["West", "South"]})
+    assert sql == "SELECT * FROM t WHERE r IN ('West','South')" and todos == []  # static values: joined as Redash does
     sql, todos = render("SELECT {{ col }} FROM t WHERE d >= '{{ d.start }}' AND s = '{{ status }}'", params, {"status": "s"},
                         {"col": "region", "d": {"start": "2025-01-01", "end": "2025-02-01"}})
     assert sql == "SELECT region FROM t WHERE d >= '2025-01-01' AND s = :s" and todos == []  # static values: raw text, as Redash
@@ -229,6 +237,40 @@ def test_partial_data_source_access_and_query_acl(tmp_path: Path):
     sales = next(p for p in b.permissions if p.principal == "group:Sales" and p.resource_type == "Notebook")
     assert sales.todo == "Redash hides this group the widgets on data sources ['Replica']"
     assert any(w.item == "query Revenue by region" and "dwight@example.com" in w.message for w in b.warnings)
+
+def test_multi_value_parameter(tmp_path: Path):
+    import duckdb
+    from sqlalchemy import bindparam, create_engine, text
+
+    repo = repo_with_fixtures(tmp_path)
+
+    def multi(q):
+        q["query"] = q["query"].replace("o.status = '{{ status }}'", "o.status IN ({{ status }})")
+        q["options"]["parameters"][0].update(type="enum", enumOptions="COMPLETED\nCANCELLED\nRETURNED", value=["COMPLETED", "CANCELLED"],
+                                             multiValuesOptions={"prefix": "'", "suffix": "'", "separator": ","})
+    edit(repo, "queries/2.json", multi)
+    edit(repo, "dashboards/1.json", lambda doc: widget(doc, 6)["options"]["parameterMappings"]["status"].update(type="widget-level"))
+    b = RedashSource().parse(RawStore(repo, "redash"))
+    q = next(q for q in b.queries if q.source_ref == "redash:query/2")
+    assert "o.status IN :status" in q.sql and not q.todo
+    assert ":status (enum, a list of values, default ['COMPLETED', 'CANCELLED'])" in q.description
+    d = b.dashboards[0]
+    tile = next(t for t in d.tiles if t.id == "revenue_by_region")
+    assert "o.status IN :revenue_by_region_status" in tile.sql
+    assert "bindparam('revenue_by_region_status', expanding=True)" in tile.todo
+    assert {f.name: f.default for f in d.filters}["revenue_by_region_status"] == ["COMPLETED", "CANCELLED"]
+    db = tmp_path / "w.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute("create table orders as select * from (values (1, 'COMPLETED', 10.0), (2, 'CANCELLED', 20.0), (3, 'RETURNED', 40.0))"
+                " t(id, status, post_discount_revenue)")
+    con.execute("create table shippings as select * from (values (1, 'West', 'A'), (2, 'West', 'A'), (3, 'West', 'A')) t(order_id, region, mode)")
+    con.close()
+    engine = create_engine(f"duckdb:///{db}")
+    with engine.connect() as conn:
+        sql = text(tile.sql).bindparams(bindparam("revenue_by_region_status", expanding=True))
+        rows = conn.execute(sql, {"revenue_by_region_status": ["COMPLETED", "CANCELLED"]}).all()
+    engine.dispose()
+    assert [tuple(r) for r in rows] == [("West", "A", 30.0)]
 
 
 def test_build_outputs(tmp_path: Path):

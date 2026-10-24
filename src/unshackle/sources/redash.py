@@ -54,6 +54,7 @@ from unshackle.sources.base import Inventory, Source
 DROP_KEYS = {"api_key", "user", "last_modified_by", "profile_image_url"}
 MUSTACHE = re.compile(r"(')?\{\{\s*([^{}#^/!>&\s][^{}]*?)\s*\}\}(')?")
 SECTION = re.compile(r"\{\{\s*[#^/]")
+MULTI_IN = re.compile(r"\b(IN)\s*\(\s*\{\{\s*([^{}#^/!>&\s.][^{}.]*?)\s*\}\}\s*\)", re.I)
 RANGES = {"date-range", "datetime-range", "datetime-range-with-seconds"}
 DATES = {"date", "datetime-local", "datetime-with-seconds"}
 MARKS = {"line": "line", "column": "bar", "area": "area", "scatter": "point", "bubble": "point", "pie": "arc"}
@@ -79,6 +80,20 @@ def _bind(name: str) -> str:
     return b if b and not b[0].isdigit() else f"p_{b}"
 
 
+def _multi(p: dict[str, Any]) -> dict[str, Any] | None:
+    """multiValuesOptions of a parameter that allows several values."""
+    o = p.get("multiValuesOptions")
+    return o if isinstance(o, dict) else None
+
+
+def _list_bind(p: dict[str, Any]) -> bool:
+    """Redash joins several values as `prefix + v + suffix` with the separator; with single quotes that's a list of
+    string literals, so `IN ({{ p }})` is `IN :p` with a list bound to :p. Without quotes the values are SQL (numbers,
+    columns), with double quotes identifiers: those stay TODO."""
+    o = _multi(p) or {}
+    return o.get("prefix") == "'" and o.get("suffix") == "'" and str(o.get("separator", ",")).strip() == ","
+
+
 def _dynamic(value: Any) -> bool:
     """Redash's relative dates ("d_last_7_days", "d_now") are computed when the query runs."""
     return isinstance(value, str) and value.startswith("d_")
@@ -96,7 +111,14 @@ def render(sql: str, params: dict[str, dict[str, Any]], binds: dict[str, str], i
     """
     todos: list[str] = []
     if SECTION.search(sql):
-        todos.append("uses mustache sections ({{# }} / {{^ }}); rewrite them as SQL")
+        todos.append("uses mustache sections ({{# }} / {{^ }}); Redash renders them with the parameter values before running "
+                     "the query; rewrite them as SQL over the binds (e.g. a CASE or `:p IS NULL OR ...`)")
+
+    def multi_in(m: re.Match[str]) -> str:
+        p = params.get(m.group(2))
+        if p is None or m.group(2) in inline or not _list_bind(p):
+            return m.group(0)
+        return f"{m.group(1)} :{binds[m.group(2)]}"
 
     def sub(m: re.Match[str]) -> str:
         key = m.group(2)
@@ -110,13 +132,14 @@ def render(sql: str, params: dict[str, dict[str, Any]], binds: dict[str, str], i
             v = inline[name]
             v = v.get(part) if isinstance(v, dict) and part else v
             if isinstance(v, list):
-                todos.append(f"parameter {name} has several values {v!r}; Redash joins them with its multi-value options")
-                return m.group(0)
+                o = _multi(p) or {}
+                v = str(o.get("separator", ",")).join(f"{o.get('prefix', '')}{x}{o.get('suffix', '')}" for x in v)
             return (m.group(1) or "") + str(v) + (m.group(3) or "")
         typ = str(p.get("type") or "text")
-        if isinstance(p.get("multiValuesOptions"), dict):
-            todos.append(f"parameter {name} allows several values, which Redash quotes and joins into the SQL; "
-                         f"rewrite as IN with one bind per value or an array bind")
+        if o := _multi(p):
+            how = (f"quoted with {o.get('prefix')}" if o.get("prefix") else "unquoted") + f", separated by {o.get('separator', ',')!r}"
+            todos.append(f"{{{{ {key} }}}} allows several values, which Redash splices into the SQL {how}; only "
+                         f"IN ({{{{ {key} }}}}) with single quotes translates (to IN :{binds[name]}, a list); rewrite this use by hand")
             return m.group(0)
         if typ in RANGES:
             if part not in ("start", "end"):
@@ -132,11 +155,16 @@ def render(sql: str, params: dict[str, dict[str, Any]], binds: dict[str, str], i
             return f":{bind}"
         if typ == "number":
             return (m.group(1) or "") + f":{bind}" + (m.group(3) or "")
-        todos.append(f"{{{{ {key} }}}} ({typ}) is spliced into the SQL as raw text, not as a quoted value; "
-                     f"replace it with SQL using :{bind}, or inline it if it's a column or a fragment")
+        if (m.string.count("'", 0, m.start()) + (1 if m.group(1) else 0)) % 2:
+            todos.append(f"{{{{ {key} }}}} ({typ}) is spliced inside a string literal with other text; build the string "
+                         f"around the bind instead, e.g. '%{{{{ {key} }}}}%' -> '%' || :{bind} || '%'")
+        else:
+            todos.append(f"{{{{ {key} }}}} ({typ}) is spliced into the SQL as raw text, without quotes, so its value is SQL "
+                         f"(a column, ASC/DESC, a fragment) that a bind can't carry; inline the value the dashboard uses, "
+                         f"or turn the choices into SQL over :{bind} (e.g. a CASE)")
         return m.group(0)
 
-    return MUSTACHE.sub(sub, sql), todos
+    return MUSTACHE.sub(sub, MULTI_IN.sub(multi_in, sql)), todos
 
 
 def _describe(params: list[dict[str, Any]], binds: dict[str, str]) -> str:
@@ -148,7 +176,8 @@ def _describe(params: list[dict[str, Any]], binds: dict[str, str]) -> str:
             default = f"{v.get('start')} to {v.get('end')}" if isinstance(v, dict) else repr(v)
             out.append(f":{b}_start / :{b}_end ({typ}, default {default})")
         else:
-            out.append(f":{b} ({typ}{', default ' + repr(v) if v not in (None, '') else ''})")
+            several = ", a list of values" if _multi(p) else ""
+            out.append(f":{b} ({typ}{several}{', default ' + repr(v) if v not in (None, '', []) else ''})")
     return f"Parameters: {', '.join(out)}." if out else ""
 
 
@@ -526,9 +555,16 @@ class RedashSource(Source):
                     filters.setdefault(key, (name, DashboardFilter(key, "", value.get(part) if isinstance(value, dict) else None, "date")))
             else:
                 kind = "number" if typ == "number" else "date" if typ in DATES else "value"
+                if _list_bind(p) and value not in (None, "") and not isinstance(value, list):
+                    value = [value]
                 filters.setdefault(binds[p["name"]], (name, DashboardFilter(binds[p["name"]], "", value, kind)))  # type: ignore[arg-type]
         sql, more = render(str(q.get("query") or ""), {p["name"]: p for p in params}, binds, inline)
         todos += more
+        for p in params:
+            b = binds.get(p["name"])
+            if b and _list_bind(p) and re.search(rf"(?<!:):{b}\b", sql):
+                todos.append(f":{b} is a list (Redash parameter {p['name']} allows several values); bind it as an expanding "
+                             f"parameter: text(sql).bindparams(bindparam({b!r}, expanding=True)), from sqlalchemy")
         return sql.strip().rstrip(";").rstrip()
 
     # ------------------------------------------------------------ permissions

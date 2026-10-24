@@ -64,10 +64,11 @@ Query API keys, owners and editors are dropped at extract.
 | `'{{ p }}'` (text, enum, query dropdown, date, datetime) | `:p`; Redash splices the value as text, so the quotes in the SQL go with it |
 | `{{ p }}` (number) | `:p` |
 | `'{{ p.start }}'` / `'{{ p.end }}'` (date and datetime ranges) | `:p_start` / `:p_end` |
+| `IN ({{ p }})`, multi-value enum or query dropdown quoted with single quotes | `IN :p`, a list; the dashboard filter's default is the list. Tiles get a TODO to bind it with `bindparam('p', expanding=True)`, which writes the parentheses |
 | dashboard | `notebooks/<slug>.ipynb`; widgets in grid order (`row`, then `col` on the 6-column grid); text widgets -> markdown cells |
 | widget parameter, `dashboard-level` | dashboard filter named after `mapTo`, shared by every widget mapped to it; default from the dashboard's saved value, else the first widget query's value; ordered by `globalParamOrder` |
 | widget parameter, `widget-level` (or no mapping) | dashboard filter `<tile>_<param>` |
-| widget parameter, `static-value` | the value inlined as raw text, as Redash does |
+| widget parameter, `static-value` | the value inlined as raw text, as Redash does (several values joined with `multiValuesOptions`) |
 | date-range parameter | two filters, `<name>_start` and `<name>_end` |
 | CHART `line` / `column` / `area` / `scatter` / `bubble` | line / bar / area / point: `columnMapping` x -> x, y -> y, `series` -> color (+ `xOffset` for unstacked columns), `size` -> size; `swappedAxes` swaps the axes; `xAxis.type` (`datetime` / `category` / `linear`; `-` = from the cached result's column type) |
 | CHART with several y columns | layers with each `seriesOptions[y].type`; a series on `yAxis: 1` -> dual axis; all-column series are a TODO |
@@ -85,11 +86,20 @@ are the saved SQL people reuse.
 
 ## What needs a human
 
-- **Parameters outside a quoted value**: `{{ p }}` for a text or enum value spliced as
-  SQL (a column name, `ORDER BY {{ sort }}`, `'%{{ term }}%'`), multi-value enum and
-  query parameters (Redash joins the quoted values with `multiValuesOptions`, usually
-  inside `IN (...)`), mustache sections, and names that aren't declared parameters.
-  The mustache stays in the SQL with a TODO.
+- **Parameters outside a quoted value**: Redash pastes the value into the SQL as text,
+  so each of these keeps its mustache with a TODO:
+  - `{{ p }}` for a text or enum value without quotes (a column name,
+    `ORDER BY {{ sort }}`): the value is SQL, which a bind can't carry. Inline the value
+    the dashboard uses, or write the choices as SQL over `:p` (a `CASE`).
+  - `'%{{ term }}%'`, a parameter inside a longer string: build the string around the
+    bind, `'%' || :term || '%'`.
+  - Multi-value parameters anywhere but `IN ({{ p }})`, or with no quotes or double
+    quotes in `multiValuesOptions` (the values are then numbers, columns or identifiers).
+  - Mustache sections (`{{# p }}...{{/ p }}`): rewrite as SQL over the binds.
+  - Names that aren't declared parameters.
+- **Multi-value binds**: `:p` is a list. In the notebook, change the tile's
+  `pd.read_sql(text(sql), ...)` to
+  `text(sql).bindparams(bindparam("p", expanding=True))` (`from sqlalchemy import bindparam`).
 - **Relative dates** (`d_last_7_days`, `d_this_month`, `d_now`): Redash computes them
   when the query runs; the default is left empty with a TODO. Set it in the notebook's
   parameters cell.
