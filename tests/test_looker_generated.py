@@ -100,8 +100,11 @@ def test_untranslated_stay_todo(bundle):
     for name in ("chosen_total", "chosen_label"):  # #29
         assert "Liquid" in metrics[name].todo, name
     assert "Liquid" in _by_name(_by_name(bundle.semantic_models)["ev_liquid"].dimensions)["user_locale"].todo
-    # #30: the UNNEST join is not modelled, and says so
-    assert any("UNNEST" in w.message for w in bundle.warnings if "ev_nested_lines" in w.item)
+    # #30: the UNNEST join becomes a view of its own, joined on the parent's key
+    lines = _by_name(bundle.queries)["ev_nested_lines derived table"].sql
+    assert lines == ("SELECT ev_nested.id AS ev_nested_key, ev_nested_lines.* FROM ev_nested AS ev_nested "
+                     "LEFT JOIN UNNEST(ev_nested.lines) AS ev_nested_lines")
+    assert "ev_nested_lines" in _by_name(bundle.semantic_models)
 
 
 # ---------------------------------------------------------------- timeframes (#18)
@@ -260,7 +263,14 @@ LIQUID_TILES = {
                    ["ev_liquid.customer"], {"ev_liquid.customer_filter": "-acme", "ev_liquid.metric_choice": "shipping"}),
     "liquid_user_attribute": ("ev_liquid", ["ev_liquid.customer", "ev_liquid.user_locale", "ev_liquid.count"], [], {}),
 }
-ALL_TILES = {**{k: (*v, {}) for k, v in TILES.items()}, **LIQUID_TILES}
+# nested records (#30): the unnested view joined on the parent's key
+NESTED_TILES = {
+    "nested_by_id": ("ev_nested", ["ev_nested.id", "ev_nested.count", "ev_nested_lines.count", "ev_nested_lines.total_qty"],
+                     ["ev_nested.id"], {}),
+    "nested_by_sku": ("ev_nested", ["ev_nested_lines.sku", "ev_nested.count", "ev_nested_lines.total_qty"], ["ev_nested_lines.sku"], {}),
+    "nested_total": ("ev_nested", ["ev_nested.count", "ev_nested_lines.count", "ev_nested_lines.total_qty"], [], {}),
+}
+ALL_TILES = {**{k: (*v, {}) for k, v in TILES.items()}, **LIQUID_TILES, **NESTED_TILES}
 
 
 @pytest.fixture(scope="module")
@@ -350,3 +360,26 @@ def test_tile_filters_on_a_timeframe_filter_the_time(db2, tmp_path):
     (tile,) = d.tiles
     assert tile.sql, tile.todo
     assert db2.execute(tile.sql).fetchone()[0] == looker("filters")[0]["ev_f.t_month"] == 2
+
+
+@pytest.mark.parametrize("case", sorted(NESTED_TILES))
+def test_nested_tiles_return_lookers_numbers(tiles, case):
+    """The tiles read the parent and the materialized unnested view (here: Looker's rows, with the one
+    NULL row LEFT JOIN UNNEST gives an empty array); the child view's own SQL runs on BigQuery (checks)."""
+    con = duckdb.connect()
+    con.execute("create table ev_nested as select * from (values (1), (2), (3)) t(id)")
+    con.execute("create table ev_nested_lines as select * from (values (1, 'x', 2), (1, 'y', 3), (2, null, null), (3, 'x', 1))"
+                " t(ev_nested_key, sku, qty)")
+    tile = tiles[case]
+    assert tile.sql, tile.todo
+    assert "SUM(DISTINCT" not in tile.sql.split("ev_nested_lines.qty")[0].rsplit("\n", 1)[-1]  # the lines' own sum stays a sum
+    cur = con.execute(tile.sql)
+    key = {"nested_by_id": "ev_nested_id", "nested_by_sku": "ev_nested_lines_sku"}.get(case)
+    rows = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
+    theirs = looker(case)
+    if key:
+        rows, theirs = sorted(rows, key=lambda r: str(r[key])), sorted(theirs, key=lambda r: str(r[key.replace("_lines_", "_lines.").replace("ev_nested_id", "ev_nested.id")]))
+    assert len(rows) == len(theirs)
+    for o, t in zip(rows, theirs):
+        for field, value in t.items():
+            assert o[field.replace(".", "_")] == value, (case, field)

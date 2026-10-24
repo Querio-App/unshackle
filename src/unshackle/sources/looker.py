@@ -194,6 +194,9 @@ ALL_TIMEFRAMES = [
     "day_of_week", "day_of_week_index", "day_of_month", "day_of_year", "week_of_year", "month_num", "month_name",
     "quarter_of_year", "hour_of_day", "fiscal_month_num", "fiscal_quarter", "fiscal_quarter_of_year", "fiscal_year",
 ]
+UNNEST_JOIN = re.compile(
+    r"^\s*(LEFT\s+(?:OUTER\s+)?JOIN|CROSS\s+JOIN|INNER\s+JOIN|JOIN|,)\s*UNNEST\s*\(\s*(?:\$\{(\w+)\.(\w+)\}|(\w+)\.(\w+))\s*\)"
+    r"\s*(?:AS\s+)?(\w+)\s*$", re.I)
 REVERSED = {"many_to_one": "one_to_many", "one_to_many": "many_to_one", "one_to_one": "one_to_one", "many_to_many": "many_to_many"}
 FAN_SAFE = ("count_distinct", "min", "max", "sum_distinct")  # same result however often a row repeats
 
@@ -633,7 +636,27 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str 
     return " AND ".join(conds)
 
 
-LIQUID_TAG = re.compile(r"(\{%.*?%\}|\{\{.*?\}\})", re.S)
+def strip_sql_comments(sql: str) -> str:
+    """Drop `-- ...` line comments outside quotes: resolved SQL is joined onto one line, where a comment
+    would swallow everything after it."""
+    out, quote, i = [], "", 0
+    while i < len(sql):
+        c = sql[i]
+        if quote:
+            quote = "" if c == quote else quote
+        elif c in "'\"`":
+            quote = c
+        elif sql.startswith("--", i):
+            i = sql.find("\n", i)
+            if i < 0:
+                break
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+LIQUID_TAG = re.compile(r"(\{%-?.*?-?%\}|\{\{-?.*?-?\}\})", re.S)
 LIQUID_COND = re.compile(r"""^([\w.]+)\._parameter_value\s*(==|!=)\s*(['"])(.*?)\3$""")
 
 
@@ -804,6 +827,7 @@ class _Parser:
             self._load_explores_json()
         else:
             self.b.warn("lookml", "no LookML or explore JSON in raw; only dashboards and looks were parsed", "warn")
+        self._unnest_joins()
         self._index_fields()
         self._assign_metric_names()
         for vname, view in self.views.items():
@@ -831,6 +855,53 @@ class _Parser:
             for path in self.store.get_json("_skipped.json"):
                 self.b.warn(path, "not readable by the API user during extract (404/403); export is partial")
         return self.b.settle_time_dimensions()
+
+    def _unnest_joins(self) -> None:
+        """`join: c { sql: LEFT JOIN UNNEST(${p.items}) AS c ;; }` over a view with no table: c becomes a
+        view with its own SQL (the parent's key and each array element, LEFT JOIN keeping Looker's one
+        row for an empty array) joined on the parent's key, so it is modelled like any other view."""
+        plans: dict[str, tuple[str, str, bool] | None] = {}
+        rewrites = []
+        for model in self.models.values():
+            for ex in model["explores"]:
+                aliases = {ex["name"]: ex.get("from") or ex.get("view_name") or ex["name"]}
+                aliases.update({j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])})
+                for j in ex.get("joins", []):
+                    m = UNNEST_JOIN.match(str(j.get("sql") or ""))
+                    if not m or j.get("sql_on") or m.group(6) != j["name"]:
+                        continue
+                    child, parent = aliases[j["name"]], aliases.get(m.group(2) or m.group(4))
+                    field = m.group(3) or m.group(5)
+                    cv = self.views.get(child)
+                    if parent is None or cv is None or cv.get("sql_table_name") or cv.get("derived_table") or self._pk(parent) is None:
+                        continue
+                    plan = (parent, field, m.group(1).strip().upper().startswith("LEFT"))
+                    plans[child] = plan if plans.get(child, plan) == plan else None  # one parent per child view
+                    rewrites.append((j, child, m.group(2) or m.group(4)))
+        built: dict[str, tuple[str, str, bool]] = {}
+        for child, plan in plans.items():
+            if plan is None:
+                continue
+            parent, field, outer = plan
+            pk = self._pk(parent) or {}
+            key = self.dim_expr(parent, pk)[0]
+            f = self._field(parent, field)
+            col = self.resolve(parent, f.get("sql") or f"${{TABLE}}.{field}")[0] if f else field
+            table = self.query_table(parent)[0]
+            if not (SIMPLE_IDENT.match(key) and SIMPLE_IDENT.match(col)):
+                continue
+            fk = f"{snake(parent)}_key"
+            self.views[child]["derived_table"] = {"sql": f"SELECT {parent}.{key} AS {fk}, {child}.* FROM {table} AS {parent} "
+                                                         f"{'LEFT JOIN' if outer else 'CROSS JOIN'} UNNEST({parent}.{col}) AS {child}"}
+            self.views[child].setdefault("dimensions", []).append({"name": fk, "hidden": "yes", "sql": f"${{TABLE}}.{fk}"})
+            built[child] = (fk, pk["name"], outer)
+            self.b.warn(f"view {child}", f"nested field {parent}.{field} (UNNEST): modelled as a view of its own, joined on {parent}.{pk['name']}", "info")
+        for j, child, parent_alias in rewrites:
+            if child in built:
+                fk, pk_name, outer = built[child]
+                j.pop("sql")
+                j["sql_on"] = f"${{{parent_alias}.{pk_name}}} = ${{{j['name']}.{fk}}}"
+                j["type"] = "left_outer" if outer else "inner"
 
     # ------------------------------------------------------------ loading
 
@@ -1094,6 +1165,7 @@ class _Parser:
         and `${other.f}` reads the joined view `other`, which `q` then joins.
         """
         problems: list[str] = []
+        sql = strip_sql_comments(sql or "")
         if LIQUID.search(sql or "") and q is not None:
             sql, problems = Liquid(self, q.liquid).render(vname, sql)
             if problems:
@@ -2512,6 +2584,8 @@ class _Query:
                 continue
             direct = rel.get(a) == "one_to_one" and not self.join_reads.get(a)
             if not many and (a == self.base or direct):
+                continue
+            if many == [a] and not self.join_reads.get(a):  # the many side's own rows are not repeated by its join
                 continue
             if token:
                 self.held[token] = (self.held[token][1],) * 2  # Looker's symmetric aggregate
