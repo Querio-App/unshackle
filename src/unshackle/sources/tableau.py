@@ -1264,7 +1264,7 @@ class _Parser:
             return self.cache[key]
         if key in stack:
             return _Calc("todo", todo=f"circular reference through [{f.label}]")
-        if ds.origin is not None and f.local in ds.inherited and f.local in ds.origin.fields:
+        if ds.origin is not None and f.local in ds.inherited:
             # A calc of the published datasource: translate it once, there (no duplicate metrics, LOD queries or row filters).
             res = self._calc(ds.origin, ds.origin.fields[f.local], stack)
             self.cache[key] = res
@@ -1755,8 +1755,8 @@ class _Parser:
             if r.instance not in seen:
                 ordered.append((r, False))
                 seen.add(r.instance)
-        joined = self._tile_join(wb, ordered, data_ds)
-        self._joined, join_from = joined if joined else (None, "")  # set for this tile's _column/_filter calls
+        join_from = self._tile_join(wb, ordered, data_ds)
+        self._joined = wb.datasources[data_ds[0]] if join_from else None  # set for this tile's _column/_filter calls
         problems: list[str] = []
         columns: list[tuple[_Ref, str, str, bool, str, str, str]] = []
         dropped: set[str] = set()
@@ -1883,22 +1883,22 @@ class _Parser:
         meta["aliases"] = aliases
         return tile, meta
 
-    def _tile_join(self, wb: _Workbook, ordered: list[tuple[_Ref, bool]], data_ds: list[str]) -> tuple[TDatasource, str] | None:
-        """(datasource, FROM clause) when the sheet's fields span several tables of one datasource's join tree, else None."""
+    def _tile_join(self, wb: _Workbook, ordered: list[tuple[_Ref, bool]], data_ds: list[str]) -> str:
+        """The FROM clause when the sheet's fields span several tables of one datasource's join tree, else ""."""
         ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
         if ds is None or not ds.join_steps or not all(on for _, _, on in ds.join_steps):
-            return None
+            return ""
         by_rel = self.ds_models.get(ds.uid) or {}
         used = {id(m) for r, _ in ordered if r.ds is ds and r.field and (m := self._field_model(ds, r.field)) is not None}
         if len(used) < 2 or any(m.rel.kind != "table" for m in by_rel.values()):
-            return None
+            return ""
         first = next(iter(ds.relations))
         if first not in by_rel or any(name not in by_rel for _, name, _ in ds.join_steps):
-            return None
+            return ""
         sql = f"{by_rel[first].sm.table} as {_ident(first)}"
         for kind, name, on in ds.join_steps:
             sql += f"\n{kind.lower()} join {by_rel[name].sm.table} as {_ident(name)} on {on}"
-        return ds, sql
+        return sql
 
     def _filter(self, wb: _Workbook, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, Any] | None:
         refs = self._shelf(wb, flt.get("column"), deps)

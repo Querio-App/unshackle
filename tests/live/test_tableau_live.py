@@ -56,7 +56,7 @@ def _assert_gone(tableau) -> None:
         site.close()
 
 
-def _ossie_sql(ossie: dict, select: dict[str, str], table: str, group: bool) -> str:
+def _ossie_sql(ossie: dict, select: dict[str, str], table: str) -> str:
     """SELECT over the dataset's table with each Ossie field/metric expression, derived fields inlined."""
     ds = ossie["datasets"][0]
     fields = {f["name"]: f["expression"]["dialects"][0]["expression"] for f in ds["fields"]}
@@ -68,8 +68,7 @@ def _ossie_sql(ossie: dict, select: dict[str, str], table: str, group: bool) -> 
             if field != name and sql != field:
                 expr = re.sub(rf"\b{field}\b", f"({sql})", expr)
         out.append(f"{expr} AS {alias}")
-    tail = " GROUP BY 1" if group else ""
-    return f"SELECT {', '.join(out)} FROM {table}{tail}"
+    return f"SELECT {', '.join(out)} FROM {table} GROUP BY 1"
 
 
 def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> None:
@@ -125,10 +124,10 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
         {"name": "Revenue and avg days to close by Discount Band (Ossie: IF dimension, default aggregation Avg)",
          "source": {"csv": by_band},
          "target": {"sql": _ossie_sql(ossie, {"discount_band": "discount_band", "sum_revenue": "revenue", "avg_days_to_close": "days_to_close"},
-                                      joined, True)},
+                                      joined)},
          "keys": ["discount_band"], "columns": {"SUM(Revenue)": "sum_revenue", "AVG(days_to_close)": "avg_days_to_close"}},
         {"name": "Average Order Value by Order Month (Ossie: ratio metric, DATETRUNC dimension)", "source": {"csv": by_month},
-         "target": {"sql": _ossie_sql(ossie, {"order_month": "order_month", "average_order_value": "average_order_value"}, joined, True)},
+         "target": {"sql": _ossie_sql(ossie, {"order_month": "order_month", "average_order_value": "average_order_value"}, joined)},
          "keys": ["order_month"]},
     ]
     for i, case in enumerate(cases):

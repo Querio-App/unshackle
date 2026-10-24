@@ -120,49 +120,33 @@ def build_hyper(path: Path) -> int:
 # ------------------------------------------------------------------ XML
 
 
-def _records(parent_of: callable) -> str:
+def _records(extract: bool = False) -> str:
+    """<metadata-record>s of the federated connection, or of the extract (one [Extract] table, remote names = local names)."""
+    pad = "        " if extract else "      "
     out = []
     for i, (local, table, remote, typ) in enumerate(COLUMNS, 1):
+        remote, parent = (local, "Extract") if extract else (remote, table)
         out.append(
-            "      <metadata-record class='column'>\n"
-            f"        <remote-name>{remote}</remote-name>\n"
-            f"        <remote-type>{REMOTE_TYPE[typ]}</remote-type>\n"
-            f"        <local-name>[{local}]</local-name>\n"
-            f"        <parent-name>[{parent_of(table)}]</parent-name>\n"
-            f"        <remote-alias>{remote}</remote-alias>\n"
-            f"        <ordinal>{i}</ordinal>\n"
-            f"        <local-type>{typ}</local-type>\n"
-            f"        <aggregation>{AGG[typ]}</aggregation>\n"
-            "        <contains-null>true</contains-null>\n"
-            "      </metadata-record>"
+            f"{pad}<metadata-record class='column'>\n"
+            f"{pad}  <remote-name>{remote}</remote-name>\n"
+            f"{pad}  <remote-type>{REMOTE_TYPE[typ]}</remote-type>\n"
+            f"{pad}  <local-name>[{local}]</local-name>\n"
+            f"{pad}  <parent-name>[{parent}]</parent-name>\n"
+            f"{pad}  <remote-alias>{remote}</remote-alias>\n"
+            f"{pad}  <ordinal>{i}</ordinal>\n"
+            f"{pad}  <local-type>{typ}</local-type>\n"
+            f"{pad}  <aggregation>{AGG[typ]}</aggregation>\n"
+            f"{pad}  <contains-null>true</contains-null>\n"
+            f"{pad}</metadata-record>"
         )
     return "\n".join(out)
 
 
-def _extract_records() -> str:
-    out = []
-    for i, (local, _, _, typ) in enumerate(COLUMNS, 1):
-        out.append(
-            "        <metadata-record class='column'>\n"
-            f"          <remote-name>{local}</remote-name>\n"
-            f"          <remote-type>{REMOTE_TYPE[typ]}</remote-type>\n"
-            f"          <local-name>[{local}]</local-name>\n"
-            "          <parent-name>[Extract]</parent-name>\n"
-            f"          <remote-alias>{local}</remote-alias>\n"
-            f"          <ordinal>{i}</ordinal>\n"
-            f"          <local-type>{typ}</local-type>\n"
-            f"          <aggregation>{AGG[typ]}</aggregation>\n"
-            "          <contains-null>true</contains-null>\n"
-            "        </metadata-record>"
-        )
-    return "\n".join(out)
-
-
-def _calc_columns(indent: str = "  ") -> str:
+def _calc_columns() -> str:
     return "\n".join(
-        f"{indent}<column caption={quoteattr(cap)} datatype='{dt}' name='[{local}]' role='{role}' type='{typ}'>\n"
-        f"{indent}  <calculation class='tableau' formula={quoteattr(formula)} />\n"
-        f"{indent}</column>"
+        f"  <column caption={quoteattr(cap)} datatype='{dt}' name='[{local}]' role='{role}' type='{typ}'>\n"
+        f"    <calculation class='tableau' formula={quoteattr(formula)} />\n"
+        f"  </column>"
         for local, cap, dt, role, typ, formula in CALCS
     )
 
@@ -194,7 +178,7 @@ def datasource_tds(hyper_name: str = "Data/Extracts/dunder_mifflin.hyper") -> st
 {cols}
     </cols>
     <metadata-records>
-{_records(lambda t: t)}
+{_records()}
     </metadata-records>
   </connection>
   <aliases enabled='yes' />
@@ -217,7 +201,7 @@ def datasource_tds(hyper_name: str = "Data/Extracts/dunder_mifflin.hyper") -> st
       <relation name='Extract' table='[Extract].[Extract]' type='table' />
       <refresh increment-key='' incremental-updates='false' />
       <metadata-records>
-{_extract_records()}
+{_records(extract=True)}
       </metadata-records>
     </connection>
   </extract>
@@ -236,6 +220,8 @@ def datasource_tdsx(path: Path, workdir: Path) -> Path:
 
 DS = "sqlproxy.0unshackle0live"
 PARAM = "[Parameters].[Parameter 1]"
+PARAM_COLUMN = ("<column caption='Min Order Value' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='500.0'>"
+                "<calculation class='tableau' formula='500.0' /><range granularity='50.0' max='5000.0' min='0.0' /></column>")
 
 
 def _dep(local: str, datatype: str, role: str, typ: str, caption: str = "", formula: str = "") -> str:
@@ -253,10 +239,7 @@ def _inst(local: str, deriv: str, prefix: str, typ: str, short: str) -> str:
 def _sheet(name: str, deps: list[str], mark: str, rows: str, cols: str, encodings: str = "", filters: str = "", params: bool = False) -> str:
     pdeps = ""
     if params:
-        pdeps = ("<datasource-dependencies datasource='Parameters'>"
-                 "<column caption='Min Order Value' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='500.0'>"
-                 "<calculation class='tableau' formula='500.0' /><range granularity='50.0' max='5000.0' min='0.0' /></column>"
-                 "</datasource-dependencies>")
+        pdeps = f"<datasource-dependencies datasource='Parameters'>{PARAM_COLUMN}</datasource-dependencies>"
     return f"""    <worksheet name={quoteattr(name)}>
       <table>
         <view>
@@ -315,10 +298,11 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
         "Text", "", "", encodings=f"<text column='{q(f'[usr:{aov[0]}:qk]')}' />",
     )
     large = ("Calculation_2001", "Large Order", "boolean", "dimension", "nominal", f"{rev} >= {PARAM}")
+    large_dep = _dep(large[0], large[2], large[3], large[4], caption=large[1], formula=large[5])
     table = _sheet(
         SHEETS[3],
         [_dep("account_name", "string", "dimension", "nominal"), _dep("order_id", "string", "dimension", "nominal"), rev_dep,
-         _dep(*large[:1], large[2], large[3], large[4], caption=large[1], formula=large[5]),
+         large_dep,
          _inst("account_name", "None", "none", "nominal", "nk"), sum_rev,
          _inst("order_id", "CountD", "ctd", "quantitative", "qk"), _inst(large[0], "None", "none", "nominal", "nk")],
         "Text", q("[none:account_name:nk]"), "",
@@ -327,13 +311,6 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
                  f"<groupfilter function='member' level='[none:{large[0]}:nk]' member='true' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />"
                  "</filter>"),
         params=True,
-    )
-    ds_cols = "\n".join(
-        f"      <column{' caption=' + quoteattr(c) if c else ''} datatype='{dt}' name='[{local}]' role='{role}' type='{typ}' />"
-        for local, c, dt, role, typ in [
-            ("post_discount_revenue", "Revenue", "real", "measure", "quantitative"),
-            ("days_to_close", "", "integer", "measure", "quantitative"),
-        ]
     )
     zones = [
         ("<zone h='8000' id='2' type-v2='text' w='100000' x='0' y='0'><formatted-text><run bold='true'>Dunder Mifflin sales. </run>"
@@ -352,10 +329,7 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
   <datasources>
     <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
       <aliases enabled='yes' />
-      <column caption='Min Order Value' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='500.0'>
-        <calculation class='tableau' formula='500.0' />
-        <range granularity='50.0' max='5000.0' min='0.0' />
-      </column>
+      {PARAM_COLUMN}
     </datasource>
     <datasource caption='{DATASOURCE}' inline='true' name='{DS}' version='18.1'>
       <repository-location derived-from='{server}{path}/{ds_content_url}?rev=1.0' id='{ds_content_url}' path='{path}' revision='1.0' site='{site}' />
@@ -363,10 +337,9 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
         <relation name='sqlproxy' table='[sqlproxy]' type='table' />
       </connection>
       <aliases enabled='yes' />
-{ds_cols}
-      <column caption='Large Order' datatype='boolean' name='[Calculation_2001]' role='dimension' type='nominal'>
-        <calculation class='tableau' formula={quoteattr(f"{rev} >= {PARAM}")} />
-      </column>
+      <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[days_to_close]' role='measure' type='quantitative' />
+      {large_dep}
     </datasource>
   </datasources>
   <worksheets>
@@ -408,10 +381,10 @@ def workbook_twb(server: str, site: str, ds_content_url: str) -> str:
 class Site:
     """A signed-in REST session (PAT from TABLEAU_PAT_NAME / TABLEAU_PAT_SECRET)."""
 
-    def __init__(self, server: str | None = None, site: str | None = None, version: str | None = None):
-        self.server = (server or os.environ["TABLEAU_SERVER_URL"]).rstrip("/")
-        self.content_url = site if site is not None else os.environ.get("TABLEAU_SITE", "")
-        self.version = version or os.environ.get("TABLEAU_API_VERSION") or "3.24"
+    def __init__(self):
+        self.server = os.environ["TABLEAU_SERVER_URL"].rstrip("/")
+        self.content_url = os.environ.get("TABLEAU_SITE", "")
+        self.version = os.environ.get("TABLEAU_API_VERSION") or "3.24"
         self.http = httpx.Client(base_url=self.server, timeout=300, headers={"Accept": "application/json"})
         creds = self.call("POST", f"/api/{self.version}/auth/signin", json={"credentials": {
             "personalAccessTokenName": os.environ["TABLEAU_PAT_NAME"],
@@ -458,8 +431,8 @@ class Site:
                         headers={"Content-Type": f"multipart/mixed; boundary={boundary}"})[tag]
 
 
-def _permission_body(owner: str, owner_id: str, caps: dict[str, str]) -> dict[str, Any]:
-    return {"permissions": {"granteeCapabilities": [{owner: {"id": owner_id}, "capabilities": {"capability": [
+def _permission_body(group_id: str, caps: dict[str, str]) -> dict[str, Any]:
+    return {"permissions": {"granteeCapabilities": [{"group": {"id": group_id}, "capabilities": {"capability": [
         {"name": n, "mode": m} for n, m in caps.items()]}}]}}
 
 
@@ -488,9 +461,9 @@ def main() -> dict[str, Any]:
             ds = site.publish("datasources", DATASOURCE, project["id"], "dunder_mifflin_orders.tdsx", tdsx.read_bytes())
         twb = workbook_twb(site.server, site.content_url, ds["contentUrl"])
         wb = site.publish("workbooks", WORKBOOK, project["id"], "dunder_mifflin_sales.twb", twb.encode())
-        site.api("PUT", f"/projects/{project['id']}/permissions", json=_permission_body("group", group["id"], {"Read": "Allow"}))
+        site.api("PUT", f"/projects/{project['id']}/permissions", json=_permission_body(group["id"], {"Read": "Allow"}))
         site.api("PUT", f"/workbooks/{wb['id']}/permissions",
-                 json=_permission_body("group", group["id"], {"Read": "Allow", "ExportData": "Allow", "Write": "Deny"}))
+                 json=_permission_body(group["id"], {"Read": "Allow", "ExportData": "Allow", "Write": "Deny"}))
         views = {v["name"]: v["id"] for v in site.items(f"/workbooks/{wb['id']}/views", "views", "view")}
         wait_for_metadata(site, wb["id"])
         return {"project": project["id"], "group": group["id"], "datasource": ds["id"], "workbook": wb["id"], "views": views}
