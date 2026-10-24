@@ -16,7 +16,7 @@ Every test uses the same data: the fictional Dunder Mifflin paper company in
 | --- | --- | --- |
 | `test_warehouse_live.py` | Postgres + the dataset + `unshackle verify` (no BI tool) | ~5 s |
 | `test_lightdash_live.py` | Lightdash 3.23.1, MinIO; dbt + Lightdash CLI deploy; 4 charts, 1 dashboard; 6 parity cases | ~1.5 min |
-| `test_metabase_live.py` | Metabase v0.64.1; native, query-builder and metric cards, a model, a snippet, a two-tab dashboard with filters; 5 parity cases | ~30 s |
+| `test_metabase_live.py` | Metabase v0.64.1; native, query-builder and metric cards, a model, a snippet, a two-tab dashboard with text, date, number and time-grouping filters; 7 parity cases | ~30 s |
 | `test_superset_live.py` | Superset 6.1.0 (built with the Postgres driver); datasets with metrics, 5 charts, a dashboard with a native filter, a role, RLS; 9 parity cases | ~40 s |
 | `test_redash_live.py` | Redash 26.9.0, its metadata Postgres and Redis; 4 parameterized queries, a dashboard; 6 parity cases | ~30 s |
 | `test_quicksight_live.py` | Amazon QuickSight in an AWS account (not Docker), Athena over the dataset in S3; the fixture's data source, 3 datasets, analysis and dashboard; 13 parity cases | ~2 min |

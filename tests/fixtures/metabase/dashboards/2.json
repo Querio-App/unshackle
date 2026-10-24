@@ -314,6 +314,23 @@
               "stage-number": 0
             }
           ]
+        },
+        {
+          "card_id": 42,
+          "parameter_id": "b3c4d5e6",
+          "target": [
+            "dimension",
+            [
+              "field",
+              87,
+              {
+                "temporal-unit": "month"
+              }
+            ],
+            {
+              "stage-number": 0
+            }
+          ]
         }
       ],
       "row": 0,
@@ -540,6 +557,36 @@
             [
               "field",
               82,
+              null
+            ],
+            {
+              "stage-number": 0
+            }
+          ]
+        },
+        {
+          "card_id": 43,
+          "parameter_id": "c9d0e1f2",
+          "target": [
+            "dimension",
+            [
+              "field",
+              87,
+              null
+            ],
+            {
+              "stage-number": 0
+            }
+          ]
+        },
+        {
+          "card_id": 43,
+          "parameter_id": "a7b8c9d0",
+          "target": [
+            "dimension",
+            [
+              "field",
+              83,
               null
             ],
             {
@@ -1076,6 +1123,28 @@
       "sectionId": "string",
       "slug": "status",
       "type": "string/="
+    },
+    {
+      "default": "2025-01-01~2025-01-31",
+      "id": "c9d0e1f2",
+      "name": "Purchased",
+      "sectionId": "date",
+      "slug": "purchased",
+      "type": "date/all-options"
+    },
+    {
+      "id": "a7b8c9d0",
+      "name": "Quantity",
+      "sectionId": "number",
+      "slug": "quantity",
+      "type": "number/between"
+    },
+    {
+      "id": "b3c4d5e6",
+      "name": "Time grouping",
+      "sectionId": "temporal-unit",
+      "slug": "time_grouping",
+      "type": "temporal-unit"
     }
   ],
   "points_of_interest": null,
