@@ -645,8 +645,8 @@ def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     return "".join(clean).strip(), "".join(code), "".join(bare), [c for c in comments if c]
 
 
-def _nested_fixed(text: str) -> tuple[str, str] | None:
-    """{FIXED [a] : AGG({FIXED [b] : ...})} -> (agg, the inner FIXED's text); None for any other nesting."""
+def _nested_fixed(text: str) -> tuple[str, str, str] | None:
+    """{FIXED [a] : AGG({FIXED [b] : ...})} -> (agg, the inner FIXED's text, its body); None for any other nesting."""
     m = LOD_PARTS.fullmatch(text)
     if m is None or m.group(1).upper() != "FIXED":
         return None
@@ -658,7 +658,7 @@ def _nested_fixed(text: str) -> tuple[str, str] | None:
     im = LOD_PARTS.fullmatch(inner)
     if spans != [(0, len(inner), False)] or im is None or im.group(1).upper() != "FIXED":
         return None
-    return body.group(1).lower(), inner
+    return body.group(1).lower(), inner, im.group(3)
 
 
 def lod_spans(clean: str) -> list[tuple[int, int, bool]]:
@@ -1388,6 +1388,17 @@ class _Parser:
         self.owner[name] = model.key
         model.elements.add(name)
 
+    def _grain_metric(self, lm: _Model, ds: TDatasource, f: TField, agg: str, expr: str, src: str, note: str = "") -> str:
+        """A measure and metric on a FIXED grain's model (once per name); returns the name."""
+        name = self._namer(lm, f.label)
+        if not self._exists(lm, name, ds, f):
+            lm.sm.measures.append(Measure(name, agg, "" if expr == name else expr, f.description, f.label))
+            self.b.metrics.append(Metric(name, label=f.label, description=" ".join(x for x in (f.description, note) if x), measure=name,
+                                         semantic_model=lm.sm.name, source_ref=src))
+            self.metric_sql[name] = AGG_SQL[agg].format(expr)
+            self._register(lm, name)
+        return name
+
     def _base_fields(self, ds: TDatasource) -> None:
         for f in ds.fields.values():
             if f.is_calc or f.param or f.local in INTERNAL_FIELDS or not f.remote:
@@ -1688,9 +1699,7 @@ class _Parser:
                     raise ax.FormulaError(f"[{g.label}] is not a translated row-level field")
         inner: tuple[_Lod, str] | None = None
         if nested:
-            inner_text = nested[1]
-            inner_body = LOD_PARTS.fullmatch(inner_text).group(3)  # type: ignore[union-attr]
-            inner = self._fixed(ds, inner_text, _name(readable(inner_body, ds.fields))[:40], stack)
+            inner = self._fixed(ds, nested[1], _name(readable(nested[2], ds.fields))[:40], stack)
         from_sql, cte, joined = self._rows(ds)
         prev, self._joined = self._joined, (ds if joined else None)
         try:
@@ -1780,13 +1789,7 @@ class _Parser:
             return _Calc("lod", sql=col, lod=lod.name, todo=msg)
         src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
         if f.role == "measure" and f.datatype in NUMERIC:
-            name = self._namer(lm, f.label)
-            if not self._exists(lm, name, ds, f):
-                agg = DEFAULT_AGG.get(f.default_agg, "sum")
-                lm.sm.measures.append(Measure(name, agg, "" if col == name else col, f.description, f.label))
-                self.b.metrics.append(Metric(name, label=f.label, description=f.description, measure=name, semantic_model=lm.sm.name, source_ref=src))
-                self.metric_sql[name] = AGG_SQL[agg].format(col)
-                self._register(lm, name)
+            name = self._grain_metric(lm, ds, f, DEFAULT_AGG.get(f.default_agg, "sum"), col, src)
             return _Calc("lod", sql=col, lod=lod.name, metric=name)
         name = _name(f.label)
         if name != lm.sm.name and not self._exists(lm, name, ds, f):
@@ -1806,18 +1809,9 @@ class _Parser:
         if f.role == "measure" and f.datatype in NUMERIC:
             # Tableau aggregates it once per distinct combination of the view's and the FIXED dimensions, as it does the
             # FIXED value itself: a measure on the grain's model, one row per FIXED key.
-            name = self._namer(lm, f.label)
-            if not self._exists(lm, name, ds, f):
-                agg = DEFAULT_AGG.get(f.default_agg, "sum")
-                keys = ", ".join(a for _, a in lod.keys)
-                lm.sm.measures.append(Measure(name, agg, sql, f.description, f.label))
-                self.b.metrics.append(Metric(
-                    name, label=f.label, measure=name, semantic_model=lm.sm.name, source_ref=f"{ds.src} datasource: {ds.caption} field: {f.label}",
-                    description=" ".join(x for x in (f.description, f"Tableau aggregates it over the distinct combinations of a view's "
-                                                                      f"dimensions and the FIXED dimensions ({keys}), not over rows.") if x),
-                ))
-                self.metric_sql[name] = AGG_SQL[agg].format(sql)
-                self._register(lm, name)
+            keys = ", ".join(a for _, a in lod.keys)
+            name = self._grain_metric(lm, ds, f, DEFAULT_AGG.get(f.default_agg, "sum"), sql, f"{ds.src} datasource: {ds.caption} field: {f.label}",
+                                      f"Tableau aggregates it over the distinct combinations of a view's dimensions and the FIXED dimensions ({keys}), not over rows.")
             return _Calc("row", sql=sql, lod=lod.name, metric=name)
         name = _name(f.label)
         if name != lm.sm.name and not self._exists(lm, name, ds, f):
@@ -1840,16 +1834,8 @@ class _Parser:
                 msg = "aggregates a FIXED LOD on several dimensions: notebook tiles compute it in their SQL; see skills/translate-metrics"
                 self._todo(ds, f, model, msg, True)
                 return _Calc("agg", lod=lod.name, todo=msg)
-            name = self._namer(lm, f.label)
-            if not self._exists(lm, name, ds, f):
-                lm.sm.measures.append(Measure(name, agg, "" if col == name else col, f.description, f.label))
-                self.b.metrics.append(Metric(
-                    name, label=f.label, measure=name, semantic_model=lm.sm.name, source_ref=src,
-                    description=" ".join(x for x in (f.description, f"Tableau aggregates the FIXED values over the distinct combinations of a "
-                                                                      f"view's dimensions and the FIXED dimensions ({', '.join(a for _, a in lod.keys)}).") if x),
-                ))
-                self.metric_sql[name] = AGG_SQL[agg].format(col)
-                self._register(lm, name)
+            name = self._grain_metric(lm, ds, f, agg, col, src, f"Tableau aggregates the FIXED values over the distinct combinations of a "
+                                                                f"view's dimensions and the FIXED dimensions ({', '.join(a for _, a in lod.keys)}).")
             return _Calc("agg", metric=name, lod=lod.name)
         if mixed:
             msg = ("combines row fields and FIXED LOD values in an aggregate: notebook tiles compute row-level mixes over the rows joined "
@@ -2217,10 +2203,8 @@ class _Parser:
         aggregate at its own level (over the sheet's rows, or once per distinct view and FIXED dimensions), then the
         expression over them per mark. None if it has no such aggregate."""
         parts: list[tuple[str, Any]] = []
-        grain_aggs = False
 
         def part(call: ax.Call) -> ax.Node:
-            nonlocal grain_aggs
             if call.name not in TABLEAU_AGGS or len(call.args) != 1 or TABLEAU_AGGS[call.name][2] is not None:
                 raise _NoSQL(f"[{f.label}]: {call.name.upper()}() in an expression with FIXED aggregates; write it in the tile SQL")
             homes = {self._home(ds, r) for r in ax.refs(call)}
@@ -2229,7 +2213,6 @@ class _Parser:
                 lod = self.lod_names[next(iter(homes))]
                 value = self._grain_sql(ds, lambda: ax.strip_outer(ax.to_sql(call.args[0], lambda r: self._row_ref(ds, r))))
                 parts.append(("fixed", _Special("fixed", agg, lod, value=value)))
-                grain_aggs = True
             else:
                 try:
                     parts.append(("row", AGG_SQL[agg].format(ax.strip_outer(ax.to_sql(call.args[0], lambda r: self._row_ref(ds, r))))))
@@ -2251,7 +2234,7 @@ class _Parser:
             return n
 
         shape = walk(node)
-        if not grain_aggs:
+        if not any(kind == "fixed" for kind, _ in parts):
             return None
         try:
             expr = ax.strip_outer(ax.to_sql(shape, lambda r: "{" + r[len(LOD_REF) + 5:] + "}"))
@@ -2651,15 +2634,15 @@ class _Parser:
             joins: list[tuple[str, list[tuple]]] = []
             # aggregates over the sheet's rows inside expression specials: hidden columns of the base CTE
             hidden: dict[tuple[int, int], str] = {}
+            hidden_items: list[str] = []
             for i, (c, sp) in enumerate(specials, 1):
                 for j, (kind, p) in enumerate(sp.parts):
                     if kind == "row":
                         hidden[(i, j)] = f"{c[1]}_part_{j + 1}"
+                        hidden_items.append(f"{p} as {hidden[(i, j)]}")
             has_base = bool(dims or plain or hidden)
             if has_base:
-                base = ["select " + ", ".join(dim_items + [item(c).strip() for c in plain] + [f"{p} as {hidden[(i, j)]}"
-                                                                                               for i, (_, sp) in enumerate(specials, 1)
-                                                                                               for j, (kind, p) in enumerate(sp.parts) if kind == "row"]),
+                base = ["select " + ", ".join(dim_items + [item(c).strip() for c in plain] + hidden_items),
                         f"from {rows}{where_sql}{group(len(dims))}"]
                 if having:
                     base.append("having " + "\n  and ".join(having))
