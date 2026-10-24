@@ -107,6 +107,29 @@ CASES: dict[str, dict] = {
 }
 
 
+# round 3: evidence3.*.lkml. Each case on its own, so one field Looker rejects doesn't hide the others.
+L_FLAGS = ["ev_l.range_start", "ev_l.range_end", "ev_l.flag_filtered", "ev_l.flag_in_query", "ev_l.flag_selected",
+           "ev_l.p_str_param", "ev_l.p_str_branch", "ev_l.p_num_param"]
+CASES.update({
+    "dialect": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.dialect_name", "ev_l.dialect_branch"], "sorts": ["ev_l.id"]},
+    "liquid_none": {"view": "ev_l", "fields": ["ev_l.id", *L_FLAGS], "sorts": ["ev_l.id"]},
+    "liquid_values": {
+        "view": "ev_l", "fields": ["ev_l.id", "ev_l.s", *L_FLAGS], "sorts": ["ev_l.id"],
+        "filters": {"ev_l.s": "-zzz", "ev_l.date_f": "2026-12-01 to 2027-01-01", "ev_l.p_str": "O'Brien", "ev_l.p_num": "5"},
+    },
+    "date_start_month": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.range_start", "ev_l.range_end"], "sorts": ["ev_l.id"],
+                         "filters": {"ev_l.date_f": "2026-12"}},
+    "date_start_relative": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.range_start", "ev_l.range_end"], "sorts": ["ev_l.id"],
+                            "filters": {"ev_l.date_f": "7 days"}},
+    "parameter_value_string": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.p_str_value"], "sorts": ["ev_l.id"]},
+    "filter_field_sql": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.f_sql": "-apple"}},
+    "filter_quoted": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.s": '"Levi\'s"'}},
+    "filter_apostrophe": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.s": "Levi's,O'Brien"}},
+    "hour_timeframes": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.at_time", "ev_l.at_hour", "ev_l.at_minute", "ev_l.at_time_of_day",
+                                                   "ev_l.at_hour_of_day", "ev_l.at_minute_of_hour", "ev_l.in_range"], "sorts": ["ev_l.id"]},
+})
+
+
 def links(model: str, only: list[str]) -> dict[str, str]:
     out = {}
     for name, case in CASES.items():
