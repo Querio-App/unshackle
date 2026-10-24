@@ -6,6 +6,7 @@ stay a TODO, and the fix for it turns that assertion into a numeric one.
 """
 
 import json
+import re
 import shutil
 from decimal import Decimal
 from pathlib import Path
@@ -140,10 +141,12 @@ def test_timeframe_sql_parses_in_each_dialect(dialect):
 # ---------------------------------------------------------------- round 2: dimension types and statistics
 
 
-def _parse_evidence2(repo: Path, warehouse: str) -> Bundle:
+def _parse_evidence2(repo: Path, warehouse: str, dashboard: str = "") -> Bundle:
     repo.mkdir(parents=True, exist_ok=True)
     (repo / "unshackle.toml").write_text(f'[datasources.warehouse]\ntype = "{warehouse}"\n')
     store = RawStore(repo, "looker")
+    if dashboard:
+        store.put_text("lookml/ev2.dashboard.lookml", dashboard)
     store.put_text("lookml/unshackle_evidence2.view.lkml", (FIX / "evidence2.view.lkml").read_text())
     store.put_text("lookml/m.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence2.view"\n' + (FIX / "evidence2.explores.lkml").read_text())
     return get_source("looker").parse(store)
@@ -297,3 +300,53 @@ def test_liquid_user_attributes_stay_todo_in_tiles(tiles):
     """Looker renders the viewing user's value; a notebook has no user."""
     tile = tiles["liquid_user_attribute"]
     assert not tile.sql and "_user_attributes" in tile.todo
+
+
+# ---------------------------------------------------------------- filter expressions (round 2)
+
+RELATIVE = {"d_last_7", "d_this_month", "d_last_month", "d_ago"}  # depend on the day: their SQL is evidence, not their counts
+
+
+def test_every_filter_returns_lookers_count(bundle2, db2):
+    """Each measure filter in evidence2 through the semantic translation, on the rows Looker counted."""
+    model = _by_name(bundle2.semantic_models)["ev_f"]
+    cols = {d.name: d.expr or d.name for d in model.dimensions}
+    cols["at"], cols["on"] = "ts", "d"
+
+    def sql(filter_: str) -> str:
+        return re.sub(r"\{\{ (?:Time)?Dimension\('ev_f__(\w+)'(?:, '\w+')?\) \}\}", lambda m: f"({cols[m.group(1)]})", filter_)
+
+    counts = looker("filters")[0]
+    metrics = _by_name(bundle2.metrics)
+    checked = 0
+    for field, expected in counts.items():
+        name = field.split(".")[1]
+        if name == "count":
+            continue
+        m = metrics[name]
+        if name in RELATIVE:
+            assert m.todo and "Looker filter expression" in m.todo, name
+            continue
+        assert not m.todo, (name, m.todo)
+        assert db2.execute(f"select count(*) from ev_f where {sql(m.filter)}").fetchone()[0] == expected, (name, m.filter)
+        checked += 1
+    assert checked == len(counts) - 1 - len(RELATIVE)
+
+
+def test_tile_filters_on_a_timeframe_filter_the_time(db2, tmp_path):
+    """A tile filtered on at_month: "2026-12" counts the rows whose time is in December, as Looker's t_month."""
+    dashboard = """- dashboard: ev2
+  title: Ev2
+  elements:
+  - name: december
+    model: m
+    explore: ev_f
+    type: single_value
+    fields: [ev_f.count]
+    filters:
+      ev_f.at_month: "2026-12"
+"""
+    (d,) = _parse_evidence2(tmp_path, "duckdb", dashboard).dashboards
+    (tile,) = d.tiles
+    assert tile.sql, tile.todo
+    assert db2.execute(tile.sql).fetchone()[0] == looker("filters")[0]["ev_f.t_month"] == 2
