@@ -1,0 +1,23 @@
+[
+ {
+  "ev_liquid.customer": null,
+  "ev_liquid.user_locale": "en",
+  "ev_liquid.count": 1,
+  "ev_liquid.chosen_total": 30,
+  "ev_liquid.chosen_label": "amount"
+ },
+ {
+  "ev_liquid.customer": "acme",
+  "ev_liquid.user_locale": "en",
+  "ev_liquid.count": 2,
+  "ev_liquid.chosen_total": 150,
+  "ev_liquid.chosen_label": "amount"
+ },
+ {
+  "ev_liquid.customer": "bolt",
+  "ev_liquid.user_locale": "en",
+  "ev_liquid.count": 1,
+  "ev_liquid.chosen_total": 70,
+  "ev_liquid.chosen_label": "amount"
+ }
+]

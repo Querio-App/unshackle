@@ -1,0 +1,17 @@
+[
+ {
+  "ev_nested_lines.sku": null,
+  "ev_nested.count": 1,
+  "ev_nested_lines.total_qty": 0
+ },
+ {
+  "ev_nested_lines.sku": "x",
+  "ev_nested.count": 2,
+  "ev_nested_lines.total_qty": 3
+ },
+ {
+  "ev_nested_lines.sku": "y",
+  "ev_nested.count": 1,
+  "ev_nested_lines.total_qty": 3
+ }
+]

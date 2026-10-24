@@ -1,0 +1,20 @@
+[
+ {
+  "ev_nested.id": 1,
+  "ev_nested.count": 1,
+  "ev_nested_lines.count": 2,
+  "ev_nested_lines.total_qty": 5
+ },
+ {
+  "ev_nested.id": 2,
+  "ev_nested.count": 1,
+  "ev_nested_lines.count": 1,
+  "ev_nested_lines.total_qty": 0
+ },
+ {
+  "ev_nested.id": 3,
+  "ev_nested.count": 1,
+  "ev_nested_lines.count": 1,
+  "ev_nested_lines.total_qty": 1
+ }
+]
