@@ -25,6 +25,8 @@ Raw layout under migration/raw/sigma/:
 
 parse() reads only these files. It translates deterministically:
   * warehouse-table and custom-SQL elements of data models -> Table (catalog) + SemanticModel
+  * elements sourced from another data model's element -> SemanticModel on that element's table
+  * union elements whose columns line up -> UNION ALL query to materialize + SemanticModel on it
   * columns -> dimensions (direct columns, DateTrunc(), arithmetic, If() -> CASE)
   * metrics -> measures + simple / ratio / derived metrics, SumIf/CountIf -> metric filters
     (Sigma metrics cannot use window or join functions, so most map cleanly)
@@ -376,8 +378,8 @@ class SigmaSource(Source):
             for e in store.get_json("_errors.json") or []:
                 b.warn(e.get("item", "?"), e.get("message", ""))
         fields: dict[str, str] = {}  # data model column/metric display name (casefold) -> time | metric | dim
+        specs: dict[str, dict] = {}
         for rel in store.glob("data_models/*/spec.*"):
-            dm_id = rel.split("/")[1]
             try:
                 spec = _load(store, rel)
             except (ValueError, yaml.YAMLError) as exc:
@@ -386,8 +388,11 @@ class SigmaSource(Source):
             if not isinstance(spec, dict):
                 b.warn(rel, "spec is not an object")
                 continue
+            specs[str(spec.get("dataModelId") or rel.split("/")[1])] = spec
+        registry: dict[tuple[str, str], _Element] = {}  # (dataModelId, elementId) -> element, across data models
+        for dm_id in _dm_order(specs):
             try:
-                fields.update(_DataModel(b, dm_id, spec).parse())
+                fields.update(_DataModel(b, dm_id, specs[dm_id], registry).parse())
             except Exception as exc:  # noqa: BLE001 - one bad model must not stop the rest
                 b.warn(f"data model {dm_id}", f"skipped: {type(exc).__name__}: {exc}")
         principals = _principals(store)
@@ -807,9 +812,48 @@ class _Workbook:
 # ---------------------------------------------------------------------- data models
 
 
+def _sources(src: dict) -> list[dict]:
+    """The element's own source, or each source of a union."""
+    if str(src.get("kind") or "").lower() == "union":
+        return [s for s in src.get("sources", []) or [] if isinstance(s, dict)]
+    return [src]
+
+
+def _dm_order(specs: dict[str, dict]) -> list[str]:
+    """Data models that others build on come first, so their elements are registered when referenced."""
+    out: list[str] = []
+
+    def visit(dm_id: str, stack: set[str]) -> None:
+        if dm_id in out or dm_id in stack or dm_id not in specs:
+            return
+        spec = specs[dm_id]
+        for el in [e for p in spec.get("pages", []) or [] if isinstance(p, dict) for e in p.get("elements", []) or []] + list(spec.get("elements", []) or []):
+            src = el.get("source") if isinstance(el, dict) and isinstance(el.get("source"), dict) else {}
+            for s in _sources(src):
+                visit(str(s.get("dataModelId") or ""), stack | {dm_id})
+        out.append(dm_id)
+
+    for dm_id in specs:
+        visit(dm_id, set())
+    return out
+
+
+def _union_prefix(el: dict) -> str:
+    """Union columns read [Union of 2 Sources/State]; that prefix is how Sigma names the union source."""
+    src = el.get("source") if isinstance(el.get("source"), dict) else {}
+    outputs = {_text(m.get("outputColumnName")).casefold() for m in src.get("matches", []) or [] if isinstance(m, dict)}
+    for c in el.get("columns", []) or []:
+        m = PURE_REF.match(str(c.get("formula") or "")) if isinstance(c, dict) else None
+        if m and "/" in m.group(1) and m.group(1).rpartition("/")[2].casefold() in outputs:
+            return m.group(1).rpartition("/")[0]
+    return ""
+
+
 class _Element:
-    def __init__(self, el: dict, model: SemanticModel | None, name: str, prefix: str, parent: _Element | None = None):
+    def __init__(self, el: dict, model: SemanticModel | None, name: str, prefix: str, parent: _Element | None = None,
+                 owner: _DataModel | None = None):
         self.el = el
+        self.owner = owner  # the data model that defines this element (parents can live in another one)
         self.model = model
         self.name = name  # how other formulas refer to it: [Name/Column]
         self.prefix = prefix  # source table name as it appears in [FCT_ORDERS/Col] ("Custom SQL" for SQL sources)
@@ -822,12 +866,30 @@ class _Element:
         self.metric_by_name = {_text(m.get("name")).casefold(): m for m in self.metrics}
         self.entity = ""
 
+    def filtered(self) -> str:
+        """Name of this element or an ancestor with its own filters/groupings (rows differ from the table), else ""."""
+        e: _Element | None = self
+        while e is not None:
+            if e.el.get("filters") or e.el.get("groupings"):
+                return e.name
+            e = e.parent
+        return ""
+
+    def has_col(self, name: str) -> bool:
+        e: _Element | None = self
+        while e is not None:
+            if name.casefold() in e.by_name:
+                return True
+            e = e.parent
+        return False
+
 
 class _DataModel:
-    def __init__(self, b: Bundle, dm_id: str, spec: dict):
+    def __init__(self, b: Bundle, dm_id: str, spec: dict, registry: dict[tuple[str, str], _Element] | None = None):
         self.b = b
         self.dm_id = dm_id
         self.spec = spec
+        self.registry = registry if registry is not None else {}
         self.name = _text(spec.get("name")) or dm_id
         self.elements: dict[str, _Element] = {}
         self.element_names: set[str] = set()
@@ -856,6 +918,10 @@ class _DataModel:
         m = PURE_REF.match(formula)
         return bool(m and m.group(1).rpartition("/")[0].casefold() == e.prefix.casefold())
 
+    def ctx(self, e: _Element) -> Callable[..., str]:
+        """Column resolver of an element in whichever data model defines it."""
+        return (e.owner or self).ref_ctx(e)
+
     def ref_ctx(self, e: _Element) -> Callable[..., str]:
         def own(name: str, depth: int) -> str:
             col = e.by_name.get(name.casefold())
@@ -863,7 +929,7 @@ class _DataModel:
                 if name.casefold() in e.metric_by_name:
                     raise fx.FormulaError(f"[{name}] is a metric; aggregating a metric needs a derived metric")
                 if e.parent is not None:
-                    return self.ref_ctx(e.parent)(name, depth + 1)
+                    return self.ctx(e.parent)(name, depth + 1)
                 return _phys(name)
             return self.col_expr(e, col, depth + 1)
 
@@ -882,10 +948,12 @@ class _DataModel:
             anc = e.parent
             while anc is not None:
                 if pf in (anc.name.casefold(), anc.prefix.casefold()):
-                    return self.ref_ctx(anc)(name, depth + 1)
+                    return self.ctx(anc)(name, depth + 1)
                 anc = anc.parent
             if pf in self.element_names:
                 raise fx.FormulaError(f"references another element ({prefix}); needs a join through an entity")
+            if e.parent is not None and e.parent.owner not in (None, self) and e.parent.has_col(rest):
+                return self.ctx(e.parent)(rest, depth + 1)  # parent from another data model, named as that model shows it
             return _phys(rest)
 
         return col_sql
@@ -918,21 +986,31 @@ class _DataModel:
             if skind == "join":
                 self.join_element(el, where)
                 continue
-            parent = self.elements.get(str(src.get("elementId", ""))) if skind in ("table", "element", "data-model", "datamodel") else None
-            table = self.table_for(el, src, skind, parent, where)
-            if table is None:
+            parent = self.source_element(src, where) if skind in ("table", "element", "data-model", "datamodel") else None
+            if skind in ("data-model", "datamodel") and parent is None:
                 continue
-            name = self.model_name(el, taken)
+            union_todo = ""
+            if skind == "union":
+                name = self.model_name(el, taken)
+                table, union_todo = self.union_table(el, src, f"sigma_{name}", where)
+            else:
+                table = self.table_for(el, src, skind, parent, where)
+                if table is None:
+                    continue
+                name = self.model_name(el, taken)
             model = SemanticModel(
                 name=name, table=table, description=_text(el.get("description")), datasource=self.b.datasource,
-                source_ref=f"sigma:dataModel/{self.dm_id}#{el_id}",
+                source_ref=f"sigma:dataModel/{self.dm_id}#{el_id}", todo=union_todo,
             )
             prefix = str(src["path"][-1]) if isinstance(src.get("path"), list) and src["path"] else ("Custom SQL" if skind == "sql" else "")
-            e = _Element(el, model, self.display_name(el), "" if parent else prefix, parent)
+            if skind == "union":
+                prefix = _union_prefix(el)
+            e = _Element(el, model, self.display_name(el), "" if parent else prefix, parent, self)
             if parent is not None and (el.get("filters") or el.get("groupings")):
                 self.b.warn(where, f"child of {parent.name} with its own filters/groupings; the semantic model {name} ignores them "
                                    "(model the element as a SQL model if they matter)")
             self.elements[el_id] = e
+            self.registry[(self.dm_id, el_id)] = e
             self.b.semantic_models.append(model)
             if isinstance(src.get("path"), list) and src["path"]:
                 self.catalog(e, table, src)
@@ -957,10 +1035,12 @@ class _DataModel:
 
     def depth(self, el: dict, by_id: dict[str, dict], n: int = 0) -> int:
         src = el.get("source") if isinstance(el.get("source"), dict) else {}
-        parent = by_id.get(str(src.get("elementId", "")))
-        if parent is None or parent is el or n > 10:
+        parents = [by_id.get(str(s.get("elementId", ""))) for s in _sources(src)
+                   if str(s.get("dataModelId") or self.dm_id) == self.dm_id]
+        parents = [p for p in parents if p is not None and p is not el]
+        if not parents or n > 10:
             return n
-        return self.depth(parent, by_id, n + 1)
+        return max(self.depth(p, by_id, n + 1) for p in parents)
 
     @staticmethod
     def display_name(el: dict) -> str:
@@ -972,6 +1052,8 @@ class _DataModel:
             return str(src["path"][-1])
         if str(src.get("kind", "")).lower() == "sql":
             return "Custom SQL"
+        if str(src.get("kind", "")).lower() == "union" and _union_prefix(el):
+            return _union_prefix(el)
         return str(el.get("id") or "")
 
     def model_name(self, el: dict, taken: set[str]) -> str:
@@ -1008,6 +1090,95 @@ class _DataModel:
             return None
         self.b.warn(where, f"unsupported element source {skind or src!r}; skipped")
         return None
+
+    def source_element(self, src: dict, where: str) -> _Element | None:
+        """The element a `table` / `data-model` source points at, in this data model or an extracted one."""
+        el_id = str(src.get("elementId", ""))
+        dm_id = str(src.get("dataModelId") or self.dm_id)
+        found = self.registry.get((dm_id, el_id)) if dm_id != self.dm_id else self.elements.get(el_id)
+        if found is None and (dm_id != self.dm_id or str(src.get("kind") or "").lower() in ("data-model", "datamodel")):
+            self.b.warn(where, f"source is element {el_id} of data model {dm_id}, which was not extracted or not migrated; "
+                               f"run `unshackle extract sigma --only {dm_id}` (or recreate the element on its table); skipped")
+        return found
+
+    def union_table(self, el: dict, src: dict, name: str, where: str) -> tuple[str, str]:
+        """UNION ALL of the sources (Sigma keeps duplicates) when every output column maps in every source.
+
+        Returns the table the semantic model sits on and, when the union was not translated, its TODO."""
+        el_id = el.get("id", "")
+        sources = _sources(src)
+        matches = [m for m in src.get("matches", []) or [] if isinstance(m, dict)]
+        selects: list[str] = []
+        why = ""
+        extra = set(src) - {"kind", "sources", "matches"}
+        if extra:
+            why = f"union options {', '.join(sorted(extra))} not translated"
+        elif len(sources) < 2 or not matches:
+            why = "union has no sources or no matched columns in the export"
+        for i, s in enumerate(sources):
+            if why:
+                break
+            table, ctx = self.union_source(s)
+            if table is None:
+                why = f"source {i + 1} ({s.get('kind') or s}) cannot be resolved to a table"
+                break
+            if isinstance(ctx, str):
+                why = f"source {i + 1}: {ctx}"
+                break
+            cols = []
+            for m in matches:
+                out = _phys(_text(m.get("outputColumnName")))
+                refs = m.get("sourceColumns") or []
+                ref = PURE_REF.match(str(refs[i])) if i < len(refs) and refs[i] else None
+                if not out or ref is None:
+                    why = f"column {m.get('outputColumnName')!r} has no matching column in source {i + 1}"
+                    break
+                try:
+                    cols.append(f"{ctx(ref.group(1))} as {out}")
+                except fx.FormulaError as exc:
+                    why = f"source {i + 1} column {ref.group(1)!r}: {exc}"
+                    break
+            selects.append(f"select {', '.join(cols)}\nfrom {table}")
+        if why:
+            sql = "-- Sigma union source, not translated:\n" + "\n".join(f"-- {line}" for line in json.dumps(src, indent=2).splitlines())
+            todo = f"{why}; write it as UNION ALL (Sigma keeps duplicates) and materialize it as {name}; the semantic model points at it"
+            self.b.warn(where, f"union not translated ({why}); semantic model points at {name}")
+        else:
+            sql = "\nunion all\n".join(selects)
+            todo = f"materialize this as a view or dbt model named {name}; the semantic model points at it"
+            self.b.warn(where, f"union translated to a UNION ALL query; semantic model points at {name}, which you need to create", "info")
+        self.b.queries.append(VerifiedQuery(
+            name=f"{self.display_name(el)} {el_id} (Sigma union)".replace("  ", " "), sql=sql,
+            description=f"Union behind Sigma data model {self.name} element {self.display_name(el)}.",
+            datasource=self.b.datasource, source_ref=f"sigma:dataModel/{self.dm_id}#{el_id}", todo=todo,
+        ))
+        return name, todo if why else ""
+
+    def union_source(self, s: dict) -> tuple[str | None, Callable[[str], str] | str]:
+        """(table, column resolver) for one union source, or (table, reason) when its rows differ from the table."""
+        skind = str(s.get("kind") or "").lower()
+        if isinstance(s.get("path"), list) and s["path"]:
+            table = ".".join(_ident(str(p)) for p in s["path"])
+            same = next((e for e in self.elements.values() if e.model is not None and e.model.table == table and e.parent is None
+                         and isinstance(e.el.get("source"), dict) and e.el["source"].get("path")), None)
+            if same is not None:
+                return table, lambda n: self.phys(same, same.by_name[n.casefold()]) if n.casefold() in same.by_name else _phys(n)
+            return table, _phys
+        if skind in ("table", "element", "data-model", "datamodel") and s.get("elementId"):
+            dm_id = str(s.get("dataModelId") or self.dm_id)
+            e = self.registry.get((dm_id, str(s["elementId"]))) if dm_id != self.dm_id else self.elements.get(str(s["elementId"]))
+            if e is None or e.model is None:
+                return None, ""
+            if e.filtered():
+                return e.model.table, f"element {e.filtered()} has its own filters/groupings"
+
+            def col(n: str, e: _Element = e) -> str:
+                if not e.has_col(n):
+                    raise fx.FormulaError(f"no column {n!r} on element {e.name}")
+                return self.ctx(e)(n)
+
+            return e.model.table, col
+        return None, ""
 
     def join_element(self, el: dict, where: str) -> None:
         src = el["source"]

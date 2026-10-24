@@ -58,6 +58,8 @@ model definitions, so `unshackle import sigma` stops with a message pointing at
 | unnamed element | model named after the table, `fct_`/`dim_` dropped (`DIM_CUSTOMERS` -> `customers`) |
 | `source.kind: sql` (custom SQL) | `queries/<name>-sigma-custom-sql.sql` with TODO to materialize, semantic model on `sigma_<name>` |
 | `source.kind: table` (child element) | semantic model on the parent's table; its filters/groupings are **not** applied (warning) |
+| `source.kind: data-model` (`dataModelId`, `elementId`) | semantic model on the referenced element's table; its columns resolve through that element (calculated columns included). Data models are parsed in dependency order. If the referenced data model was not extracted: warning, element skipped (`extract --only <dataModelId>`) |
+| `source.kind: union` (`sources`, `matches`) | `queries/<name>-sigma-union.sql`: `UNION ALL` (Sigma keeps duplicates) of each source's matched columns, aliased to the output names, with a TODO to materialize it; semantic model on `sigma_<name>`. Sources can be warehouse tables, elements of this data model or of another extracted one |
 | `source.kind: join` | the join's key pair becomes a foreign entity between the joined elements; the join element's own calcs are warned |
 | column `[TABLE/Col]` | dimension; `DateTrunc("month", [x])` -> time dimension at that grain; datetime format/type -> time (day) |
 | calculated column (`[Amount] - [Discount]`, `If(...)`, `Upper`, `Coalesce`, `Round`, `DateTrunc`, `&`) | dimension `expr` (`CASE WHEN ... END`, `coalesce`, `date_trunc`, `||`) |
@@ -97,6 +99,11 @@ Sigma formulas are spreadsheet-style with `[Element/Column]` references. Map the
 | `CurrentUserInTeam("Admins")` in an RLS column | `groups:` on the row filter (Admins unfiltered = leave them out of `groups`, list the others) |
 | `CurrentUserEmail()` | `{{ user.email }}` in the row filter predicate |
 | user attributes on column security | map attribute values to IdP groups (translate-permissions) |
+
+Union TODOs: the union is left as a commented copy of its Sigma source when a matched column is
+missing in a source, a source element has its own filters/groupings (its rows differ from the
+table), a source is custom SQL or CSV, or the union carries options unshackle doesn't know. Write the
+`UNION ALL` by hand (check the element's rows in Sigma) and materialize it under the name the TODO gives.
 
 Dashboard TODOs:
 

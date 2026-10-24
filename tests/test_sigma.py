@@ -388,9 +388,94 @@ def test_join_and_unsupported_elements(tmp_path: Path):
     ]}]})
     b = SigmaSource().parse(store)
     models = _by_name(b.semantic_models)
-    assert set(models) == {"flights", "airports"}
+    assert set(models) == {"flights", "airports", "u"}
+    assert "no sources" in models["u"].todo and models["u"].table == "sigma_u"
     assert ("airport", "foreign", "origin") in [(e.name, e.type, e.expr) for e in models["flights"].entities]
     assert ("airport", "primary", "iata_code") in [(e.name, e.type, e.expr) for e in models["airports"].entities]
     assert _by_name(b.metrics)["Flights"].measure and (_by_name(models["flights"].measures)["flights"].agg, _by_name(models["flights"].measures)["flights"].expr) == ("count", "1")
     msgs = " ".join(w.message for w in b.warnings)
     assert "join element" in msgs and "union" in msgs and "CSV upload" in msgs
+
+
+def _wh(*path):
+    return {"kind": "warehouse-table", "connectionId": "c", "path": list(path)}
+
+
+NAMES = {"id": "n", "kind": "table", "source": _wh("EXAMPLES", "USA_NAMES", "USA_1910_CURRENT"),
+         "columns": [{"id": "inode-a/STATE", "formula": "[USA_1910_CURRENT/State]"},
+                     {"id": "inode-a/NAME_TEXT", "formula": "[USA_1910_CURRENT/Name]", "name": "Name"},
+                     {"id": "inode-a/NUMBER", "formula": "[USA_1910_CURRENT/Number]"},
+                     {"id": "c-twice", "formula": "[Number] * 2", "name": "Twice"}]}
+
+
+def _union(sources, matches, **extra):
+    return {"id": "u", "kind": "table", "source": {"kind": "union", "sources": sources, "matches": matches, **extra},
+            "columns": [{"id": f"c{i}", "formula": f"[Union of 2 Sources/{m['outputColumnName']}]"} for i, m in enumerate(matches)]
+            + [{"id": "c-big", "formula": "If([Number] > 100, \"Big\", \"Small\")", "name": "Size"}]}
+
+
+def test_union_columns_line_up(tmp_path: Path):
+    # Shape of Sigma's documented example: a warehouse table and a table element of the same data model.
+    store = RawStore(tmp_path, "sigma")
+    matches = [{"outputColumnName": "State", "sourceColumns": ["[State]", "[State]"]},
+               {"outputColumnName": "Name", "sourceColumns": ["[Name]", "[Name]"]},
+               {"outputColumnName": "Number", "sourceColumns": ["[Number]", "[Twice]"]}]
+    store.put_json("data_models/dm1/spec.json", {"dataModelId": "dm1", "name": "Names", "pages": [{"id": "p", "elements": [
+        _union([_wh("EXAMPLES", "USA_NAMES", "USA_1910_CURRENT"), {"elementId": "n", "kind": "table"}], matches), NAMES]}]})
+    b = SigmaSource().parse(store)
+    models = _by_name(b.semantic_models)
+    union = models["union_of_2_sources"]
+    assert union.table == "sigma_union_of_2_sources" and not union.todo
+    dims = {d.name: d.expr for d in union.dimensions}
+    assert dims["state"] == "" and dims["number"] == "" and "case when number > 100" in dims["size"].lower()
+    (q,) = [q for q in b.queries if "union" in q.name.lower()]
+    assert q.sql == (
+        "select state as state, name_text as name, number as number\nfrom examples.usa_names.usa_1910_current\n"
+        "union all\n"
+        "select state as state, name_text as name, number * 2 as number\nfrom examples.usa_names.usa_1910_current"
+    )
+    assert "materialize" in q.todo and "sigma_union_of_2_sources" in q.todo
+
+
+def test_union_that_does_not_line_up_keeps_todo(tmp_path: Path):
+    store = RawStore(tmp_path, "sigma")
+    filtered = dict(NAMES, id="f", name="Texas", filters=[{"columnId": "inode-a/STATE", "values": ["TX"]}])
+    store.put_json("data_models/dm1/spec.json", {"dataModelId": "dm1", "name": "Names", "pages": [{"id": "p", "elements": [
+        NAMES, filtered,
+        _union([{"elementId": "n", "kind": "table"}, {"elementId": "f", "kind": "table"}],
+               [{"outputColumnName": "State", "sourceColumns": ["[State]", "[State]"]}]),
+        dict(_union([{"elementId": "n", "kind": "table"}, _wh("EXAMPLES", "USA_NAMES", "OTHER")],
+                    [{"outputColumnName": "State", "sourceColumns": ["[State]", None]}]), id="u2"),
+    ]}]})
+    b = SigmaSource().parse(store)
+    todos = {m.source_ref.rpartition("#")[2]: m.todo for m in b.semantic_models}
+    assert "element Texas has its own filters/groupings" in todos["u"]
+    assert "'State' has no matching column in source 2" in todos["u2"]
+    q = next(q for q in b.queries if q.source_ref.endswith("#u2"))
+    assert q.sql.startswith("-- Sigma union source, not translated:") and '"union"' in q.sql and "UNION ALL" in q.todo
+
+
+def test_data_model_source(tmp_path: Path):
+    store = RawStore(tmp_path, "sigma")
+    # dm-0 sorts first but builds on dm-1, so dm-1 has to be parsed first.
+    store.put_json("data_models/dm-0/spec.json", {"dataModelId": "dm-0", "name": "Downstream", "pages": [{"id": "p", "elements": [
+        {"id": "d", "kind": "table", "name": "Big names",
+         "source": {"kind": "data-model", "dataModelId": "dm-1", "elementId": "n"},
+         "columns": [{"id": "x1", "formula": "[Names/State]"}, {"id": "x2", "formula": "[Names/Twice]"},
+                     {"id": "x3", "formula": "[Twice] + 1", "name": "Plus One"}]},
+        {"id": "gone", "kind": "table", "source": {"kind": "data-model", "dataModelId": "dm-missing", "elementId": "z"}, "columns": []},
+        _union([{"kind": "data-model", "dataModelId": "dm-1", "elementId": "n"}, _wh("EXAMPLES", "USA_NAMES", "USA_1910_CURRENT")],
+               [{"outputColumnName": "Number", "sourceColumns": ["[Twice]", "[Number]"]}]),
+    ]}]})
+    store.put_json("data_models/dm-1/spec.json", {"dataModelId": "dm-1", "name": "Upstream", "pages": [{"id": "p", "elements": [
+        dict(NAMES, name="Names")]}]})
+    b = SigmaSource().parse(store)
+    models = _by_name(b.semantic_models)
+    big = models["big_names"]
+    assert big.table == "examples.usa_names.usa_1910_current"
+    dims = {d.name: (d.expr, d.todo) for d in big.dimensions}
+    assert dims["state"] == ("", "") and dims["twice"] == ("number * 2", "") and dims["plus_one"] == ("number * 2 + 1", "")
+    assert not any(m.source_ref.endswith("#gone") for m in b.semantic_models)
+    assert any("dm-missing" in w.message and "not extracted" in w.message for w in b.warnings)
+    (q,) = [q for q in b.queries if q.source_ref.endswith("dm-0#u")]
+    assert q.sql.startswith("select number * 2 as number\nfrom examples.usa_names.usa_1910_current\nunion all\nselect number as number")
