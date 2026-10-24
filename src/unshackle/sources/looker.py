@@ -47,6 +47,7 @@ from unshackle.ir import (
 )
 from unshackle.raw import RawStore
 from unshackle.sources import _manual
+from unshackle.sources._semyaml import op_sql
 from unshackle.sources.base import Inventory, Source
 
 REF = re.compile(r"\$\{([^}]+)\}")
@@ -438,24 +439,17 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
     if kind in ("time", "number") or re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
         return None
     parts = [p.strip().replace("^,", ",") for p in re.split(r"(?<!\^),", v)]
-    if not all(parts):
+    if any(p in ("", "-") or p.startswith("--") for p in parts):
         return None
     include = [p for p in parts if not p.startswith("-")]
     exclude = [p[1:] for p in parts if p.startswith("-")]
-    if any(p.startswith("-") or not p for p in exclude):
-        return None
     lit = lambda s: "'" + s.replace("'", "''") + "'"  # noqa: E731
     if any("%" in p for p in parts):
         if len(parts) > 1:
             return None
         return f"({ref} NOT LIKE {lit(exclude[0])} OR {ref} IS NULL)" if exclude else f"{ref} LIKE {lit(include[0])}"
-    conds = []
-    if include:
-        conds.append(f"{ref} = {lit(include[0])}" if len(include) == 1 else f"{ref} IN ({', '.join(map(lit, include))})")
-    if exclude:
-        cond = f"{ref} <> {lit(exclude[0])}" if len(exclude) == 1 else f"{ref} NOT IN ({', '.join(map(lit, exclude))})"
-        conds.append(f"({cond} OR {ref} IS NULL)")
-    return " AND ".join(conds)
+    eq, ne = op_sql(ref, "equals", include), op_sql(ref, "notEquals", exclude)
+    return " AND ".join(c for c in (eq, ne and f"({ne} OR {ref} IS NULL)") if c)
 
 
 # ==================================================================== parser
