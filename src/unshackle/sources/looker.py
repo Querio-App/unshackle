@@ -410,12 +410,18 @@ def _filter_pairs(measure: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
-    """Translate a Looker filter expression to SQL on `ref`. None when it needs a person."""
+    """Translate a Looker filter expression to SQL on `ref`. None when it needs a person.
+
+    Looker's "is not" filters keep NULL rows (`col <> 'a' OR col IS NULL`), and a yesno "no"
+    matches every row where the condition isn't true, NULL included."""
     v = value.strip()
     if kind == "yesno":
-        if v.lower() in ("yes", "no"):
-            return f"{ref} = {'true' if v.lower() == 'yes' else 'false'}"
+        if v.lower() == "yes":
+            return f"{ref} = true"
+        if v.lower() == "no":
+            return f"NOT COALESCE({ref}, false)"
         return None
+    keep_null = lambda cond: f"({cond} OR {ref} IS NULL)"  # noqa: E731
     if v.upper() == "NULL":
         return f"{ref} IS NULL"
     if v.upper() in ("-NULL", "NOT NULL"):
@@ -426,24 +432,30 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
         return f"({ref} IS NOT NULL AND {ref} <> '')"
     m = re.fullmatch(r"(>=|<=|<>|!=|>|<|=)?\s*(-?\d+(?:\.\d+)?)", v)
     if m and (kind == "number" or m.group(1)):
-        return f"{ref} {m.group(1) or '='} {m.group(2)}"
+        op = m.group(1) or "="
+        cond = f"{ref} {op} {m.group(2)}"
+        return keep_null(cond) if op in ("<>", "!=") else cond
     # dates, number ranges and anything that reads like a relative date need a person; brackets
     # are literal in a string filter ("(5) Purchase")
     if kind in ("time", "number") or re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
         return None
     neg = v.startswith("-")
     parts = [p.strip().replace("^,", ",") for p in re.split(r"(?<!\^),", v)]
-    parts = [p[1:] if p.startswith("-") else p for p in parts] if neg else parts
+    # "-a,-b" excludes both; a mix like "-a,b" needs a person
+    if neg and not all(p.startswith("-") for p in parts):
+        return None
+    parts = [p[1:] for p in parts] if neg else parts
     if any(p.startswith("-") for p in parts) or not all(parts):
         return None
     lit = lambda s: "'" + s.replace("'", "''") + "'"  # noqa: E731
     if any("%" in p for p in parts):
         if len(parts) > 1:
             return None
-        return f"{ref} {'NOT LIKE' if neg else 'LIKE'} {lit(parts[0])}"
+        return keep_null(f"{ref} NOT LIKE {lit(parts[0])}") if neg else f"{ref} LIKE {lit(parts[0])}"
     if len(parts) == 1:
-        return f"{ref} {'<>' if neg else '='} {lit(parts[0])}"
-    return f"{ref} {'NOT IN' if neg else 'IN'} ({', '.join(lit(p) for p in parts)})"
+        return keep_null(f"{ref} <> {lit(parts[0])}") if neg else f"{ref} = {lit(parts[0])}"
+    in_list = ", ".join(lit(p) for p in parts)
+    return keep_null(f"{ref} NOT IN ({in_list})") if neg else f"{ref} IN ({in_list})"
 
 
 # ==================================================================== parser

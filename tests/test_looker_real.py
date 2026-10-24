@@ -164,3 +164,6 @@ def test_cloud_sql_observability(built):
     # one explore file included by three models: one row filter, three model notes
     assert len(b.knowledge) == 3 and [r.name for r in b.row_filters] == ["statement_history_snapshot_always_where"]
     assert "create_process" in _by_name(b.queries)["statement_history_snapshot derived table"].todo
+    # -NULL excludes NULLs; only "is not <value>" filters keep them
+    m = _by_name(b.metrics)
+    assert m["running_threads_count"].filter == "{{ Dimension('threads__processlist_state') }} IS NOT NULL"
