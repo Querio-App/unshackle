@@ -250,10 +250,10 @@ def test_measure_over_a_joined_view_becomes_a_model_scoped_metric(tmp_path: Path
     build.apply(b, tmp_path)
     doc = yaml.safe_load((tmp_path / "semantic/orders.ossie.yaml").read_text())
     model_metrics = {x["name"]: x["expression"]["dialects"][0]["expression"] for x in doc.get("metrics", [])}
-    assert model_metrics["revenue_with_fee"] == "SUM(orders.amount + users.fee)"
+    assert model_metrics["revenue_with_fee"] == "COALESCE(SUM(orders.amount + users.fee), 0)"
     ds_metrics = {x["name"]: x["expression"]["dialects"][0]["expression"] for x in doc["datasets"][0]["metrics"]}
     fields = {x["name"]: x["expression"]["dialects"][0]["expression"] for x in doc["datasets"][0]["fields"]}
-    assert ds_metrics["revenue_2024"] == "SUM(revenue_2024_value)"
+    assert ds_metrics["revenue_2024"] == "COALESCE(SUM(revenue_2024_value), 0)"
     assert fields["revenue_2024_value"] == "CASE WHEN (EXTRACT(YEAR FROM created_at)) = 2024 THEN amount END"
 
 
@@ -303,7 +303,7 @@ def test_lookml_dashboard_becomes_a_notebook(tmp_path: Path):
         "line", "orders_created_month", "temporal", "orders_revenue")
     assert line.sql == """SELECT
     (STRFTIME(CAST(orders.created_at AS DATE), '%Y-%m')) AS orders_created_month,
-    SUM(orders.amount) AS orders_revenue
+    COALESCE(SUM(orders.amount), 0) AS orders_revenue
 FROM shop.orders AS orders
 LEFT JOIN shop.users AS users ON orders.user_id = users.id
 WHERE (:state IS NULL OR users.state = :state)

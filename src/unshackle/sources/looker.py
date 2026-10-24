@@ -552,6 +552,36 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
     return " AND ".join(conds)
 
 
+def tier_sql(expr: str, field: dict[str, Any]) -> str | None:
+    """Looker's CASE for a tier dimension (integer and classic styles, as Looker labels them); None otherwise."""
+    try:
+        tiers = [float(t) for t in field.get("tiers") or []]
+    except (TypeError, ValueError):
+        return None
+    style = str(field.get("style", "classic"))
+    if not tiers or tiers != sorted(tiers):
+        return None
+    if style == "integer":
+        if any(t != int(t) for t in tiers):
+            return None
+        b = [int(t) for t in tiers]
+        whens = [f"WHEN {expr} < {b[0]} THEN 'Below {b[0]}'"]
+        whens += [f"WHEN {expr} >= {lo} AND {expr} < {hi} THEN '{lo} to {hi - 1}'" for lo, hi in zip(b, b[1:])]
+        whens.append(f"WHEN {expr} >= {b[-1]} THEN '{b[-1]} or Above'")
+        other = "Undefined"
+    elif style == "classic":
+        if any(t and not 1e-3 <= abs(t) < 1e7 for t in tiers):  # where Looker would print 1.0E7
+            return None
+        f = [repr(t) for t in tiers]
+        whens = [f"WHEN {expr} < {f[0]} THEN 'T00 (-inf,{f[0]})'"]
+        whens += [f"WHEN {expr} >= {lo} AND {expr} < {hi} THEN 'T{i + 1:02d} [{lo},{hi})'" for i, (lo, hi) in enumerate(zip(f, f[1:]))]
+        whens.append(f"WHEN {expr} >= {f[-1]} THEN 'T{len(f):02d} [{f[-1]},inf)'")
+        other = "TXX Undefined"
+    else:
+        return None
+    return f"CASE {' '.join(whens)} ELSE '{other}' END"
+
+
 # ==================================================================== parser
 
 
@@ -1161,13 +1191,19 @@ class _Parser:
                 description=d.get("description", ""),
                 label=_label(d),
             )
-            if dtype in ("tier", "location", "distance", "duration"):
+            if dtype == "tier" and not problems:
+                tier = tier_sql(_paren(expr), d)
+                if tier:
+                    dim.expr = tier
+                else:
+                    problems.append(f"type: tier with style: {d.get('style', 'classic')} and tiers {d.get('tiers')} is not translated")
+            elif dtype in ("location", "distance", "duration"):
                 problems.append(f"type: {dtype} has no MetricFlow equivalent")
             if problems:
                 dim.todo, dim.source_expression, dim.source_language = "; ".join(problems), _source(d), "lookml"
                 dim.expr = ""
             sm.dimensions.append(dim)
-            if tbl is not None and SIMPLE_IDENT.match(expr) and not problems:
+            if tbl is not None and SIMPLE_IDENT.match(expr) and not problems and dtype != "tier":
                 tbl.columns.append(Column(expr, COLUMN_TYPE.get(dtype, ""), d.get("description", ""), _label(d), _yes(d.get("hidden"))))
         for g in v.get("dimension_groups", []):
             if g.get("type", "time") != "time":
@@ -1235,6 +1271,13 @@ class _Parser:
             return todo("uses Liquid templating; rewrite as a plain SQL measure (or one metric per branch)")
         if CONSTANT.search(raw_sql):
             return todo(f"uses constant {CONSTANT.search(raw_sql).group(0)} that manifest.lkml does not define")
+        pct = float(m.get("percentile", 50)) if mtype == "percentile" else 50.0
+        if pct != 50 and self.dialect in ("", "bigquery"):
+            return todo(
+                f"percentile {pct:g} on BigQuery: Looker averages the two values around position n * {pct / 100:g} of the sorted "
+                "values (APPROX_QUANTILES above 10,000 rows), which is neither PERCENTILE_CONT nor PERCENTILE_DISC; "
+                "write the measure in SQL" + ("" if self.dialect else " (or set the warehouse type in unshackle.toml if it isn't BigQuery)")
+            )
         if mtype in MEASURE_AGG:
             if mtype == "count":
                 expr = self.dim_expr(vname, pk)[0] if pk else "1"
@@ -1256,7 +1299,11 @@ class _Parser:
                 measure.source_expression, measure.source_language = source_expr, "lookml"
                 self.cross.append((vname, m, measure, metric))
             if mtype == "percentile":
-                measure.agg_params = {"percentile": float(m.get("percentile", 50)) / 100, "use_discrete_percentile": False}
+                measure.agg_params = {"percentile": pct / 100, "use_discrete_percentile": False}
+            if mtype in ("median", "percentile") and self.dialect == "bigquery":
+                self.b.warn(src, "Looker computes this with APPROX_QUANTILES above 10,000 rows, so it can differ slightly", "info")
+            if mtype == "sum":
+                metric.fill_nulls_with = 0  # Looker writes COALESCE(SUM(x), 0)
             filters, bad = [], []
             for field, value in _filter_pairs(m):
                 ref = self.field_ref(vname, field)
@@ -1970,7 +2017,7 @@ def _reachable(start: str, models: dict[str, SemanticModel]) -> set[str]:
 
 
 JOIN_TYPE = {"left_outer": "LEFT JOIN", "inner": "INNER JOIN", "full_outer": "FULL OUTER JOIN", "cross": "CROSS JOIN"}
-QUERY_AGG = {"sum": "SUM({})", "average": "AVG({})", "min": "MIN({})", "max": "MAX({})", "count_distinct": "COUNT(DISTINCT {})"}
+QUERY_AGG = {"sum": "COALESCE(SUM({}), 0)", "average": "AVG({})", "min": "MIN({})", "max": "MAX({})", "count_distinct": "COUNT(DISTINCT {})"}
 
 
 class _Query:
@@ -2062,9 +2109,14 @@ class _Query:
             sql, p = self.measure(a, view, f, frozenset({f"{a}.{name}"}))
             return sql, "measure", problems + p
         ftype = f.get("type", "string")
-        if ftype in ("tier", "location", "distance", "duration"):
+        if ftype in ("location", "distance", "duration"):
             return "", "", problems + [f"{ref} is a type: {ftype} dimension"]
         sql, p = self.p._field_sql(view, name, "query", frozenset({f"{a}.{name}"}), self, a)
+        if ftype == "tier":
+            tier = tier_sql(_paren(sql), f) if sql else None
+            if tier is None:
+                return "", "", problems + p + [f"{ref} is a type: tier dimension with style: {f.get('style', 'classic')}"]
+            return tier, "string", problems + p
         return sql, _type_kind(ftype, "dimension"), problems + p
 
     def measure(self, a: str, view: str, m: dict[str, Any], seen: frozenset[str]) -> tuple[str, list[str]]:

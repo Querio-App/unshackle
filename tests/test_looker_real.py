@@ -144,8 +144,8 @@ def test_financial_services(built):
     dims = _by_name(bal.dimensions)
     assert dims["is_yesterday"].expr == "(CAST((cast(date_field as timestamp)) AS DATE)) = date_add(current_date(), interval -1 day)"
     assert "Liquid" in dims["is_beginning_of_period"].todo
-    pct = [x for sm in b.semantic_models for x in sm.measures if x.agg == "percentile"]
-    assert pct and all(0 < x.agg_params["percentile"] < 1 for x in pct)
+    pct = [x for x in b.metrics if "percentile" in x.source_expression]
+    assert pct and all("on BigQuery" in x.todo for x in pct)
 
 
 def test_retail(built):
@@ -235,7 +235,7 @@ def test_thelook_gross_margin_metric_matches_looker_sql(built, tmp_path):
     repo, b = built("thelook_event")
     doc = yaml.safe_load((repo / "semantic/order_items.ossie.yaml").read_text())
     expr = {m["name"]: m["expression"]["dialects"][0]["expression"] for m in doc["metrics"]}["order_items_total_gross_margin"]
-    assert expr == "SUM((order_items.sale_price - inventory_items.cost))"
+    assert expr == "COALESCE(SUM((order_items.sale_price - inventory_items.cost)), 0)"
     con = duckdb.connect()
     con.execute("CREATE TABLE order_items AS SELECT * FROM (VALUES (1, 100, 30.0), (2, 101, 12.5), (3, NULL, 9.0)) t(id, inventory_item_id, sale_price)")
     con.execute("CREATE TABLE inventory_items AS SELECT * FROM (VALUES (100, 10.0), (101, 2.5), (102, 4.0)) t(id, cost)")
