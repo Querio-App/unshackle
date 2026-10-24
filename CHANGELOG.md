@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The PyPI page links to the repository, issues and changelog.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.
