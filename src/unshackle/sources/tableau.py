@@ -841,10 +841,9 @@ class TDatasource:
     filters: list[ET.Element] = field(default_factory=list)
     connection_class: str = ""
     published: str = ""  # sqlproxy dbname (published datasource content url)
-    # left-deep join tree as steps after the first relation: (join type, right relation name, ON sql); "" = not translatable
-    join_steps: list[tuple[str, str, str]] = field(default_factory=list)
-    # per join step, the ON clause's column pairs ((relation, column), (relation, column)); [] = not only equalities
-    join_pairs: list[list[tuple[tuple[str, str], tuple[str, str]]]] = field(default_factory=list)
+    # left-deep join tree as steps after the first relation: (join type, right relation name, ON column pairs
+    # [((relation, column), (relation, column))]); [] = not only equalities, not translatable
+    join_steps: list[tuple[str, str, list[tuple[tuple[str, str], tuple[str, str]]]]] = field(default_factory=list)
     origin: "TDatasource | None" = None  # the published datasource a workbook's sqlproxy stub was linked to
     inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
     hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
@@ -1055,8 +1054,7 @@ def _leaf_relations(rel: ET.Element | None, ds: TDatasource) -> list[ET.Element]
         ds.joins.append(f"{rel.get('join', 'inner')} join on {' = '.join(ops)}")
         right = children[-1] if len(children) == 2 and children[-1].get("type") in ("table", "text") else None
         name = (right.get("name") or (_name_parts(right.get("table", "")) or ["table"])[-1]) if right is not None else ""
-        ds.join_steps.append((rel.get("join", "inner"), name, _join_on(cond) if name else ""))
-        ds.join_pairs.append(_join_pairs(cond) if name else [])
+        ds.join_steps.append((rel.get("join", "inner"), name, _join_pairs(cond) if name else []))
     return out
 
 
@@ -1075,18 +1073,9 @@ def _join_pairs(expr: ET.Element | None) -> list[tuple[tuple[str, str], tuple[st
     return []
 
 
-def _join_on(expr: ET.Element | None) -> str:
-    """<expression op='='><expression op='[orders].[account_id]' />... -> orders.account_id = accounts.account_id ("" if not that simple)."""
-    if expr is None:
-        return ""
-    op, kids = expr.get("op", ""), list(expr.findall("expression"))
-    if op in ("=", "AND") and len(kids) >= 2:
-        parts = [_join_on(k) for k in kids]
-        if not all(parts) or (op == "=" and len(parts) != 2):
-            return ""
-        return f" {op.lower()} ".join(f"({p})" if " and " in p else p for p in parts) if op == "AND" else f"{parts[0]} = {parts[1]}"
-    names = _name_parts(op) if op.startswith("[") and not kids else []
-    return ".".join(_ident(n) for n in names) if len(names) == 2 else ""
+def _join_on(pairs: list[tuple[tuple[str, str], tuple[str, str]]]) -> str:
+    """[((orders, account_id), (accounts, account_id))] -> orders.account_id = accounts.account_id."""
+    return " and ".join(f"{_ident(ra)}.{_ident(ca)} = {_ident(rb)}.{_ident(cb)}" for (ra, ca), (rb, cb) in pairs)
 
 
 # ==================================================================== parser
@@ -1216,7 +1205,6 @@ class _Parser:
         ds.relations = dict(target.relations)
         ds.joins = list(target.joins)
         ds.join_steps = list(target.join_steps)
-        ds.join_pairs = list(target.join_pairs)
         ds.hierarchies = ds.hierarchies or list(target.hierarchies)
         ds.origin = target
         for local, tf in target.fields.items():
@@ -1284,7 +1272,7 @@ class _Parser:
         """Join clauses -> foreign entities between the per-table models, with the join semantics in their descriptions.
         Returns the joins that could not become a relationship."""
         left: list[str] = []
-        for (kind, right, on), pairs in zip(ds.join_steps, ds.join_pairs):
+        for kind, right, pairs in ds.join_steps:
             kind = kind.lower()
             if len(pairs) != 1:
                 left.append(f"{kind} join to {right}" + (" (several columns)" if pairs else " (not a column equality)"))
@@ -1849,9 +1837,7 @@ class _Parser:
             if not hm or tail != ")" or hm.group(1).lower() not in TABLEAU_AGGS:
                 return False
             outer = TABLEAU_AGGS[hm.group(1).lower()][0]
-        if m is None or m.group(1).upper() == "FIXED":
-            return False
-        self.view_lods[(ds.uid, f.local)] = (m.group(1).upper(), [_unesc(d) for d in BRACKETED.findall(m.group(2))], m.group(3).strip(), outer)
+        self.view_lods[(ds.uid, f.local)] = (m.group(1).upper(), [_unesc(d) for d in BRACKETED.findall(m.group(2))], m.group(3).strip(), outer)  # type: ignore[union-attr]
         return True
 
     def _aggregate(self, ds: TDatasource, f: TField, model: _Model, node: ax.Node, src: str) -> _Calc:
@@ -1941,8 +1927,8 @@ class _Parser:
         if start is None:
             return
         preds = {start: rf.predicate}
-        edges = [(kind.lower(), *pairs[0]) for (kind, _, _), pairs in zip(ds.join_steps, ds.join_pairs) if len(pairs) == 1]
-        queue, missed = [start], [name for (_, name, _), pairs in zip(ds.join_steps, ds.join_pairs) if len(pairs) != 1]
+        edges = [(kind.lower(), *pairs[0]) for kind, _, pairs in ds.join_steps if len(pairs) == 1]
+        queue, missed = [start], [name for _, name, pairs in ds.join_steps if len(pairs) != 1]
         while queue:
             here = queue.pop(0)
             for kind, a, b in edges:
@@ -2465,7 +2451,7 @@ class _Parser:
 
     def _ds_join(self, ds: TDatasource | None) -> str:
         """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""
-        if ds is None or not ds.join_steps or not all(on for _, _, on in ds.join_steps):
+        if ds is None or not ds.join_steps or not all(pairs for _, _, pairs in ds.join_steps):
             return ""
         by_rel = self.ds_models.get(ds.uid) or {}
         if any(m.rel.kind != "table" for m in by_rel.values()):
@@ -2474,8 +2460,8 @@ class _Parser:
         if first not in by_rel or any(name not in by_rel for _, name, _ in ds.join_steps):
             return ""
         sql = f"{by_rel[first].sm.table} as {_ident(first)}"
-        for kind, name, on in ds.join_steps:
-            sql += f"\n{kind.lower()} join {by_rel[name].sm.table} as {_ident(name)} on {on}"
+        for kind, name, pairs in ds.join_steps:
+            sql += f"\n{kind.lower()} join {by_rel[name].sm.table} as {_ident(name)} on {_join_on(pairs)}"
         return sql
 
     def _tile_join(self, ds: TDatasource | None, ordered: list[tuple[_Ref, bool]]) -> tuple[str, str]:
@@ -2493,7 +2479,7 @@ class _Parser:
         first = by_rel[next(iter(ds.relations))]
         if used <= {id(first)} and not any(self._needs_rows(ds, r) for r, _ in ordered):
             safe = True
-            for (kind, name, _), pairs in zip(ds.join_steps, ds.join_pairs):
+            for kind, name, pairs in ds.join_steps:
                 right = by_rel[name]
                 cols = [c for (ra, ca), (rb, cb) in pairs for rel, c in ((ra, ca), (rb, cb)) if rel == name]
                 if kind.lower() != "left" or len(pairs) != 1 or not right.pk or [c.lower() for c in cols] != [right.pk.lower()]:
@@ -2512,14 +2498,10 @@ class _Parser:
         assert ctx is not None
         dims = [c for c in columns if not c[3]]
         specials = [(c, ctx.specials[c[0].instance]) for c in columns if c[3] and c[0].instance in ctx.specials]
-        special_ids = {id(c) for c, _ in specials}
-        plain = [c for c in columns if c[3] and id(c) not in special_ids]
-        lods: list[_Lod] = []
-        for lod in ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None]:
-            if lod not in lods:
-                lods.append(lod)
+        plain = [c for c in columns if c[3] and c[0].instance not in ctx.specials]
+        lods = list(dict.fromkeys(ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None]))
         ctes = ([("custom_sql", cte)] if cte else []) + [(lod.name, lod.select()) for lod in lods]
-        rows = from_sql + "".join(f"\nleft join {lod.name} on {self._lod_on(lod, lod.name)}" for lod in ctx.row_lods)
+        rows = from_sql + "".join(f"\nleft join {lod.name} on {self._lod_on(lod)}" for lod in ctx.row_lods)
         where_sql = ("\nwhere " + "\n  and ".join(where)) if where else ""
 
         def group(n: int) -> str:
@@ -2529,11 +2511,7 @@ class _Parser:
             return f"  {c[2]}" if c[2] == c[1] else f"  {c[2]} as {c[1]}"
 
         if not specials:
-            lines = ["select", ",\n".join(item(c) for c in columns), f"from {rows}"]
-            if where:
-                lines.append("where " + "\n  and ".join(where))
-            if dims:
-                lines.append("group by " + ", ".join(str(i) for i in range(1, len(dims) + 1)))
+            lines = ["select", ",\n".join(item(c) for c in columns), f"from {rows}{where_sql}{group(len(dims))}"]
             if having:
                 lines.append("having " + "\n  and ".join(having))
             if order:
@@ -2613,8 +2591,8 @@ class _Parser:
         except ax.FormulaError as exc:
             raise _NoSQL(f"FIXED dimensions not translated for this sheet ({exc})") from None
 
-    def _lod_on(self, lod: _Lod, name: str) -> str:
-        return " and ".join(f"{k} is not distinct from {name}.{alias}" for k, (_, alias) in zip(self._lod_keys(lod), lod.keys))
+    def _lod_on(self, lod: _Lod) -> str:
+        return " and ".join(f"{k} is not distinct from {lod.name}.{alias}" for k, (_, alias) in zip(self._lod_keys(lod), lod.keys))
 
     def _filter(self, wb: _Workbook, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, Any] | None:
         refs = self._shelf(wb, flt.get("column"), deps)
