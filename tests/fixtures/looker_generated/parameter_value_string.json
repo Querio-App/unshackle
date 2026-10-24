@@ -1,0 +1,5 @@
+[
+ {
+  "looker_error": "SQL Error: Query execution failed:  - Syntax error: Expected keyword AS but got identifier \"plain\" at [7:12]"
+ }
+]

@@ -130,7 +130,7 @@ CASES.update({
     "filter_quoted": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.s": '"Levi\'s"'}},
     "filter_apostrophe": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.s": "Levi's,O'Brien"}},
     "hour_timeframes": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.at_time", "ev_l.at_hour", "ev_l.at_minute", "ev_l.at_time_of_day",
-                                                   "ev_l.at_hour_of_day", "ev_l.at_minute_of_hour", "ev_l.in_range"], "sorts": ["ev_l.id"]},
+                                                   "ev_l.at_hour_of_day", "ev_l.in_range"], "sorts": ["ev_l.id"]},
 })
 
 

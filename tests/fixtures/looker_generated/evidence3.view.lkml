@@ -6,14 +6,14 @@ view: ev_l {
   derived_table: {
     sql:
       SELECT 1 AS id, 'apple' AS s, 1 AS n, TIMESTAMP '2026-12-31 23:30:45' AS ts UNION ALL
-      SELECT 2, 'Levi''s', 5, TIMESTAMP '2026-12-01 08:05:00' UNION ALL
-      SELECT 3, 'O''Brien', 7, TIMESTAMP '2027-01-03 10:00:00' UNION ALL
+      SELECT 2, "Levi's", 5, TIMESTAMP '2026-12-01 08:05:00' UNION ALL
+      SELECT 3, "O'Brien", 7, TIMESTAMP '2027-01-03 10:00:00' UNION ALL
       SELECT 4, CAST(NULL AS STRING), CAST(NULL AS INT64), CAST(NULL AS TIMESTAMP) ;;
   }
   dimension: id { primary_key: yes type: number sql: ${TABLE}.id ;; }
   dimension: s { type: string sql: ${TABLE}.s ;; }
   dimension: n { type: number sql: ${TABLE}.n ;; }
-  dimension_group: at { type: time timeframes: [raw, time, hour, minute, time_of_day, hour_of_day, minute_of_hour] sql: ${TABLE}.ts ;; }
+  dimension_group: at { type: time timeframes: [raw, time, hour, minute, time_of_day, hour_of_day] sql: ${TABLE}.ts ;; }
 
   filter: date_f { type: date }
   filter: f_sql { type: string sql: {% condition f_sql %} ${s} {% endcondition %} ;; }

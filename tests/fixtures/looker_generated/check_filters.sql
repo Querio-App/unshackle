@@ -1,0 +1,86 @@
+WITH chk_filters AS (WITH ev_f AS (SELECT 1 AS id, 'apple' AS s, 1.0 AS n, DATE '2026-12-31' AS d, TIMESTAMP '2026-12-31 23:30:00' AS ts, TRUE AS y UNION ALL
+          SELECT 2, 'Apple', 5.0, DATE '2027-01-03', TIMESTAMP '2027-01-03 10:00:00', FALSE UNION ALL
+          SELECT 3, 'banana', 7.0, DATE '2026-03-01', TIMESTAMP '2026-03-01 12:00:00', CAST(NULL AS BOOL) UNION ALL
+          SELECT 4, '', -5.0, DATE '2026-04-01', TIMESTAMP '2026-04-01 00:00:00', TRUE UNION ALL
+          SELECT 5, 'a,b', 10.0, DATE '2026-12-01', TIMESTAMP '2026-12-01 08:00:00', FALSE UNION ALL
+          SELECT 6, 'pineapple', 2.5, DATE '2027-01-04', TIMESTAMP '2027-01-04 00:15:00', FALSE UNION ALL
+          SELECT 7, CAST(NULL AS STRING), CAST(NULL AS FLOAT64), CAST(NULL AS DATE), CAST(NULL AS TIMESTAMP), CAST(NULL AS BOOL))
+    SELECT COUNTIF((s) LIKE 'app%') AS s_starts, COUNTIF((s) LIKE '%ple') AS s_ends, COUNTIF((s) LIKE '%an%') AS s_contains, COUNTIF(((s) NOT LIKE 'app%' OR (s) IS NULL)) AS s_not_starts, COUNTIF((s) = 'apple') AS s_eq_lower, COUNTIF((s) = 'APPLE') AS s_eq_upper, COUNTIF((s) IN ('apple', 'banana')) AS s_list, COUNTIF((s) = 'a,b') AS s_escaped_comma, COUNTIF(((s) IS NULL OR (s) = '')) AS s_empty, COUNTIF((s) IS NULL) AS s_null, COUNTIF(((n) >= 1 AND (n) <= 5)) AS n_closed, COUNTIF(((n) > 1 AND (n) < 5)) AS n_open, COUNTIF(((n) >= 1 AND (n) < 5)) AS n_half_open, COUNTIF((n) BETWEEN 1 AND 5) AS n_to, COUNTIF(((n) >= 1 AND (n) <= 5)) AS n_and, COUNTIF(((n) > 5 OR (n) < 2)) AS n_or, COUNTIF(NOT ((n) = 5)) AS n_not, COUNTIF((n) = -5) AS n_minus, COUNTIF((n) IN (5, 7)) AS n_list, COUNTIF(NOT ((n) IN (5, 7))) AS n_not_list, COUNTIF((n) IS NULL) AS n_null, COUNTIF((n) IS NOT NULL) AS n_not_null, COUNTIF((n) > 5) AS n_gt, COUNTIF(((d) >= '2026-12-31' AND (d) < '2027-01-01')) AS d_day, COUNTIF(((d) >= '2026-12-01' AND (d) < '2027-01-01')) AS d_month, COUNTIF(((d) >= '2026-01-01' AND (d) < '2027-01-01')) AS d_year, COUNTIF((d) < '2027-01-01') AS d_before, COUNTIF((d) >= '2027-01-01') AS d_after, COUNTIF(((d) >= '2026-12-01' AND (d) < '2027-01-01')) AS d_range, COUNTIF((d) IS NULL) AS d_null, COUNTIF((d) IS NOT NULL) AS d_not_null, COUNTIF(((ts) >= '2026-12-31 00:00:00' AND (ts) < '2027-01-01 00:00:00')) AS t_day, COUNTIF((ts) < '2027-01-03 10:00:00') AS t_before, COUNTIF(((ts) >= '2026-12-01 00:00:00' AND (ts) < '2027-01-01 00:00:00')) AS t_month, COUNTIF((CASE WHEN n < 0 THEN 'Below 0' WHEN n >= 0 AND n < 5 THEN '0 to 4' WHEN n >= 5 AND n < 10 THEN '5 to 9' WHEN n >= 10 THEN '10 or Above' ELSE 'Undefined' END) = '5 to 9') AS tier_filtered, COUNTIF((n > 3) = true) AS n_sum_big FROM ev_f )
+SELECT
+    chk_filters.s_starts  AS chk_filters_s_starts,
+    chk_filters.s_ends  AS chk_filters_s_ends,
+    chk_filters.s_contains  AS chk_filters_s_contains,
+    chk_filters.s_not_starts  AS chk_filters_s_not_starts,
+    chk_filters.s_eq_lower  AS chk_filters_s_eq_lower,
+    chk_filters.s_eq_upper  AS chk_filters_s_eq_upper,
+    chk_filters.s_list  AS chk_filters_s_list,
+    chk_filters.s_escaped_comma  AS chk_filters_s_escaped_comma,
+    chk_filters.s_empty  AS chk_filters_s_empty,
+    chk_filters.s_null  AS chk_filters_s_null,
+    chk_filters.n_closed  AS chk_filters_n_closed,
+    chk_filters.n_open  AS chk_filters_n_open,
+    chk_filters.n_half_open  AS chk_filters_n_half_open,
+    chk_filters.n_to  AS chk_filters_n_to,
+    chk_filters.n_and  AS chk_filters_n_and,
+    chk_filters.n_or  AS chk_filters_n_or,
+    chk_filters.n_not  AS chk_filters_n_not,
+    chk_filters.n_minus  AS chk_filters_n_minus,
+    chk_filters.n_list  AS chk_filters_n_list,
+    chk_filters.n_not_list  AS chk_filters_n_not_list,
+    chk_filters.n_null  AS chk_filters_n_null,
+    chk_filters.n_not_null  AS chk_filters_n_not_null,
+    chk_filters.n_gt  AS chk_filters_n_gt,
+    chk_filters.d_day  AS chk_filters_d_day,
+    chk_filters.d_month  AS chk_filters_d_month,
+    chk_filters.d_year  AS chk_filters_d_year,
+    chk_filters.d_before  AS chk_filters_d_before,
+    chk_filters.d_after  AS chk_filters_d_after,
+    chk_filters.d_range  AS chk_filters_d_range,
+    chk_filters.d_null  AS chk_filters_d_null,
+    chk_filters.d_not_null  AS chk_filters_d_not_null,
+    chk_filters.t_day  AS chk_filters_t_day,
+    chk_filters.t_before  AS chk_filters_t_before,
+    chk_filters.t_month  AS chk_filters_t_month,
+    chk_filters.tier_filtered  AS chk_filters_tier_filtered,
+    chk_filters.n_sum_big  AS chk_filters_n_sum_big
+FROM chk_filters
+GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36
+ORDER BY
+    1
+LIMIT 500

@@ -395,8 +395,16 @@ def _check_rows(name: str) -> list[dict]:
     if not path.exists():
         pytest.skip(f"check_{name}.json not captured yet (tests/live/looker/bigquery_checks.py)")
     rows = json.loads(path.read_text())
-    assert isinstance(rows, list), rows  # Looker returns an error object when BigQuery rejects the SQL
-    return [{k.split(".", 1)[1]: v for k, v in r.items()} for r in rows]
+    if rows and "looker_error" in rows[0]:  # BigQuery rejected the SQL
+        pytest.fail(f"check_{name}: {rows[0]['looker_error']}")
+
+    def value(v):  # the check views' dimensions are strings
+        try:
+            return float(v) if isinstance(v, str) and re.fullmatch(r"-?\d+(\.\d+)?", v) else v
+        except ValueError:
+            return v
+
+    return [{k.split(".", 1)[1]: value(v) for k, v in r.items()} for r in rows]
 
 
 @pytest.mark.parametrize("case", [c for c in [*TILES, "liquid_default", "liquid_set", *NESTED_TILES] if f"tile_{c}" in CHECKS])
@@ -415,7 +423,8 @@ def test_bigquery_timeframes_return_lookers_values(week_start, case):
         for field, value in r.items():
             col = field.split(".")[1]
             if col in ours[r["ev_time.id"]]:
-                assert str(ours[r["ev_time.id"]][col]) == str(value), (week_start, r["ev_time.id"], col)
+                got = ours[r["ev_time.id"]][col]
+                assert (got == value) if isinstance(value, (int, float)) else (str(got) == str(value)), (week_start, r["ev_time.id"], col)
 
 
 def test_bigquery_filters_return_lookers_counts():

@@ -1,0 +1,9 @@
+[
+ {
+  "chk_tile_distinct_total.ev_items_count": "7",
+  "chk_tile_distinct_total.ev_items_total_price": "33.0",
+  "chk_tile_distinct_total.ev_items_shipping_sum_distinct": "38.0",
+  "chk_tile_distinct_total.ev_items_shipping_avg_distinct": "9.5",
+  "chk_tile_distinct_total.ev_items_shipping_naive_sum": "63.0"
+ }
+]
