@@ -387,7 +387,7 @@ def test_nested_tiles_return_lookers_numbers(tiles, case):
 
 # ---------------------------------------------------------------- unshackle's BigQuery SQL, run on Looker's BigQuery (round 3)
 
-CHECKS = json.loads((FIX / "evidence3_checks.cases.json").read_text()) if (FIX / "evidence3_checks.cases.json").exists() else {}
+CHECK_TILES = [*TILES, "liquid_default", "liquid_set", *NESTED_TILES]
 
 
 def _check_rows(name: str) -> list[dict]:
@@ -399,15 +399,12 @@ def _check_rows(name: str) -> list[dict]:
         pytest.fail(f"check_{name}: {rows[0]['looker_error']}")
 
     def value(v):  # the check views' dimensions are strings
-        try:
-            return float(v) if isinstance(v, str) and re.fullmatch(r"-?\d+(\.\d+)?", v) else v
-        except ValueError:
-            return v
+        return float(v) if isinstance(v, str) and re.fullmatch(r"-?\d+(\.\d+)?", v) else v
 
     return [{k.split(".", 1)[1]: value(v) for k, v in r.items()} for r in rows]
 
 
-@pytest.mark.parametrize("case", [c for c in [*TILES, "liquid_default", "liquid_set", *NESTED_TILES] if f"tile_{c}" in CHECKS])
+@pytest.mark.parametrize("case", CHECK_TILES)
 def test_bigquery_tile_sql_returns_lookers_numbers(case):
     rows = _check_rows(f"tile_{case}")
     cols = list(rows[0]) if rows else []
@@ -416,8 +413,6 @@ def test_bigquery_tile_sql_returns_lookers_numbers(case):
 
 @pytest.mark.parametrize("week_start,case", [("monday", "time"), ("sunday", "time_week_sunday")])
 def test_bigquery_timeframes_return_lookers_values(week_start, case):
-    if f"time_{week_start}" not in CHECKS:
-        pytest.skip("no check")
     ours = {r["id"]: r for r in _check_rows(f"time_{week_start}")}
     for r in looker(case):
         for field, value in r.items():
@@ -428,8 +423,6 @@ def test_bigquery_timeframes_return_lookers_values(week_start, case):
 
 
 def test_bigquery_filters_return_lookers_counts():
-    if "filters" not in CHECKS:
-        pytest.skip("no check")
     (ours,) = _check_rows("filters")
     for field, value in looker("filters")[0].items():
         if field.split(".")[1] in ours:
