@@ -27,7 +27,7 @@ parse() translates deterministically:
   * model / worksheet TML -> one SemanticModel per physical table, joins -> entities,
     ATTRIBUTE -> dimensions, MEASURE + aggregation -> measures + simple metrics,
     formulas: sum/unique_count (or `unique count`)/average/... -> measures, sum_if -> metric
-    filters, safe_divide, a / b or a / nullif(b, 0) -> ratio metrics, nullif -> CASE, arithmetic over measures -> derived metrics,
+    filters, safe_divide, a / b or a / nullif(b, 0) -> ratio metrics, arithmetic over measures -> derived metrics,
     if/then/else -> CASE dimensions
   * synonyms, ai_context, descriptions, Spotter feedback -> knowledge files
   * liveboards -> notebooks using ThoughtSpot's generated SQL (ca_N aliases renamed to the
@@ -114,34 +114,22 @@ _UNIQUE_COUNT = re.compile(r"""(\[[^\]]*\]|'(?:[^']|'')*'|"(?:[^"]|"")*")|\buniq
 def _parse(expr: str) -> fx.Node:
     """fx.parse plus ThoughtSpot spellings: `unique count ( x )` and `nullif ( a , b )`."""
     text = _UNIQUE_COUNT.sub(lambda m: m.group(1) or "unique_count", expr)
-    return _nullif(fx.parse(text))
+    return _unwrap(fx.parse(text))
 
 
-def _nullif(node: fx.Node) -> fx.Node:
-    """nullif(a, b) -> case when a = b then null else a end, built from if() nodes.
-
-    A divisor nullif(x, 0) is dropped: generated division already uses nullif(x, 0), and the
-    bare aggregate lets `sum(a) / nullif(sum(b), 0)` stay a ratio metric.
-    """
+def _unwrap(node: fx.Node) -> fx.Node:
+    """Drop a divisor nullif(x, 0): generated division already uses nullif(x, 0), and the
+    bare aggregate lets `sum(a) / nullif(sum(b), 0)` stay a ratio metric."""
     if isinstance(node, fx.Call):
-        args = list(node.args)
+        args = [_unwrap(a) for a in node.args]
         if node.name == "safe_divide" and len(args) == 2:
             args[1] = _unwrap_zero(args[1])
-        args = [_nullif(a) for a in args]
-        if node.name != "nullif":
-            return fx.Call(node.name, args)
-        if len(args) != 2:
-            raise fx.FormulaError("nullif takes two arguments")
-        a, b = args
-        if isinstance(b, (fx.Num, fx.Str)):  # a literal is never null: a <> b is exactly "not equal"
-            return fx.Call("if", [fx.BinOp("<>", a, b), a])
-        # (a = b) is not true, so a null on either side keeps a, as SQL nullif does
-        return fx.Call("if", [fx.Call("if", [fx.BinOp("=", a, b), fx.Bool(False), fx.Bool(True)]), a])
+        return fx.Call(node.name, args)
     if isinstance(node, fx.BinOp):
-        right = _unwrap_zero(node.right) if node.op == "/" else node.right
-        return fx.BinOp(node.op, _nullif(node.left), _nullif(right))
+        right = _unwrap(node.right)
+        return fx.BinOp(node.op, _unwrap(node.left), _unwrap_zero(right) if node.op == "/" else right)
     if isinstance(node, fx.Unary):
-        return fx.Unary(node.op, _nullif(node.operand))
+        return fx.Unary(node.op, _unwrap(node.operand))
     return node
 
 

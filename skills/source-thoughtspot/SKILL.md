@@ -95,7 +95,7 @@ unshackle build thoughtspot
 | `sum_if / count_if / unique_count_if / average_if ( cond , x )` | simple metric with `filter` |
 | `safe_divide ( a , b )`, `a / b` over aggregates or measure columns | ratio metric (helper metrics added) |
 | `a / nullif ( b , 0 )`, `safe_divide ( a , nullif ( b , 0 ) )` | same as `a / b` (generated division already uses `nullif(b, 0)`) |
-| `nullif ( a , b )` elsewhere | `case when a <> b then a end` for a literal `b`; a null-safe `case` otherwise |
+| `nullif ( a , b )` elsewhere | `nullif(a, b)` |
 | arithmetic over measure columns (`[Revenue] - [Refunds]`) | derived metric |
 | MEASURE formula over a row expression (`[A] - [B]`, `aggregation: SUM`) | measure with that `expr` |
 | `if ( c ) then a else b`, `start_of_month ( d )`, `concat`, `lower`, `round`, ... | dimension `expr` (`CASE`, `date_trunc('month', d)`, ...) |

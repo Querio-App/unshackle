@@ -120,9 +120,9 @@ def test_unique_count_and_nullif(tmp_path: Path):
     assert (m["Safe Revenue per Order"].type, m["Safe Revenue per Order"].denominator) == ("ratio", "order_count")
     dims = _by_name(orders.dimensions)
     assert dims["discount_rate"].expr == "1.0 * discount / nullif(amount, 0)"
-    assert dims["known_region"].expr == "case when region <> 'unknown' then region end"
+    assert dims["known_region"].expr == "nullif(region, 'unknown')"
     und = dims["undiscounted_amount"].expr
-    assert und == "case when case when amount = discount then false else true end then amount end"
+    assert und == "nullif(amount, discount)"
     assert dims["literal_flag"].expr == "case when status = 'unique count (x)' then 1 else 0 end"
     assert not any(d.todo for d in dims.values())
 
