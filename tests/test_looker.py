@@ -153,17 +153,17 @@ def test_filter_expressions():
 
 
 def test_negated_filters_keep_nulls():
-    """Looker's "is not" filters keep NULL rows; -NULL and -EMPTY drop them."""
+    """Matches the SQL Looker generated (BigQuery) for these filters, and its counts on the same rows."""
     import duckdb
 
     r = "{{ Dimension('v__f') }}"
     assert looker_filter_sql(r, "-a,-b") == f"({r} NOT IN ('a', 'b') OR {r} IS NULL)"
     assert looker_filter_sql(r, "-%foo%") == f"({r} NOT LIKE '%foo%' OR {r} IS NULL)"
-    assert looker_filter_sql(r, "<>5", "number") == f"({r} <> 5 OR {r} IS NULL)"
-    assert looker_filter_sql(r, "!=5", "number") == f"({r} != 5 OR {r} IS NULL)"
+    assert looker_filter_sql(r, "-a,b") == f"{r} = 'b' AND ({r} <> 'a' OR {r} IS NULL)"
+    assert looker_filter_sql(r, "<>5", "number") == f"{r} <> 5"
     assert looker_filter_sql(r, "-NULL") == f"{r} IS NOT NULL"
     assert looker_filter_sql(r, "-EMPTY") == f"({r} IS NOT NULL AND {r} <> '')"
-    assert looker_filter_sql(r, "-a,b") is None
+    assert looker_filter_sql(r, "--a") is None
 
     con = duckdb.connect()
     con.execute("create table t as select * from (values ('a', 1, true), ('b', 5, false), ('c', 7, null), (null, null, null)) v(s, n, y)")
@@ -171,13 +171,20 @@ def test_negated_filters_keep_nulls():
     def count(col: str, value: str, kind: str = "string") -> int:
         return con.execute(f"select count(*) from t where {looker_filter_sql(col, value, kind)}").fetchone()[0]
 
-    assert count("s", "-a") == 3
-    assert count("s", "-a,-b") == 2
-    assert count("s", "-%b%") == 3
-    assert count("n", "<>5", "number") == 3
-    assert count("y", "no", "yesno") == 3
-    assert count("y", "yes", "yesno") == 1
-    assert count("s", "-NULL") == 3
+    # Looker's results on the same four rows
+    looker = {
+        ("s", "-a", "string"): 3,
+        ("s", "-a,-b", "string"): 2,
+        ("s", "-%b%", "string"): 3,
+        ("s", "-NULL", "string"): 3,
+        ("s", "-EMPTY", "string"): 3,
+        ("s", "-a,b", "string"): 1,
+        ("n", "<>5", "number"): 2,
+        ("n", "!=5", "number"): 2,
+        ("y", "no", "yesno"): 3,
+        ("y", "yes", "yesno"): 1,
+    }
+    assert {k: count(*k) for k in looker} == looker
 
 
 def test_parse_explore_json_fallback(tmp_path: Path):
