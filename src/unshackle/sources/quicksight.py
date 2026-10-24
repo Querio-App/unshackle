@@ -39,11 +39,12 @@ from __future__ import annotations
 import io
 import json
 import re
+import stat
 import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Union
+from typing import Any, Callable, Iterator, Union
 
 from unshackle.http import SourceError, env
 from unshackle.ir import (
@@ -197,7 +198,9 @@ SHAPES: dict[str, tuple[str, ...]] = {
 MAP_FIELDS = {"PhysicalTableMap", "LogicalTableMap", "FieldFolders", "SourceTableMap", "TransformStepMap",
               "DestinationTableMap", "TableMap"}
 KNOWN = {m.lower(): m for members in SHAPES.values() for m in members}
-ASSET_KINDS = {"dashboard": "dashboard", "analysis": "analysis", "dataset": "dataset", "datasource": "datasource"}
+# asset kind -> (lists.json key and URL segment, id member)
+KINDS = {"dashboard": ("dashboards", "DashboardId"), "analysis": ("analyses", "AnalysisId"),
+         "dataset": ("datasets", "DataSetId"), "datasource": ("datasources", "DataSourceId")}
 
 
 def normalize(obj: Any, parent: str = "") -> Any:
@@ -681,34 +684,21 @@ def _kind(*parts: Sql) -> str:
     return "window" if "window" in kinds else "agg" if "agg" in kinds else "row"
 
 
+def _walk(node: Node) -> Iterator[Node]:
+    yield node
+    kids = (node.args if isinstance(node, Call) else [node.left, node.right] if isinstance(node, BinOp)
+            else [node.operand] if isinstance(node, Unary) else node.items if isinstance(node, ListOf)
+            else [node.node] if isinstance(node, Sorted) else [])
+    for k in kids:
+        yield from _walk(k)
+
+
 def calls(node: Node) -> list[str]:
-    if isinstance(node, Call):
-        return [node.name] + [c for a in node.args for c in calls(a)]
-    if isinstance(node, BinOp):
-        return calls(node.left) + calls(node.right)
-    if isinstance(node, Unary):
-        return calls(node.operand)
-    if isinstance(node, ListOf):
-        return [c for a in node.items for c in calls(a)]
-    if isinstance(node, Sorted):
-        return calls(node.node)
-    return []
+    return [n.name for n in _walk(node) if isinstance(n, Call)]
 
 
 def field_refs(node: Node) -> list[str]:
-    if isinstance(node, Ref):
-        return [node.name]
-    if isinstance(node, Call):
-        return [r for a in node.args for r in field_refs(a)]
-    if isinstance(node, BinOp):
-        return field_refs(node.left) + field_refs(node.right)
-    if isinstance(node, Unary):
-        return field_refs(node.operand)
-    if isinstance(node, ListOf):
-        return [r for a in node.items for r in field_refs(a)]
-    if isinstance(node, Sorted):
-        return field_refs(node.node)
-    return []
+    return [n.name for n in _walk(node) if isinstance(n, Ref)]
 
 
 # ------------------------------------------------------------------ datasets
@@ -1210,9 +1200,9 @@ class QuickSightSource(Source):
     def inventory(self) -> Inventory:
         inv = Inventory("quicksight")
         lists = self._lists()
-        for kind, rows, key, url in (("dashboard", lists["dashboards"], "DashboardId", "dashboards"),
-                                     ("analysis", lists["analyses"], "AnalysisId", "analyses")):
-            for r in rows:
+        for kind in ("dashboard", "analysis"):
+            url, key = KINDS[kind]
+            for r in lists[url]:
                 inv.add(kind, f"{kind}:{r[key]}", r.get("Name") or r[key], url=self._url(url, r[key]),
                         last_viewed="", extra={"updated": str(r.get("LastUpdatedTime") or "")[:10]})
         for r in lists["datasets"]:
@@ -1230,9 +1220,7 @@ class QuickSightSource(Source):
         store.put_json("account.json", {"account": self._account, "region": self._region, "namespace": self.namespace})
         lists = self._lists()
         store.put_json("lists.json", lists)
-        keys = {"dashboard": ("dashboards", "DashboardId"), "analysis": ("analyses", "AnalysisId"),
-                "dataset": ("datasets", "DataSetId"), "datasource": ("datasources", "DataSourceId")}
-        selected = {k: [r for r in lists[lk] if only is None or f"{k}:{r[idk]}" in only] for k, (lk, idk) in keys.items()}
+        selected = {k: [r for r in lists[lk] if only is None or f"{k}:{r[idk]}" in only] for k, (lk, idk) in KINDS.items()}
         arns = [r["Arn"] for rows in selected.values() for r in rows if r.get("Arn")]
         exported = False
         if arns:
@@ -1299,8 +1287,8 @@ class QuickSightSource(Source):
             store.put_json(rel, doc)
             return doc
 
-        for kind, key, op, pop in (("dashboard", "DashboardId", "describe_dashboard_definition", "describe_dashboard_permissions"),
-                                   ("analysis", "AnalysisId", "describe_analysis_definition", "describe_analysis_permissions")):
+        for kind in ("dashboard", "analysis"):
+            key, op, pop = KINDS[kind][1], f"describe_{kind}_definition", f"describe_{kind}_permissions"
             for r in selected[kind]:
                 rid = r[key]
                 doc = one(f"api/{kind}/{_manual.safe_name(rid)}.json", lambda: self._call(op, **{key: rid}),
@@ -1320,9 +1308,7 @@ class QuickSightSource(Source):
                     for v in pt.values():
                         if isinstance(v, dict) and v.get("DataSourceArn"):
                             sources.append(_arn_id(v["DataSourceArn"]))
-                for rls in [doc.get("RowLevelPermissionDataSet") or {}] + [
-                        (t.get("RowLevelPermissionConfiguration") or {}).get("RowLevelPermissionDataSet") or {}
-                        for t in ((doc.get("SemanticModelConfiguration") or {}).get("TableMap") or {}).values()]:
+                for rls in _rls_datasets(doc):
                     if rls.get("Arn"):
                         datasets.append(_arn_id(rls["Arn"]))
                 for lt in (doc.get("LogicalTableMap") or {}).values():
@@ -1357,7 +1343,7 @@ class QuickSightSource(Source):
         self.b, self.store = b, store
         account = store.get_json("account.json") if store.exists("account.json") else {}
         self.region = account.get("region", "")
-        self.assets: dict[str, dict[str, dict[str, Any]]] = {k: {} for k in ASSET_KINDS.values()}
+        self.assets: dict[str, dict[str, dict[str, Any]]] = {k: {} for k in KINDS}
         for rel in store.glob("bundle/**/*.json") + store.glob("api/**/*.json"):
             try:
                 raw = json.loads(store.get_text(rel))
@@ -1368,13 +1354,11 @@ class QuickSightSource(Source):
             if not kind:
                 continue
             doc = normalize(raw)
-            rid = str(doc.get({"dashboard": "DashboardId", "analysis": "AnalysisId", "dataset": "DataSetId",
-                               "datasource": "DataSourceId"}[kind]) or _arn_id(doc.get("Arn", "")) or PurePosixPath(rel).stem)
+            rid = str(doc.get(KINDS[kind][1]) or _arn_id(doc.get("Arn", "")) or PurePosixPath(rel).stem)
             self.assets[kind].setdefault(rid, doc)
-            if not self.region:
-                for arn in re.findall(r"arn:aws[\w-]*:quicksight:([\w-]+):", json.dumps(raw)):
-                    self.region = arn
-                    break
+            m = None if self.region else re.search(r"arn:aws[\w-]*:quicksight:([\w-]+):", json.dumps(raw))
+            if m:
+                self.region = m.group(1)
         sources = self.assets["datasource"]
         types = {str(d.get("Type") or "") for d in sources.values()}
         b.detect_warehouse(ENGINES.get(t, t.lower()) for t in sorted(types) if t)
@@ -1489,9 +1473,9 @@ class QuickSightSource(Source):
             for msg in ds.todos:
                 b.warn(f"dataset {ds.name}", msg)
             # calculated columns of the dataset, then calculated fields of dashboards and analyses on it
-            calcs = [(c.name, c.name, c.expr, c.scope, "dataset") for c in ds.cols.values() if c.kind == "calc"]
-            calcs += [(snake(n), n, e, ds.cols, "analysis") for n, e in sorted((self.calcs.get(did) or {}).items())]
-            for key, label, expr, scope, origin in calcs:
+            calcs = [(c.name, c.name, c.expr, c.scope) for c in ds.cols.values() if c.kind == "calc"]
+            calcs += [(snake(n), n, e, ds.cols) for n, e in sorted((self.calcs.get(did) or {}).items())]
+            for key, label, expr, scope in calcs:
                 self._place_calc(ds, key, label, expr, scope, rel_model, pending_dims, pending_metrics)
         for t in tables.values():
             if not t.primary_key:
@@ -1582,9 +1566,9 @@ class QuickSightSource(Source):
     # ------------------------------------------------------------------ dashboards and analyses
 
     def _definitions(self) -> None:
-        for kind, url in (("dashboard", "dashboards"), ("analysis", "analyses")):
+        for kind in ("dashboard", "analysis"):
             for rid, doc in sorted(self.assets[kind].items(), key=lambda i: str(i[1].get("Name") or i[0])):
-                self._notebook(kind, rid, doc, url)
+                self._notebook(kind, rid, doc, KINDS[kind][0])
 
     def _notebook(self, kind: str, rid: str, doc: dict[str, Any], url: str) -> None:
         b = self.b
@@ -1675,17 +1659,7 @@ class QuickSightSource(Source):
             tile.todo = f"fields come from {len(datasets)} datasets ({', '.join(sorted(datasets))}) or a dataset not in the export"
             return tile
         ds = self.datasets[next(iter(datasets))]
-        binds: set[str] = set()
-
-        def param(name: str) -> str:
-            if name not in ctx.params:
-                raise Untranslatable(f"parameter ${{{name}}} is not declared")
-            if name in ctx.multi:
-                raise Untranslatable(f"multi-valued parameter ${{{name}}}")
-            binds.add(ctx.params[name])
-            return f":{ctx.params[name]}"
-
-        sc = Scope(ds, "tile", self.dialect, ctx.calcs.get(ds.id), param)
+        sc = Scope(ds, "tile", self.dialect, ctx.calcs.get(ds.id), lambda name: f":{ctx.param(name)}")
         select: list[tuple[str, str, VField, str]] = []  # (alias, sql, field, encoding type)
         aliases: set[str] = set()
         problems: list[str] = [f"no SQL: {x} (dataset {ds.name!r})" for x in ds.blockers]
@@ -1720,8 +1694,7 @@ class QuickSightSource(Source):
         by_role: dict[str, list[str]] = {}
         for alias, _, f, _ in select:
             by_role.setdefault(f.role, []).append(alias)
-        first = lambda role: enc[by_role[role][0]] if by_role.get(role) else None  # noqa: E731
-        todos += self._encode(tile, vtype, conf, enc, by_role, first)
+        todos += self._encode(tile, vtype, conf, enc, by_role)
         tile.todo = "; ".join(dict.fromkeys(t for t in todos if t))
         return tile
 
@@ -1788,9 +1761,9 @@ class QuickSightSource(Source):
                     preds.append(pred)
         return preds
 
-    def _encode(self, tile: Tile, vtype: str, conf: dict[str, Any], enc: dict[str, Encoding], by_role: dict[str, list[str]],
-                first: Callable[[str], Encoding | None]) -> list[str]:
+    def _encode(self, tile: Tile, vtype: str, conf: dict[str, Any], enc: dict[str, Encoding], by_role: dict[str, list[str]]) -> list[str]:
         todos: list[str] = []
+        first = lambda role: enc[by_role[role][0]] if by_role.get(role) else None  # noqa: E731
         values = [enc[a] for a in by_role.get("value", [])]
         put = lambda ch, e: tile.encodings.__setitem__(ch, e) if e else None  # noqa: E731
         if vtype in ("KPIVisual", "GaugeChartVisual"):
@@ -2012,6 +1985,14 @@ class _Ctx:
     dash: Dashboard
     control_binds: set[str] = field(default_factory=set)
 
+    def param(self, name: str, multi_ok: bool = False) -> str:
+        """The bind for a declared parameter, else Untranslatable."""
+        if name not in self.params:
+            raise Untranslatable(f"parameter {name} is not declared")
+        if name in self.multi and not multi_ok:
+            raise Untranslatable(f"multi-valued parameter {name}")
+        return self.params[name]
+
     def control_bind(self, filter_id: str, field: str, default: Any, kind: str) -> str | None:
         title = self.controls.get(filter_id)
         if not title:
@@ -2046,12 +2027,7 @@ def _filter_sql(ftype: str, spec: dict[str, Any], col: str, ctx: _Ctx, field_nam
         if conf.get("ParameterName"):
             if op != "EQUALS":
                 raise Untranslatable(f"{op} against a parameter")
-            p = conf["ParameterName"]
-            if p not in ctx.params:
-                raise Untranslatable(f"parameter {p} is not declared")
-            if p in ctx.multi:
-                raise Untranslatable(f"multi-valued parameter {p}")
-            bind = ctx.params[p]
+            bind = ctx.param(conf["ParameterName"])
             return f"({col} = :{bind} OR :{bind} IS NULL)"
         values = conf.get("CategoryValues") or ([conf["CategoryValue"]] if conf.get("CategoryValue") is not None else [])
         select_all = conf.get("SelectAllOptions") == "FILTER_ALL_VALUES" or not values
@@ -2090,10 +2066,8 @@ def _filter_sql(ftype: str, spec: dict[str, Any], col: str, ctx: _Ctx, field_nam
                 continue
             o = op + ("=" if spec.get(inc) else "")
             if v.get("Parameter"):
-                p = v["Parameter"]
-                if p not in ctx.params:
-                    raise Untranslatable(f"parameter {p} is not declared")
-                parts.append(f"({target} {o} :{ctx.params[p]} OR :{ctx.params[p]} IS NULL)")
+                bind = ctx.param(v["Parameter"], multi_ok=True)
+                parts.append(f"({target} {o} :{bind} OR :{bind} IS NULL)")
             elif v.get("RollingDate"):
                 raise Untranslatable(f"rolling date {json.dumps(v['RollingDate'])}")
             elif v.get("StaticValue") is not None:
@@ -2105,18 +2079,13 @@ def _filter_sql(ftype: str, spec: dict[str, Any], col: str, ctx: _Ctx, field_nam
         if not parts:
             return f"{col} IS NOT NULL" if null == "NON_NULLS_ONLY" else ""
         pred = " AND ".join(parts)
-        if null == "ALL_VALUES":
-            return f"(({pred}) OR {col} IS NULL)"
-        return pred
+        return with_nulls(f"({pred})") if null == "ALL_VALUES" else pred
     if ftype == "NumericEqualityFilter":
         if spec.get("AggregationFunction"):
             raise Untranslatable("filters on the aggregated value (HAVING)")
         neg = str(spec.get("MatchOperator") or "EQUALS") == "DOES_NOT_EQUAL"
         if spec.get("ParameterName"):
-            p = spec["ParameterName"]
-            if p not in ctx.params:
-                raise Untranslatable(f"parameter {p} is not declared")
-            bind = ctx.params[p]
+            bind = ctx.param(spec["ParameterName"], multi_ok=True)
             return f"({col} {'<>' if neg else '='} :{bind} OR :{bind} IS NULL)"
         if spec.get("Value") is None:
             return ""
@@ -2154,22 +2123,19 @@ def _sheet_rows(sheet: dict[str, Any], ids: list[str]) -> list[list[str]]:
     return grid_rows(items) + [[i] for i in ids if i not in placed]
 
 
+def _rls(doc: dict[str, Any], top: str, nested: str) -> list[dict[str, Any]]:
+    """A dataset's RLS config: the top-level member plus the one in each semantic model table."""
+    tables = ((doc.get("SemanticModelConfiguration") or {}).get("TableMap") or {}).values()
+    found = [doc.get(top)] + [(t.get("RowLevelPermissionConfiguration") or {}).get(nested) for t in tables]
+    return [r for r in found if r]
+
+
 def _rls_datasets(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    out = [doc["RowLevelPermissionDataSet"]] if doc.get("RowLevelPermissionDataSet") else []
-    for t in ((doc.get("SemanticModelConfiguration") or {}).get("TableMap") or {}).values():
-        r = (t.get("RowLevelPermissionConfiguration") or {}).get("RowLevelPermissionDataSet")
-        if r:
-            out.append(r)
-    return out
+    return _rls(doc, "RowLevelPermissionDataSet", "RowLevelPermissionDataSet")
 
 
 def _tag_configs(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    out = [doc["RowLevelPermissionTagConfiguration"]] if doc.get("RowLevelPermissionTagConfiguration") else []
-    for t in ((doc.get("SemanticModelConfiguration") or {}).get("TableMap") or {}).values():
-        r = (t.get("RowLevelPermissionConfiguration") or {}).get("TagConfiguration")
-        if r:
-            out.append(r)
-    return out
+    return _rls(doc, "RowLevelPermissionTagConfiguration", "TagConfiguration")
 
 
 def _measure(node: Node | None, sc: Scope, scope: dict[str, Col]) -> tuple[str, str] | None:
@@ -2227,14 +2193,15 @@ def _asset_kind(rel: str, doc: Any) -> str:
     if not isinstance(doc, dict):
         return ""
     rtype = str(doc.get("resourceType") or doc.get("ResourceType") or "").lower().replace("_", "")
-    if rtype in ASSET_KINDS:
-        return ASSET_KINDS[rtype]
+    if rtype in KINDS:
+        return rtype
     keys = {k.lower() for k in doc}
     for key, kind in (("dashboardid", "dashboard"), ("analysisid", "analysis"), ("datasetid", "dataset"), ("datasourceid", "datasource")):
         if key in keys:
             return kind
     folder = PurePosixPath(rel).parent.name.lower().replace("_", "").replace("-", "")
-    return ASSET_KINDS.get(folder) or ASSET_KINDS.get({"analyses": "analysis"}.get(folder, folder.removesuffix("s")), "")
+    folder = {"analyses": "analysis"}.get(folder, folder.removesuffix("s"))
+    return folder if folder in KINDS else ""
 
 
 def unpack_bundle(data: bytes, name: str) -> dict[str, bytes]:
@@ -2247,7 +2214,7 @@ def unpack_bundle(data: bytes, name: str) -> dict[str, bytes]:
                 raise SourceError(f"{name}: expands to more than {_manual.MAX_UNZIPPED // 1024**3} GiB")
             for info in infos:
                 rel = _manual.member_name(info.filename)
-                if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                if stat.S_ISLNK(info.external_attr >> 16):
                     raise SourceError(f"{name}: symlink in archive: {info.filename!r}")
                 if not info.is_dir():
                     out[f"bundle/{rel}"] = zf.read(info)
