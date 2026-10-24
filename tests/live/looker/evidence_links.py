@@ -6,15 +6,19 @@ model, then:
 
     python tests/live/looker/evidence_links.py https://<looker host> [case ...]   # one link per file
     python tests/live/looker/evidence_links.py --console [case ...] | pbcopy      # or all at once
+    python tests/live/looker/evidence_links.py --save looker-evidence.json         # then save them
 
 Open each link while logged in (Development Mode on) and save the page as the name shown into
 tests/fixtures/looker_generated/, or paste the --console snippet into the browser console on the
-Looker tab: it downloads every case as one looker-evidence.json. Explore URLs ending in .json return the result rows and .sql
+Looker tab: it downloads every case as one looker-evidence.json, which `--save <file>` splits into
+the fixtures. Explore URLs ending in .json return the result rows and .sql
 the SQL Looker generates. Never commit the host.
 """
 
 import json
+import re
 import sys
+from pathlib import Path
 from urllib.parse import urlencode
 
 TIME = ["raw", "time", "date", "week", "month", "quarter", "year", "day_of_week", "day_of_week_index", "month_num",
@@ -130,7 +134,15 @@ CASES.update({
 })
 
 
+# unshackle's own BigQuery SQL, written as views by bigquery_checks.py: `checks` selects them all
+CHECKS_FILE = Path(__file__).resolve().parents[2] / "fixtures" / "looker_generated" / "evidence3_checks.cases.json"
+CHECKS = json.loads(CHECKS_FILE.read_text()) if CHECKS_FILE.exists() else {}
+CASES.update({f"check_{k}": v for k, v in CHECKS.items()})
+
+
 def links(model: str, only: list[str]) -> dict[str, str]:
+    if "checks" in only:
+        only = [o for o in only if o != "checks"] + [f"check_{k}" for k in CHECKS]
     out = {}
     for name, case in CASES.items():
         if only and name not in only:
@@ -155,8 +167,22 @@ def console(model: str, only: list[str]) -> str:
     )
 
 
+def save(path: str) -> None:
+    """Split a downloaded looker-evidence.json into <case>.json / <case>.sql fixtures; refuse instance details."""
+    out = Path(__file__).resolve().parents[2] / "fixtures" / "looker_generated"
+    for name, text in json.loads(Path(path).read_text()).items():
+        if re.search(r"qwiklabs|@[\w-]+\.\w", text):
+            sys.exit(f"{name} names the instance or a user; scrub it first")
+        if name.endswith(".json"):
+            text = json.dumps(json.loads(text), indent=1)
+        (out / name).write_text(text.strip() + "\n")
+        print(name)
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "--console":
+    if sys.argv[1] == "--save":
+        save(sys.argv[2])
+    elif sys.argv[1] == "--console":
         print(console("training_ecommerce", sys.argv[2:]))
     else:
         for name, url in links("training_ecommerce", sys.argv[2:]).items():

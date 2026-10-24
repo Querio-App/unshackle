@@ -383,3 +383,45 @@ def test_nested_tiles_return_lookers_numbers(tiles, case):
     for o, t in zip(rows, theirs):
         for col, value in t.items():
             assert o[col] == value, (case, col)
+
+
+# ---------------------------------------------------------------- unshackle's BigQuery SQL, run on Looker's BigQuery (round 3)
+
+CHECKS = json.loads((FIX / "evidence3_checks.cases.json").read_text()) if (FIX / "evidence3_checks.cases.json").exists() else {}
+
+
+def _check_rows(name: str) -> list[dict]:
+    path = FIX / f"check_{name}.json"
+    if not path.exists():
+        pytest.skip(f"check_{name}.json not captured yet (tests/live/looker/bigquery_checks.py)")
+    rows = json.loads(path.read_text())
+    assert isinstance(rows, list), rows  # Looker returns an error object when BigQuery rejects the SQL
+    return [{k.split(".", 1)[1]: v for k, v in r.items()} for r in rows]
+
+
+@pytest.mark.parametrize("case", [c for c in [*TILES, "liquid_default", "liquid_set", *NESTED_TILES] if f"tile_{c}" in CHECKS])
+def test_bigquery_tile_sql_returns_lookers_numbers(case):
+    rows = _check_rows(f"tile_{case}")
+    cols = list(rows[0]) if rows else []
+    assert_lookers_numbers(case, cols, [tuple(r[c] for c in cols) for r in rows])
+
+
+@pytest.mark.parametrize("week_start,case", [("monday", "time"), ("sunday", "time_week_sunday")])
+def test_bigquery_timeframes_return_lookers_values(week_start, case):
+    if f"time_{week_start}" not in CHECKS:
+        pytest.skip("no check")
+    ours = {r["id"]: r for r in _check_rows(f"time_{week_start}")}
+    for r in looker(case):
+        for field, value in r.items():
+            col = field.split(".")[1]
+            if col in ours[r["ev_time.id"]]:
+                assert str(ours[r["ev_time.id"]][col]) == str(value), (week_start, r["ev_time.id"], col)
+
+
+def test_bigquery_filters_return_lookers_counts():
+    if "filters" not in CHECKS:
+        pytest.skip("no check")
+    (ours,) = _check_rows("filters")
+    for field, value in looker("filters")[0].items():
+        if field.split(".")[1] in ours:
+            assert int(ours[field.split(".")[1]]) == value, field
