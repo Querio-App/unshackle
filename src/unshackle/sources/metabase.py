@@ -66,6 +66,7 @@ TEXT_PARAMS = ("string/=", "category", "id")
 STRING_OPS = ("string/!=", "string/contains", "string/does-not-contain", "string/starts-with", "string/ends-with")
 COL = r'(?:"[^"]+"\.)*"[^"]+"|[\w.]+'
 DAY = r"\d{4}-\d{2}-\d{2}"
+PROBE_NUMBER, PROBE_YEAR = 901234.5, 1901  # + filter index; Metabase writes numbers from 1e7 up in scientific notation
 NUMERIC = ("type/Integer", "type/BigInteger", "type/Decimal", "type/Float", "type/Number")
 TEMPORAL = ("type/Date", "type/DateTime", "type/DateTimeWithTZ", "type/DateTimeWithLocalTZ", "type/DateTimeWithZoneOffset", "type/Time")
 METRIC_AGGS = {"count": "count", "sum": "sum", "avg": "average", "distinct": "count_distinct", "min": "min", "max": "max", "median": "median"}
@@ -153,10 +154,11 @@ def _probe(p: dict[str, Any], i: int, bind: str) -> Any:
     if t in TEXT_PARAMS or t in STRING_OPS:
         return [SENTINEL + bind]
     if t.startswith("number/"):
-        n = 901234.5 + i  # Metabase writes numbers from 1e7 up in scientific notation
+        n = PROBE_NUMBER + i
         return [-n, n] if t == "number/between" else [-n]
     if t.startswith("date/"):
-        return f"{1901 + i}-02-03~{1901 + i}-04-05"
+        y = PROBE_YEAR + i
+        return f"{y}-02-03~{y}-04-05"
     if t == "temporal-unit":
         return p.get("default")
     return None
@@ -208,6 +210,12 @@ def _filter_binds(p: dict[str, Any], bind: str) -> list[tuple[str, Any, str]]:
     return [(bind, default, kind)]
 
 
+def _range(col: str, lo: str, hi: str, cast: bool = False) -> str:
+    """`col` between :lo and :hi (inclusive), either bound empty meaning open; `cast` compares the upper bound by day."""
+    upper = f"CAST({col} AS date)" if cast else col
+    return f"(({col} >= {lo} OR {lo} IS NULL) AND ({upper} <= {hi} OR {hi} IS NULL))"
+
+
 def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
     """Replace the predicate Metabase compiled for dashboard filter number `i` (see _probe) with :binds.
 
@@ -215,34 +223,33 @@ def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
     "absent". An empty parameter means no filter, as in Metabase. Each :bind is used in a comparison before
     `:bind IS NULL`, so Postgres can tell its type.
     """
+    b = f":{bind}"
     if t.startswith("date/"):
-        y = 1901 + i
+        y = PROBE_YEAR + i
         f, to = f"{y}-02-03", f"{y}-04-05"
         lo, hi = f":{bind}_from", f":{bind}_to"
         on_day = re.compile(rf"({COL})\s+BETWEEN\s+date\s+'{f}'\s+AND\s+date\s+'{to}'")  # date columns
         ts = rf"timestamp\s+'{{}}\s+00:00:00(?:\.0+)?'"  # timestamp without time zone: [from, to + 1 day)
         on_ts = re.compile(rf"(\(\s*)?({COL})\s*>=\s*{ts.format(f)}\s*(?(1)\))\s*AND\s*"
                            rf"(\(\s*)?\2\s*<\s*{ts.format(f'{y}-04-06')}\s*(?(3)\))")
-        out = on_day.sub(lambda m: f"(({m[1]} >= {lo} OR {lo} IS NULL) AND ({m[1]} <= {hi} OR {hi} IS NULL))", sql)
-        out = on_ts.sub(lambda m: f"(({m[2]} >= {lo} OR {lo} IS NULL) AND (CAST({m[2]} AS date) <= {hi} OR {hi} IS NULL))", out)
-        return (out, "bound") if out != sql else (sql, "unbound" if f"'{y}-02-03" in sql else "absent")
-    if t.startswith("number/"):
-        n = 901234.5 + i
-        lit, b = re.escape(repr(-n)), f":{bind}"
+        out = on_day.sub(lambda m: _range(m[1], lo, hi), sql)
+        out = on_ts.sub(lambda m: _range(m[2], lo, hi, cast=True), out)
+        marker = f"'{f}"
+    elif t.startswith("number/"):
+        n = PROBE_NUMBER + i
+        marker = repr(-n)
+        lit = re.escape(marker)
         if t == "number/between":
             pat = re.compile(rf"({COL})\s+BETWEEN\s+{lit}\s+AND\s+{re.escape(repr(n))}(?![\d.])")
-            lo, hi = f":{bind}_min", f":{bind}_max"
-            out = pat.sub(lambda m: f"(({m[1]} >= {lo} OR {lo} IS NULL) AND ({m[1]} <= {hi} OR {hi} IS NULL))", sql)
+            out = pat.sub(lambda m: _range(m[1], f":{bind}_min", f":{bind}_max"), sql)
         else:
-            op = t.split("/", 1)[1]
-            out = _bind_compare(sql, op, lit, b, r"(?![\d.])")
-        return (out, "bound") if out != sql else (sql, "unbound" if repr(-n) in sql else "absent")
-    lit, b = f"'{SENTINEL}{bind}'", f":{bind}"
-    if t in TEXT_PARAMS or t == "string/!=":
-        out = _bind_compare(sql, "=" if t != "string/!=" else "!=", re.escape(lit), b, "")
-        return (out, "bound") if out != sql else (sql, "unbound" if lit in sql else "absent")
-    if t in STRING_OPS:  # Metabase writes LIKE with _ and % escaped; POSITION / RIGHT match the text exactly
-        like = re.escape(f"{SENTINEL}{bind}".replace("_", "\\_"))
+            out = _bind_compare(sql, t.split("/", 1)[1], lit, b, r"(?![\d.])")
+    elif t in TEXT_PARAMS or t == "string/!=":
+        marker = f"'{SENTINEL}{bind}'"
+        out = _bind_compare(sql, "=" if t != "string/!=" else "!=", re.escape(marker), b, "")
+    elif t in STRING_OPS:  # Metabase writes LIKE with _ and % escaped; POSITION / RIGHT match the text exactly
+        marker = f"{SENTINEL}{bind}".replace("_", "\\_")
+        like = re.escape(marker)
         pattern = {"string/contains": f"%{like}%", "string/does-not-contain": f"%{like}%",
                    "string/starts-with": f"{like}%", "string/ends-with": f"%{like}"}[t]
         pat = re.compile(rf"(?:LOWER\(({COL})\)|({COL}))\s+LIKE\s+'{pattern}'")
@@ -257,8 +264,9 @@ def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
             out = neg.sub(lambda m: f"(NOT ({test(m)}) OR {m[3]} IS NULL OR {b} IS NULL)", sql)
         else:
             out = pat.sub(lambda m: f"({test(m)} OR {b} IS NULL)", sql)
-        return (out, "bound") if out != sql else (sql, "unbound" if f"{SENTINEL}{bind}".replace("_", "\\_") in sql else "absent")
-    return sql, "absent"
+    else:
+        return sql, "absent"
+    return (out, "bound") if out != sql else (sql, "unbound" if marker in sql else "absent")
 
 
 def _bind_compare(sql: str, op: str, lit: str, b: str, end: str) -> str:
