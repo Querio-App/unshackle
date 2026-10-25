@@ -56,7 +56,8 @@ def test_fixed_grain_is_a_related_sql_model(bundle):
     assert [(e.name, e.type) for e in lod.entities] == [("account_id", "primary")]
     assert ("account_id", "foreign", "") in [(e.name, e.type, e.expr) for e in models["orders"].entities]
     # the FIXED value as a measure, AVG({FIXED ...}) as a metric on the grain, and a bucket over it as a dimension
-    assert [(m.name, m.agg, m.expr) for m in lod.measures] == [("account_revenue", "sum", ""), ("avg_account_revenue", "average", "account_revenue")]
+    assert [(m.name, m.agg, m.expr) for m in lod.measures] == [("account_revenue", "sum", ""), ("avg_account_revenue", "average", "account_revenue"),
+                                                            ("large_account_orders", "sum", "case when account_revenue >= 1000000 then 1 else 0 end")]
     tier = {d.name: d for d in lod.dimensions}["account_tier"]
     assert tier.expr.startswith("case when account_revenue >= 1000000 then 'Large'") and not tier.todo
     # a FIXED dimension of another table relates that table
@@ -128,6 +129,18 @@ def test_tiles_match_tableau_semantics(bundle, con):
          rows.groupby(["account_id", "paper_type"]).post_discount_revenue.sum().groupby("paper_type").max())
     same(run("Share of Account Revenue by Status", "status").share_of_account_revenue,
          rows.assign(s=rows.post_discount_revenue / rows.account_id.map(acct)).groupby("status").s.sum())
+    # An aggregate of a calc over FIXED values counts each account once per mark, not once per row
+    cycle_accounts = rows[["payment_cycle", "account_id"]].drop_duplicates()
+    large = cycle_accounts.assign(v=cycle_accounts.account_id.map(acct).ge(1e6).astype(int)).groupby("payment_cycle").v.sum()
+    same(run("Large Account Orders by Payment Cycle", "payment_cycle").large_account_orders, large)
+    # {FIXED [payment_cycle] : AVG({FIXED [account_id] : ...})}: the inner value once per (cycle, account)
+    nested = cycle_accounts.assign(v=cycle_accounts.account_id.map(acct)).groupby("payment_cycle").v.mean()
+    same(run("Cycle Avg Account Revenue", "payment_cycle").avg_cycle_avg_account_revenue, nested)
+    # A dimension filter keeps the marks of the filtered rows, but FIXED values are computed before it, over all rows
+    cancelled = rows[rows.status == "CANCELLED"][["payment_cycle", "account_id"]].drop_duplicates()
+    assert len(cancelled) < len(cycle_accounts)  # the filter drops some accounts from the view
+    same(run("Account Revenue by Payment Cycle (Cancelled)", "payment_cycle").avg_account_revenue,
+         cancelled.assign(v=cancelled.account_id.map(acct)).groupby("payment_cycle").v.mean())
     # SUM([Revenue]) / SUM([Account Revenue]): the FIXED sum once per (status, account), as Tableau computes it
     per_status = rows[["status", "account_id"]].drop_duplicates()
     same(run("Revenue Share by Status", "status").revenue_share,
@@ -136,6 +149,24 @@ def test_tiles_match_tableau_semantics(bundle, con):
         if sm.sql:  # one row per FIXED key
             df = con.sql(sm.sql).df()
             assert df[sm.entities[0].name].is_unique and len(df) == rows[sm.entities[0].name].nunique()
+
+
+def test_calcs_over_fixed_values_in_the_semantic_layer(bundle, con):
+    """A calc over one grain's FIXED values is a measure on that grain (one row per key); a nested FIXED is a grain."""
+    models = _models(bundle)
+    large = next(m for m in models["account_id_lod"].measures if m.name == "large_account_orders")
+    assert large.agg == "sum" and large.expr == "case when account_revenue >= 1000000 then 1 else 0 end"
+    nested = models["payment_cycle_lod"]
+    assert [e.name for e in nested.entities if e.type == "primary"] == ["payment_cycle"]
+    o, a = (con.sql(f"select * from public.{t}").df() for t in ("orders", "accounts"))
+    rows = o.merge(a, on="account_id")
+    acct = rows.groupby("account_id").post_discount_revenue.sum()
+    assert con.execute(f"select sum({large.expr}) from ({models['account_id_lod'].sql})").fetchone()[0] == int((acct >= 1e6).sum())
+    cycle_accounts = rows[["payment_cycle", "account_id"]].drop_duplicates()
+    expected = cycle_accounts.assign(v=cycle_accounts.account_id.map(acct)).groupby("payment_cycle").v.mean()
+    got = dict(con.execute(f"select payment_cycle, cycle_avg_account_revenue from ({nested.sql})").fetchall())
+    assert got == pytest.approx(expected.to_dict(), rel=1e-9)
+    assert not [m.todo for m in bundle.metrics if m.name in ("large_account_orders", "cycle_avg_account_revenue") and m.todo]
 
 
 def test_ossie_reads_the_grain_query(tmp_path: Path, bundle, con):
