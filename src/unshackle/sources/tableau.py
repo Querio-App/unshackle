@@ -139,6 +139,7 @@ DS_REF = re.compile(r"\[((?:[^\]]|\]\])+)\]\.\[((?:[^\]]|\]\])+)\]")
 # shelf, [__tableau_internal_object_id__].[<object id>] in a formula
 OBJECT_COUNT = re.compile(r"\[__tableau_internal_object_id__\]\.\[((?:[^\]]|\]\])+)\]")
 PARAM_REF = re.compile(r"\[Parameters\]\.\[((?:[^\]]|\]\])+)\]")
+SQL_PARAM = re.compile(r"<\[Parameters\]\.\[((?:[^\]]|\]\])+)\]>")  # a parameter inside custom SQL
 PARAM_ARG = "\x01"  # a workbook parameter in a parsed formula: [\x01<its local name>]
 LOD = re.compile(r"\{\s*(FIXED|INCLUDE|EXCLUDE)\b", re.I)
 LOD_PARTS = re.compile(r"\s*\{\s*(FIXED|INCLUDE|EXCLUDE)\s+((?:\[(?:[^\]]|\]\])+\]\s*,?\s*)+):(.+)\}\s*", re.S | re.I)
@@ -1612,6 +1613,10 @@ class _SheetCtx:
     table_calcs: dict[str, tcalc.Spec] = field(default_factory=dict)  # table calculation shelf instance -> its addressing
     table_calc_filters: list[tuple[str, str]] = field(default_factory=list)  # (shelf instance, condition with {} for its column)
     hidden: set[str] = field(default_factory=set)  # table calculations only on the Filters shelf
+    # the sheet's context: its data source, extract and context filters over its rows, which FIXED grains are computed after
+    context: list[str] = field(default_factory=list)
+    context_members: bool = False  # a top N or condition filter in the context
+    blends: list[tuple[str, str, str]] = field(default_factory=list)  # secondary data sources: (CTE name, body, join condition)
 
 
 @dataclass
@@ -1937,6 +1942,7 @@ class _Parser:
         # worksheet -> (the fields a filter action on it filters by, the action's source sheet when another action filters a same field)
         self._targets: dict[str, list[tuple[set[tuple[str, str]], str]]] = {}
         self.lods: dict[tuple, _Lod] = {}  # (FROM, CTE, FIXED dimension SQL) -> grain
+        self.bound_sql: set[str] = set()  # custom SQL with its parameters bound (_sql_binds): kept as written, like custom SQL
         self.lod_names: dict[str, _Lod] = {}
         self.lod_fields: dict[tuple[str, str], tuple[_Lod, str]] = {}  # FIXED field -> (grain, column)
         self.inline: dict[str, tuple[_Lod, str]] = {}  # FIXED LOD inside a formula, by its placeholder reference
@@ -2054,7 +2060,7 @@ class _Parser:
         if w and w not in dialect.DIALECTS:
             self.b.warn("warehouse type", f"{w!r}: tile and model SQL is written for {', '.join(dialect.DIALECTS)}; translate it for {w}")
             return
-        keep = tuple(r.sql for ds in data_sources for r in ds.relations.values() if r.kind == "text" and r.sql)
+        keep = tuple(r.sql for ds in data_sources for r in ds.relations.values() if r.kind == "text" and r.sql) + tuple(self.bound_sql)
 
         def put(obj: Any, attr: str) -> None:
             sql = getattr(obj, attr)
@@ -3884,22 +3890,25 @@ class _Parser:
 
         # ---- SQL
         ordered: list[tuple[_Ref, bool]] = []  # (ref, critical)
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()  # (data source, instance): a blend can show the same instance from two sources
         for r in rows + cols + [r for ch in ("color", "size", "text", "wedge-size", "lod", "shape", "path") for r in enc.get(ch, [])]:
             if r.special == "measure_values" and mv is not None:
                 for m in mv[0]:
-                    if m.instance not in seen:
+                    if (m.dsname, m.instance) not in seen:
                         ordered.append((m, True))
-                        seen.add(m.instance)
+                        seen.add((m.dsname, m.instance))
                 continue
-            if r.instance not in seen and r.special not in ("geo", "measure_names"):
+            if (r.dsname, r.instance) not in seen and r.special not in ("geo", "measure_names"):
                 ordered.append((r, True))
-                seen.add(r.instance)
+                seen.add((r.dsname, r.instance))
         for r in enc.get("tooltip", []):
-            if r.instance not in seen:
+            if (r.dsname, r.instance) not in seen:
                 ordered.append((r, False))
-                seen.add(r.instance)
-        tile_ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
+                seen.add((r.dsname, r.instance))
+        # data blending: the first data source is the primary; the others' fields are aggregated on their own (_blend)
+        blended = [x for x in ordered if len(data_ds) > 1 and x[0].dsname != data_ds[0] and x[0].special != "parameter"]
+        ordered = [x for x in ordered if x not in blended]
+        tile_ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 or blended else None
         # fields (shown, or filtered on) of several logical tables of a data source with relationships
         rel_tile = len(set(self._related_tables(tile_ds, ordered)) | self._filter_tables(wb, tile_ds, view, deps)) > 1
         join_from, join_todo = self._tile_join(tile_ds, ordered)
@@ -3932,6 +3941,11 @@ class _Parser:
                     continue
                 columns.append((r, alias, sql, is_agg, display, etype, unit))
             notes += self._aliases(columns) + self._sort_aggregates(wb, columns, deps)
+            if blended:
+                try:
+                    columns += self._blend(wb, data_ds[0], blended, columns)
+                except _NoSQL as exc:
+                    problems.append(str(exc))
             # Tableau's order: extract and data source filters, context filters, then FIXED LODs, top N and conditions
             # (each over the context's rows, independently of the sheet's other filters), dimension filters, measure filters.
             where, having, order, limit = list(self._sheet.member_sets), [], [], ""
@@ -3951,6 +3965,10 @@ class _Parser:
                 res = self._filter(wb, flt, deps, meta)
                 if res is None:
                     continue
+                if blended and any(r.dsname != data_ds[0] for r in self._shelf(wb, flt.get("column"), deps)):
+                    problems.append(f"a filter on a field of a secondary data source ({flt.get('column')}): Tableau filters that source "
+                                    "before blending; add it to the blend's CTE in the tile SQL")
+                    continue
                 sheet_filters.append((flt, res))
                 k, v = res
                 if k == "where":
@@ -3963,10 +3981,13 @@ class _Parser:
                     if flt.get("context") == "true":
                         notes.append("a top N or condition filter in the context: other top N and condition filters here are "
                                      "computed without it; Tableau computes them over its members")
+                        self._sheet.context_members = True
                     members.append(v)
                 else:
                     notes.append(v)
             members[:] = [(expr, ms, ds_where + context) for expr, ms in members]
+            if context:
+                self._sheet.context = ds_where + context
             return problems, columns, dropped, notes, ds_where + where, having, order, limit
 
         problems, columns, dropped, notes, where, having, order, limit = build()
@@ -3975,8 +3996,11 @@ class _Parser:
             qualify_one = True
             problems, columns, dropped, notes, where, having, order, limit = build()
         todos += notes
-        if (uses_lod or self._sheet.specials) and any(flt.get("context") == "true" for flt in view.findall("filter")):  # type: ignore[union-attr]
+        if (uses_lod or self._sheet.specials) and rel_tile and any(flt.get("context") == "true" for flt in view.findall("filter")):  # type: ignore[union-attr]
             problems.append("context filters: Tableau applies them before FIXED LODs; add them inside the LOD subqueries of the tile SQL")
+        elif uses_lod and self._sheet.context_members:  # type: ignore[union-attr]
+            problems.append("a top N or condition filter in the context: Tableau computes the FIXED LODs over its members; add its "
+                            "members CTE inside the LOD subqueries of the tile SQL")
         aliases: dict[str, str] = {}
         taken: set[str] = set()
         for i, (r, alias, *rest) in enumerate(columns):
@@ -3986,13 +4010,16 @@ class _Parser:
             taken.add(a)
             aliases[r.instance] = a
             columns[i] = (r, a, *rest)
-        models = {id(m): m for r, *_ in columns if r.ds and r.field and (m := self._field_model(r.ds, r.field)) is not None}
+        models = {id(m): m for r, *_ in columns
+                  if r.ds and r.field and (not blended or r.ds is tile_ds) and (m := self._field_model(r.ds, r.field)) is not None}
         if not models and columns and data_ds and data_ds[0] in wb.datasources:
             first = next(iter((self.ds_models.get(wb.datasources[data_ds[0]].uid) or {}).values()), None)
             if first is not None:
                 models = {id(first): first}
-        if len(data_ds) > 1:
+        if len(data_ds) > 1 and not blended:
             problems.append(f"blends {len(data_ds)} datasources ({', '.join(data_ds)}): join them in the tile SQL ({SKILL})")
+        elif blended and rel_tile:
+            problems.append(f"blends a data source with relationships: aggregate each source on the linking fields and left join them ({SKILL})")
         elif len(models) > 1 and not join_from and not rel_tile:
             problems.append("fields come from several joined tables: write the join in the tile SQL")
         sql = totals_sql = ""
@@ -4014,10 +4041,14 @@ class _Parser:
                 from_sql = f"{from_sql} as {_ident(model.rel.name)}"
             dims = [c for c in columns if not c[3]]
             columns = dims + [c for c in columns if c[3]]
-            totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit or members))
+            if self._sheet.blends and self._totals_wanted(table, rows, cols)[3]:  # type: ignore[union-attr]
+                totals, note = [], "totals of a blended sheet: Tableau totals the secondary data source on its own; add them by hand"
+            else:
+                totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit or members))
             if totals and self._sheet.table_calcs:  # type: ignore[union-attr]
                 totals, note = [], (f"Tableau totals ({self._totals_wanted(table, rows, cols)[3]}) not added: the sheet has table calculations, "
                                     f"which Tableau also computes on the total rows; add them as grouping sets of the tile query ({SKILL})")
+            cte = self._sql_binds(wb, cte)
             try:
                 if self._sheet.table_calcs and mv is not None:  # type: ignore[union-attr]
                     raise _NoSQL(f"table calculations with Measure Values: unpivot the measures, then add the window columns ({SKILL})")
@@ -4032,6 +4063,7 @@ class _Parser:
                     totals_sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals, members)
                     if self.dialect in dialect.DIALECTS:
                         keep = tuple(r.sql for r in (tile_ds.relations.values() if tile_ds else []) if r.kind == "text" and r.sql)
+                        keep += tuple(self.bound_sql)
                         try:
                             totals_sql = dialect.render(totals_sql, self.dialect, keep)
                         except dialect.Unsupported:
@@ -5339,8 +5371,10 @@ class _Parser:
         plain = [c for c in columns if c[3] and c[0].instance not in ctx.specials]
         fixed_parts = [p for _, sp in specials for kind, p in sp.parts if kind == "fixed"]
         lods = list(dict.fromkeys(ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None] + [p.lod for p in fixed_parts]))
-        ctes = ([("custom_sql", cte)] if cte else []) + [(lod.name, lod.select()) for lod in lods]
+        ctes = ([("custom_sql", cte)] if cte else []) + [(n, body) for n, body, _ in ctx.blends]
+        ctes += [(lod.name, self._context_lod(lod, from_sql) if ctx.context else lod.select()) for lod in lods]
         rows = from_sql + "".join(f"\nleft join {lod.name} on {self._lod_on(lod)}" for lod in ctx.row_lods)
+        rows += "".join(f"\nleft join {n} on {on}" for n, _, on in ctx.blends)
         where = list(where)
         for i, (expr, ms, before) in enumerate(members, 1):
             name, x = f"filter_{i}", _paren(expr)
@@ -5486,6 +5520,140 @@ class _Parser:
         if not ctes:
             return body
         return "with " + ",\n".join(f"{n} as (\n{b}\n)" for n, b in ctes) + "\n" + body
+
+    def _sql_binds(self, wb: _Workbook, sql: str) -> str:
+        """Workbook parameters inside custom SQL (<[Parameters].[x]>). Tableau writes the parameter's value there as a literal
+        of its type (a string quoted, a date as a date), so each becomes the parameter's bind (:x, dates cast). One written
+        inside quotes, or not a parameter of the workbook, stays as it is (the tile keeps a TODO)."""
+        def bind(m: re.Match) -> str:
+            p = wb.params.get(_unesc(m.group(1))) or next((q for q in wb.params.values() if q.label == _unesc(m.group(1))), None)
+            quoted = sql[m.start() - 1:m.start()] in ("'", '"') or sql[m.end():m.end() + 1] in ("'", '"')
+            return m.group(0) if p is None or quoted else param_bind(p)
+
+        out = SQL_PARAM.sub(bind, sql) if sql else sql
+        if out != sql:
+            self.bound_sql.add(out)
+        return out
+
+    def _blend(self, wb: _Workbook, primary: str, refs: list[tuple[_Ref, bool]], columns: list) -> list[tuple]:
+        """Columns of a blended sheet's secondary data sources. Tableau queries each secondary on its own, aggregated at the
+        sheet's linking fields (its dimensions that link to the secondary), and left joins the result to the primary's marks.
+        Each secondary becomes a CTE grouped by the links, joined to the primary's rows on them (one row per link value, so
+        the rows don't multiply); its measures are taken per mark with max(), the same value on every row of a mark."""
+        ctx = self._sheet
+        assert ctx is not None
+        dims = [c for c in columns if not c[3]]
+        by_ds: dict[str, list[_Ref]] = {}
+        for r, _ in refs:
+            by_ds.setdefault(r.dsname, []).append(r)
+        out = []
+        for n, (dsname, srefs) in enumerate(by_ds.items(), len(ctx.blends) + 1):
+            sds = wb.datasources.get(dsname)
+            if sds is None:
+                raise _NoSQL(f"blend with data source {dsname}, which is not in the workbook")
+            links = self._blend_links(wb, primary, sds, dims)
+            if not links:
+                raise _NoSQL(f"blends {sds.caption} with no linking field among the sheet's dimensions: Tableau needs an active link; "
+                             f"aggregate it on the linking fields and left join it in the tile SQL ({SKILL})")
+            clash = {c[0].instance for c in columns} & {r.instance for r in srefs}
+            if clash:
+                raise _NoSQL(f"{', '.join(sorted(clash))} on the sheet from both the primary and {sds.caption}: blend them in the tile SQL")
+            name = f"blend_{n}"
+            prev = self._sheet, self._joined
+            try:
+                from_sql, cte, joined = self._rows(sds)
+                cte = self._sql_binds(wb, cte)
+                self._sheet, self._joined = _SheetCtx(sds), (sds if joined else None)
+                keys, values = [], []
+                for _, sr in links:
+                    _, ksql, is_agg, *_ = self._column(sr)
+                    if is_agg or not ksql:
+                        raise _NoSQL(f"the linking field {sr.instance} of {sds.caption} is not a row-level field")
+                    keys.append(ksql)
+                for r in srefs:
+                    alias, sql, is_agg, display, etype, unit = self._column(r)
+                    label = r.field.label if r.field else r.instance
+                    if not is_agg:
+                        if r.field is not None and self._links_to(wb, primary, sds, r.field):
+                            raise _NoSQL(f"[{label}] of the secondary data source {sds.caption} is a linking field: on the sheet, Tableau "
+                                         "links on it and splits the primary's marks by it; put the primary's field on the sheet instead")
+                        if r.field is None or r.field.datatype != "string" or r.deriv not in ("none", ""):
+                            raise _NoSQL(f"[{label}], a {r.field.datatype if r.field else ''} dimension of the secondary data source "
+                                         f"{sds.caption}: Tableau shows its value where a mark has one and * where it has several, "
+                                         "which isn't a value of its type; show it as text in the tile SQL by hand")
+                        # Tableau's rule for a secondary dimension: its value where the link has one (NULLs left out), * where several
+                        sql = f"case when min({sql}) = max({sql}) then min({sql}) when min({sql}) <> max({sql}) then '*' end"
+                    values.append((r, alias, sql, display, etype, unit))
+                inner = self._sheet
+                if inner.specials or inner.row_lods or inner.labels or inner.member_sets:
+                    raise _NoSQL(f"an LOD, set or alias of the secondary data source {sds.caption}: compute it in the blend's CTE by hand")
+                where = self._ds_where(sds)
+            except ax.FormulaError as exc:
+                raise _NoSQL(f"blend with {sds.caption} not translated ({exc})") from None
+            finally:
+                self._sheet, self._joined = prev
+            items = [f"{k} as blend_key_{j}" for j, k in enumerate(keys, 1)] + [f"{v[2]} as blend_value_{j}" for j, v in enumerate(values, 1)]
+            frm = f"(\n{cte}\n) as custom_sql" if cte else from_sql
+            body = (f"select {', '.join(items)}\nfrom {frm}" + (f"\nwhere {' and '.join(where)}" if where else "")
+                    + f"\ngroup by {', '.join(str(j) for j in range(1, len(keys) + 1))}")
+            on = " and ".join(f"{ctx.labels.get(c[0].instance, c[2])} is not distinct from {name}.blend_key_{j}" for j, (c, _) in enumerate(links, 1))
+            ctx.blends.append((name, body, on))
+            out += [(r, alias, f"max({name}.blend_value_{j})", True, display, etype, unit) for j, (r, alias, _, display, etype, unit) in enumerate(values, 1)]
+        return out
+
+    def _links_to(self, wb: _Workbook, primary: str, sds: TDatasource, f: TField) -> bool:
+        """Whether a secondary field links to the primary: mapped in the pair's <datasource-relationship>, else a field of
+        the primary with the same name."""
+        rels = [el for el in wb.root.iter("datasource-relationship") if {el.get("source"), el.get("target")} == {primary, sds.name}]
+        if rels:
+            sides = [DS_REF.fullmatch(m.get(k, "")) for el in rels for m in el.iter("map") for k in ("key", "value")]
+            return any(x is not None and _unesc(x.group(1)) == sds.name and _unesc(x.group(2)).split(":")[1:-1] == [f.local] for x in sides)
+        pds = wb.datasources.get(primary)
+        return pds is not None and any(g.label == f.label and not g.param for g in pds.fields.values())
+
+    def _blend_links(self, wb: _Workbook, primary: str, sds: TDatasource, dims: list) -> list[tuple[tuple, _Ref]]:
+        """The sheet's linking fields with a secondary data source: (the primary's dimension column, the secondary's field).
+        The workbook's <datasource-relationship> maps fields (as column instances) between the two; without one Tableau
+        links fields with the same name."""
+        mapped: dict[str, str] = {}
+        found = False
+        for el in wb.root.iter("datasource-relationship"):
+            src, dst = el.get("source"), el.get("target")
+            if {src, dst} != {primary, sds.name}:
+                continue
+            found = True
+            for m in el.iter("map"):
+                k, v = (m.get("key", ""), m.get("value", "")) if src == primary else (m.get("value", ""), m.get("key", ""))
+                km = DS_REF.fullmatch(k)
+                if km:
+                    mapped[_unesc(km.group(2))] = v
+        out = []
+        for c in dims:
+            r = c[0]
+            if found:
+                if r.instance in mapped:
+                    out += [(c, sr) for sr in self._shelf(wb, mapped[r.instance], {})[:1] if sr.field is not None]
+                continue
+            f = r.field
+            sf = next((g for g in sds.fields.values() if f is not None and g.label == f.label and not g.param), None)
+            if sf is not None and r.deriv:
+                out.append((c, _Ref(sds, sds.name, f"{r.deriv}:{sf.local}:{r.suffix}", r.deriv, sf, r.suffix)))
+        return out
+
+    def _context_lod(self, lod: _Lod, from_sql: str) -> str:
+        """A FIXED grain on a sheet with context filters: Tableau computes it over the rows the context leaves, so it is
+        grouped here over the sheet's own rows (`from_sql`) with the context's predicates, instead of the shared grain."""
+        ctx = self._sheet
+        assert ctx is not None
+        if from_sql != lod.from_sql and not from_sql.startswith(lod.from_sql + " as "):
+            raise _NoSQL(f"context filters with the FIXED grain {lod.name} (a nested FIXED or another table): Tableau computes it over "
+                         "the rows the context filters leave; add them inside its subqueries in the tile SQL")
+        if any(re.search(rf"\b{re.escape(lod.name)}\.", p) for p in ctx.context):
+            raise _NoSQL(f"a context filter on a FIXED value of {lod.name}: Tableau computes the grain after the context; write it in the tile SQL")
+        if lod.model is not None and "context filters" not in lod.model.sm.description:
+            lod.model.sm.description += (" On a sheet with context filters Tableau computes it over the rows they leave: such tiles "
+                                         "compute the grain in their own SQL.")
+        return _Lod(lod.name, lod.keys, from_sql, dims=lod.dims, cols=lod.cols, where=" and ".join(ctx.context)).select()
 
     def _lod_keys(self, lod: _Lod) -> list[str]:
         """The FIXED dimensions as SQL over the sheet's rows."""

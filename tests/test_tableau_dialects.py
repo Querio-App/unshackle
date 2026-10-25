@@ -23,7 +23,7 @@ SQLGLOT = {"postgres": "postgres", "redshift": "redshift", "snowflake": "snowfla
 NULL_CYCLE = "nullif(payment_cycle, '')"  # accounts with no payment cycle ('' in the data) as NULL
 BINDS = {"min_order_value": "500.0", "target_margin": "0.15", "growth_rate": "0.1", "churn_rate": "0.064", "commission_rate": "18.4", "revenue_target": "1500000",
          "measure": "'Quantity'", "group_by": "'Status'", "start_date": "'2025-01-01'", "include_cancelled": "false", "max_days": "14",
-         "as_of": "'2026-10-25'"}
+         "as_of": "'2026-10-25'", "status": "'COMPLETED'", "since": "'2025-01-01'", "min_quantity": "10"}
 
 
 def _bind(sql: str) -> str:
@@ -93,7 +93,7 @@ def test_configured_type_applies_when_the_export_names_none(tmp_path: Path):
 
 
 @pytest.mark.parametrize("warehouse", sorted(SQLGLOT))
-@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_extract", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc"])
+@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_extract", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc", "tableau_context"])
 def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, warehouse: str):
     sqlglot = pytest.importorskip("sqlglot")
     b = _parse(tmp_path, fixture, warehouse)
@@ -107,7 +107,7 @@ def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, war
     assert not [t.todo for d in b.dashboards for t in d.tiles if f"{warehouse}:" in (t.todo or "")]
 
 
-@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc"])
+@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc", "tableau_context"])
 @pytest.mark.parametrize("null_cycle", [False, True])
 def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_cycle: bool):
     sqlglot = pytest.importorskip("sqlglot")
