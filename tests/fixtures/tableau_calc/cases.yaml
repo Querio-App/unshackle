@@ -270,6 +270,14 @@
   rows: [{s: "Renée", u: "RENÉE"}, {s: "a"}]
   expected: [true, null]
   rule: "a case-insensitive comparison written with UPPER"
+- formula: "CONTAINS([s], 'an')"
+  rows: [{s: "Stanley"}, {s: "Andy"}, {s: "an"}, {s: "a_n%"}, {s: ""}, {}]
+  expected: [true, false, true, false, false, null]
+  rule: "CONTAINS is case-sensitive; _ and % are plain characters; NULL is NULL (wildcard filters write it)"
+- formula: "CONTAINS(LOWER([s]), LOWER('AN'))"
+  rows: [{s: "Andy"}, {s: "Pam"}, {}]
+  expected: [true, false, null]
+  rule: "a wildcard filter's case-insensitive contains"
 
 # ---------------------------------------------------------------- dates
 - formula: "DATE([d])"

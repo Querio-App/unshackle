@@ -239,7 +239,8 @@ def test_sorted_dimensions_keep_the_rows_order_in_charts(tiles):
     assert args == ["y=alt.Y('paper_type:N', title='paper_type', sort=None)"]
 
 
-def test_top_n_keeps_its_order_and_notes_the_sort(tmp_path: Path):
+def test_top_n_rows_follow_the_sheet_sort(tmp_path: Path):
+    """A Top N filter keeps N members (values, not their alias labels); the sheet's sort orders their rows."""
     top = ("<filter class='categorical' column='[federated.display0demo].[none:paper_type:nk]'><groupfilter count='3' end='top' "
            "function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true' xmlns:user='http://www.tableausoftware.com/xml/user'>"
            "<groupfilter direction='DESC' expression='SUM([post_discount_revenue])' function='order'>"
@@ -248,7 +249,8 @@ def test_top_n_keeps_its_order_and_notes_the_sort(tmp_path: Path):
         "          <alphabetic-sort column='[federated.display0demo].[none:paper_type:nk]' direction='DESC' />\n",
         "          <alphabetic-sort column='[federated.display0demo].[none:paper_type:nk]' direction='DESC' />\n" + top))
     tile = next(t for d in b.dashboards for t in d.tiles if t.title == "Alpha Desc")
-    assert tile.sql.endswith("limit 3") and "Top N filter's order is kept" in tile.todo
+    assert "row_number() over (order by sum(orders.post_discount_revenue) desc nulls last, products.paper_type)" in tile.sql
+    assert "where filter_rank <= 3" in tile.sql and tile.sql.endswith('collate "C" desc') and not tile.todo
 
 
 # --------------------------------------------------------------- formats
