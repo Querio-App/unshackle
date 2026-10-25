@@ -23,9 +23,9 @@ from connection relations + metadata-records, joins -> relationships, plain aggr
 row-level calcs (IF/CASE/ZN/IFNULL/DATETRUNC/arithmetic), ratios of aggregates, FIXED
 LODs -> SQL models at their grain, user filters -> row filters, worksheets -> tiles with
 generated SQL (FIXED, INCLUDE and EXCLUDE LODs included), dashboards -> notebooks with
-layout. Table calcs, parameters, sets, groups, bins, blending, ATTR and the LODs the
-tiles can't place keep their Tableau formula with a TODO(unshackle) for the agent
-(skills/source-tableau, skills/translate-metrics).
+layout, table calcs -> window SQL over a sheet's marks. Parameters, sets, groups, bins,
+blending, ATTR and the LODs and table calcs the tiles can't place keep their Tableau formula
+with a TODO(unshackle) for the agent (skills/source-tableau, skills/translate-metrics).
 """
 
 from __future__ import annotations
@@ -74,6 +74,7 @@ from unshackle.sources import _tableau_data as tdata
 from unshackle.sources import _dialect as dialect
 from unshackle.sources import _tableau_analytics as ta
 from unshackle.sources import _tableau_calc as tc
+from unshackle.sources import _tableau_tablecalc as tcalc
 from unshackle.sources._semyaml import grid_rows
 from unshackle.sources import _manual
 from unshackle.sources.base import Inventory, Source
@@ -1594,6 +1595,9 @@ class _SheetCtx:
     labels: dict[str, str] = field(default_factory=dict)  # aliased dimension shelf instance -> its value SQL (grouped on)
     notes: list[str] = field(default_factory=list)
     member_sets: list[str] = field(default_factory=list)  # sets shown as their members: the sheet keeps their rows
+    table_calcs: dict[str, tcalc.Spec] = field(default_factory=dict)  # table calculation shelf instance -> its addressing
+    table_calc_filters: list[tuple[str, str]] = field(default_factory=list)  # (shelf instance, condition with {} for its column)
+    hidden: set[str] = field(default_factory=set)  # table calculations only on the Filters shelf
 
 
 @dataclass
@@ -1691,6 +1695,8 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
             f.calc_class = calc.get("class", "tableau")
             if f.calc_class == "tableau":
                 f.formula = calc.get("formula", "")
+                if calc.find("table-calc") is not None:  # the calculation's default Compute Using
+                    f.extra["table_calc"] = calc.find("table-calc")
             elif f.calc_class == "bin":
                 f.extra = {"of": _unbracket(calc.get("formula")), "size": calc.get("size", ""), "peg": calc.get("peg", "0"), "attrs": sorted(calc.attrib)}
             elif f.calc_class == "categorical-bin":
@@ -2651,7 +2657,9 @@ class _Parser:
             _, code, bare, _ = scan_formula(clean)
         tc = TABLE_CALC.search(bare)
         if tc:
-            return self._todo(ds, f, model, f"Tableau table calculation {tc.group(1).upper()}() depends on the view: compute it as window SQL in the notebook tile (skills/translate-dashboards), not a metric; see skills/translate-metrics")
+            return self._todo(ds, f, model, f"Tableau table calculation {tc.group(1).upper()}() depends on the view: notebook tiles compute it as "
+                                            "window SQL over the sheet's marks (each sheet's Compute Using); it is not a metric; see "
+                                            "skills/translate-metrics")
         if OBJECT_COUNT.search(code):
             if ds.related:
                 return self._todo(ds, f, model, "counts the rows of a logical table ([__tableau_internal_object_id__]), which with "
@@ -3373,6 +3381,8 @@ class _Parser:
             elif parts[0] == "":
                 ref.special = "measure_names" if "Measure Names" in inst else "measure_values"
             else:
+                if len(parts) > 3 and parts[-1].isdigit() and parts[-2] in ("nk", "ok", "qk"):
+                    parts = parts[:-1]  # cum:sum:x:qk:2, Tableau's numbered copy of an instance with other table-calc settings
                 prefix, suffix, middle = parts[0].lower(), parts[-1], parts[1:-1]
                 if len(middle) >= 2 and middle[0].lower() in KNOWN_DERIV:
                     ref.table_calc, prefix, middle = prefix, middle[0].lower(), middle[1:]
@@ -3875,6 +3885,9 @@ class _Parser:
             members.clear()
             for r, critical in ordered:
                 try:
+                    if self._is_table_calc(r):  # its SQL comes last, from the sheet's other columns (_window_tile_sql)
+                        columns.append(self._table_calc_column(r, deps))
+                        continue
                     alias, sql, is_agg, display, etype, unit = self._rel_column(r) if rel_tile else self._column(r)
                 except _NoSQL as exc:
                     if critical:
@@ -3895,6 +3908,12 @@ class _Parser:
                 ds_where = []
                 problems.append(f"{exc}: Tableau applies it to every sheet on the data source, before FIXED LODs; add it to the SQL")
             for flt in view.findall("filter"):
+                try:
+                    if self._table_calc_filter(wb, flt, deps, columns):
+                        continue
+                except _NoSQL as exc:
+                    problems.append(str(exc))
+                    continue
                 res = self._filter(wb, flt, deps, meta)
                 if res is None:
                     continue
@@ -3947,6 +3966,8 @@ class _Parser:
         elif rel_tile and tile_ds is not None and members:
             todos.append("a top N or condition filter on a sheet over related tables: compute its members (over the rows the "
                          "context leaves) and keep their rows in the tile SQL")
+        elif rel_tile and tile_ds is not None and self._sheet.table_calcs:  # type: ignore[union-attr]
+            todos.append(f"table calculations on a sheet over related tables: add them as window SQL over the tile's marks ({SKILL})")
         elif rel_tile and tile_ds is not None:
             columns = [c for c in columns if not c[3]] + [c for c in columns if c[3]]
             try:
@@ -3962,8 +3983,17 @@ class _Parser:
             dims = [c for c in columns if not c[3]]
             columns = dims + [c for c in columns if c[3]]
             totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit or members))
+            if totals and self._sheet.table_calcs:  # type: ignore[union-attr]
+                totals, note = [], (f"Tableau totals ({self._totals_wanted(table, rows, cols)[3]}) not added: the sheet has table calculations, "
+                                    f"which Tableau also computes on the total rows; add them as grouping sets of the tile query ({SKILL})")
             try:
-                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, members=members)
+                if self._sheet.table_calcs and mv is not None:  # type: ignore[union-attr]
+                    raise _NoSQL(f"table calculations with Measure Values: unpivot the measures, then add the window columns ({SKILL})")
+                if self._sheet.table_calcs:  # type: ignore[union-attr]
+                    sql = self._window_tile_sql(columns, from_sql, cte, where, having, order, limit, rows, cols,
+                                                [r for r, _ in ordered if r.instance in dropped], members)
+                else:
+                    sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, members=members)
                 if mv is not None:
                     sql = self._unpivot(sql, columns, *mv)
                 if totals:  # Tableau's Automatic totals; Total Using isn't in the file, so they stay a TODO with this SQL
@@ -3985,6 +4015,7 @@ class _Parser:
                 todos.append("custom SQL uses Tableau parameters (<[Parameters].[x]>): replace them with :binds from the parameters cell")
         elif not columns and not problems:
             todos.append("no fields on the sheet's shelves")
+        columns = [c for c in columns if c[0].instance not in self._sheet.hidden]  # type: ignore[union-attr]  # only on the Filters shelf
         by_inst = {c[0].instance: c for c in columns}
         styles = {(rule.get("element", ""), _unesc(ref[0][1])): fm.get("value", "")  # the sheet's Format > Numbers
                   for rule in table.findall("style/style-rule") for fm in rule.findall("format")
@@ -4486,7 +4517,7 @@ class _Parser:
             except _NoSQL:
                 used = None
             # an aggregated LOD (no SQL here) is ordered by its value in the tile SQL, when the sheet shows it
-            if used is None or not used[3] or not (used[2] or srt.using in by_inst):
+            if used is None or not used[3] or not (used[2] or srt.using in by_inst) or srt.using in ctx.table_calcs:
                 notes.append(f"sort of {dim[4]} by {srt.using} ({srt.direction.lower()}) not applied: add it to the tile's order by")
                 continue
             ctx.sort_by[inst] = (used[0].deriv, used[2])
@@ -4681,6 +4712,398 @@ class _Parser:
                 return any(sv.get("key") in ("[Country].[Name]", "[Country/Region].[Name]") and _param_value(sv.get("value"), "string") == "United States"
                            for sv in ds_el.findall("semantic-values/semantic-value"))
         return False
+
+    # ------------------------------------------------------------ table calculations (sources/_tableau_tablecalc.py)
+
+    def _is_table_calc(self, r: _Ref) -> bool:
+        """A quick table calc, or a calculation with table-calc functions (a `<table-calc>` on any other calculation is
+        ignored, as Tableau does)."""
+        if r.special not in ("", "records") or r.ds is None:
+            return False
+        if r.table_calc and r.table_calc != "table-calc":
+            return True
+        if r.field is None or r.special:
+            return False
+        formula = TABLE_CALC.search(scan_formula(r.field.formula or "")[2]) if r.field.calc_class == "tableau" else None
+        if r.table_calc == "table-calc" and not formula:
+            r.table_calc = ""
+        return bool(formula)
+
+    def _table_calc_column(self, r: _Ref, deps: dict[tuple[str, str], ET.Element]) -> tuple:
+        """The column of a table calculation, its SQL still empty; its addressing goes in the sheet context."""
+        assert self._sheet is not None
+        label = r.field.label if r.field is not None else r.instance
+        ci = deps.get((r.dsname, r.instance))
+        own = next((x for x in (ci.findall("table-calc") if ci is not None else []) if not x.get("field")), None)
+        quick = bool(r.table_calc and r.table_calc != "table-calc")
+        try:
+            spec = tcalc.read(own if own is not None or quick or r.field is None else r.field.extra.get("table_calc"))
+        except tcalc.Unsupported as exc:
+            raise _NoSQL(f"table calculation on [{label}] uses {exc}: add it as window SQL over the tile's marks ({SKILL})") from None
+        if quick:
+            if not spec.type:
+                raise _NoSQL(f"quick table calculation ({r.table_calc}) on [{label}] without its settings: add it as window SQL ({SKILL})")
+            base = copy.copy(r)
+            base.table_calc = ""
+            display = tcalc.label(spec, self._column(base)[3])
+        else:
+            display = label
+        self._sheet.table_calcs[r.instance] = spec
+        return r, _name(display), "", True, display, "quantitative", ""
+
+    def _window_tile_sql(self, columns: list, from_sql: str, cte: str, where: list[str], having: list[str], order: list[str], limit: str,
+                         rows: list[_Ref], cols: list[_Ref], dropped: list[_Ref], members: list | tuple = ()) -> str:
+        """A sheet with table calculations: each is window SQL over the sheet's marks, in the grouped SELECT; a crosstab is
+        padded first (every row header with every column header), so the windows run over a `domain` of those marks.
+        Filters on table calculations hide marks afterwards (_table_calc_filter)."""
+        sql = self._windows_sql(columns, from_sql, cte, where, having, order, limit, rows, cols, dropped, members)
+        ctx = self._sheet
+        assert ctx is not None
+        if not ctx.table_calc_filters:
+            return sql
+        dims = [c for c in columns if not c[3]]
+        if any(c[0].instance in ctx.labels or (c[0].instance in ctx.sorts and ctx.sorts[c[0].instance].kind == "computed") for c in dims):
+            raise _NoSQL(f"a filter on a table calculation, on a sheet with aliased or computed-sorted dimensions: keep the marks it "
+                         f"shows in an outer query of the tile SQL ({SKILL})")
+        head, _, last = sql.rpartition("\n")
+        ctes, body = ta.split_with(head if last.startswith("order by ") else sql)
+        alias = {c[0].instance: c[1] for c in columns}
+        conds = [cond.format(f"tile.{alias[inst]}") for inst, cond in ctx.table_calc_filters]
+        order_by = self._sort_order(dims, lambda i, c: (str(i), f"tile.{c[1]}", f"tile.{c[1]}"))
+        return "\n".join(["with " + ",\n".join(([ctes] if ctes else []) + [f"tile as (\n{body}\n)"]), "select",
+                          ",\n".join(f"  tile.{c[1]}" for c in columns if c[0].instance not in ctx.hidden), "from tile",
+                          "where " + "\n  and ".join(conds)] + (["order by " + ", ".join(order_by)] if dims else []))
+
+    def _table_calc_filter(self, wb: _Workbook, flt: ET.Element, deps: dict, columns: list) -> bool:
+        """A filter on a table calculation (a range, e.g. RANK() or INDEX() from 1 to N: top N per pane): Tableau computes the
+        calculations on all the marks, then hides the ones out of the range. True when `flt` is one (kept in the sheet context)."""
+        refs = self._shelf(wb, flt.get("column"), deps)
+        if not refs or not self._is_table_calc(refs[0]):
+            return False
+        r = refs[0]
+        ctx = self._sheet
+        assert ctx is not None
+        label = r.field.label if r.field is not None else r.instance
+        kind = flt.get("included-values") or "in-range"
+        lo, hi = flt.findtext("min"), flt.findtext("max")
+        number = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+        if flt.get("class") != "quantitative" or kind not in ("in-range", "in-range-or-null") or (lo is None and hi is None) \
+                or any(v is not None and not number.fullmatch(v.strip()) for v in (lo, hi)) or {c.tag for c in flt} - {"min", "max"}:
+            raise _NoSQL(f"filter on the table calculation [{label}] ({flt.get('class')}, {kind}): Tableau hides the marks it leaves out "
+                         f"after computing the calculations; keep them in an outer query of the tile SQL ({SKILL})")
+        if all(c[0].instance != r.instance for c in columns):
+            columns.append(self._table_calc_column(r, deps))
+            ctx.hidden.add(r.instance)
+        cond = " and ".join(([f"{{0}} >= {lo.strip()}"] if lo is not None else []) + ([f"{{0}} <= {hi.strip()}"] if hi is not None else []))
+        ctx.table_calc_filters.append((r.instance, f"({cond} or {{0}} is null)" if kind == "in-range-or-null" else cond))
+        return True
+
+    def _windows_sql(self, columns: list, from_sql: str, cte: str, where: list[str], having: list[str], order: list[str], limit: str,
+                     rows: list[_Ref], cols: list[_Ref], dropped: list[_Ref], members: list | tuple) -> str:
+        ctx = self._sheet
+        assert ctx is not None
+        if order or limit:
+            raise _NoSQL(f"table calculations with a Top N filter: Tableau computes them on the top N marks only; filter the marks "
+                         f"in a CTE, then add the window columns ({SKILL})")
+        if ctx.specials or ctx.row_lods:
+            raise _NoSQL(f"table calculations on a sheet with LOD expressions: add them as window columns over the tile's marks ({SKILL})")
+        if any(not self._is_measure(r) for r in dropped):
+            raise _NoSQL(f"table calculations on a sheet whose tooltip dimensions are not translated: they set the marks the "
+                         f"calculations run over ({SKILL})")
+        dims = [c for c in columns if not c[3]]
+        on_shelf = lambda shelf: [c for r in shelf for c in dims if c[0].instance == r.instance]  # noqa: E731
+        row_d, col_d = on_shelf(rows), on_shelf(cols)
+        # padded only when a calculation moves along some dimension (Cell leaves the marks as they are)
+        dense = any(c[0].suffix != "qk" for c in row_d) and any(c[0].suffix != "qk" for c in col_d) and \
+            any(self._tc_addressed(c[0], dims, rows, cols) for c in columns if c[0].instance in ctx.table_calcs)
+        if not dense:
+            def refer(c: tuple) -> tuple[str, str]:
+                return c[2], (_qualify(ctx.labels[c[0].instance], from_sql) if c[0].instance in ctx.labels else c[2])
+
+            sqls = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer, False), _paren)
+            out = [(*c[:2], sqls[c[0].instance], *c[3:]) if c[0].instance in sqls else c for c in columns]
+            if ctx.row_lods:
+                raise _NoSQL(f"table calculations over FIXED LOD values: add them as window columns over the tile's marks ({SKILL})")
+            return self._tile_sql(out, from_sql, cte, where, having, [], "", members=members)
+        others = [c for c in dims if c not in row_d + col_d]
+        if others or any(c[0].suffix == "qk" for c in row_d + col_d):
+            raise _NoSQL(f"table calculations in a crosstab with dimensions off Rows and Columns ({', '.join(c[4] for c in others) or 'a continuous axis'}): "
+                         f"Tableau pads the crosstab's marks before computing them; write the padding and the window columns ({SKILL})")
+        if any(c[0].instance in ctx.labels or (ctx.sorts.get(c[0].instance) and ctx.sorts[c[0].instance].kind == "computed") for c in dims):
+            raise _NoSQL(f"table calculations in a crosstab with aliased or computed-sorted dimensions: Tableau pads the crosstab's marks "
+                         f"before computing them; write the padding and the window columns ({SKILL})")
+        hidden: list[tuple] = []
+
+        def val(sql: str) -> str:  # an aggregate over the sheet's rows: a column of the marks CTE
+            for h in hidden:
+                if h[2] == sql:
+                    return f"m.{h[1]}"
+            alias = f"tc_value_{len(hidden) + 1}"
+            hidden.append((_Ref(None, "", "\x00" + alias), alias, sql, True, alias, "quantitative", ""))
+            return f"m.{alias}"
+
+        refer_d = lambda c: (f"d.{c[1]}", f"d.{c[1]}")  # noqa: E731
+        windows = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer_d, True), val)
+        if ctx.row_lods:
+            raise _NoSQL(f"table calculations over FIXED LOD values: add them as window columns over the tile's marks ({SKILL})")
+        plain = [c for c in columns if c[3] and c[0].instance not in ctx.table_calcs]
+        marks = self._tile_sql(dims + plain + hidden, from_sql, cte, where, having, [], "", members=members)
+        head, _, last = marks.rpartition("\n")
+        if last.startswith("order by "):
+            marks = head
+        ctes, body = ta.split_with(marks)
+        domain = (f"select r.*, c.*\nfrom (select distinct {', '.join(c[1] for c in row_d)} from marks) as r\n"
+                  f"cross join (select distinct {', '.join(c[1] for c in col_d)} from marks) as c")
+        items = [f"  d.{c[1]}" if not c[3] else f"  {windows[c[0].instance]} as {c[1]}" if c[0].instance in windows else f"  m.{c[1]}"
+                 for c in columns]
+        on = " and ".join(f"d.{c[1]} is not distinct from m.{c[1]}" for c in dims)
+        order_by = self._sort_order(dims, lambda i, c: (str(i), f"d.{c[1]}", f"d.{c[1]}"))
+        return "\n".join(["with " + ",\n".join(([ctes] if ctes else []) + [f"marks as (\n{body}\n)", f"domain as (\n{domain}\n)"]),
+                          "select", ",\n".join(items), "from domain as d", f"left join marks as m on {on}", "order by " + ", ".join(order_by)])
+
+    def _table_calc_sqls(self, columns: list, window: Any, val: Any) -> dict[str, str]:
+        """Window SQL of every table calculation of the sheet, by shelf instance; all their problems in one TODO."""
+        assert self._sheet is not None
+        out, problems = {}, []
+        for c in columns:
+            if c[0].instance in self._sheet.table_calcs:
+                try:
+                    out[c[0].instance] = self._table_calc_sql(c[0], window(c[0]), val)
+                except _NoSQL as exc:
+                    problems.append(str(exc))
+        if problems:
+            raise _NoSQL("; ".join(problems))
+        return out
+
+    def _tc_window(self, r: _Ref, dims: list, rows: list[_Ref], cols: list[_Ref], refer: Any, dense: bool) -> tcalc.Window:
+        """Partition and order of one table calculation from its addressing (sources/_tableau_tablecalc.py)."""
+        addressed = self._tc_addressed(r, dims, rows, cols)
+        partition = [refer(c)[1] for c in dims if c not in addressed]
+        order = [x for c in addressed for x in self._tc_order(c, refer, len(dims), dense)]
+        return tcalc.Window(partition, order or partition[:1])
+
+    def _tc_addressed(self, r: _Ref, dims: list, rows: list[_Ref], cols: list[_Ref]) -> list:
+        """The dimension columns a table calculation moves along, outermost first; the others partition it."""
+        ctx = self._sheet
+        assert ctx is not None
+        a = ctx.table_calcs[r.instance].addressing
+        on = lambda shelf: [c for x in shelf for c in dims if c[0].instance == x.instance]  # noqa: E731
+
+        def inner(shelf: list[_Ref]) -> list:
+            """The innermost dimension of a shelf whose last field is a dimension: it lays the marks out inside a pane."""
+            if any(c[0].suffix == "qk" for c in on(shelf)):
+                raise _NoSQL(f"pane addressing with a continuous axis on the shelf: add the window columns ({SKILL})")
+            last = on(shelf[-1:])
+            return last if last and not last[0][3] else []
+
+        if a.mode == "field":
+            addressed = []
+            for ref in a.fields:
+                m = DS_REF.fullmatch(ref)
+                name = _unesc(m.group(2)) if m else _unbracket(ref)
+                found = [c for c in dims if c[0].instance == name] or [c for c in dims if c[0].field is not None and c[0].field.local == name]
+                if len(found) > 1:
+                    raise _NoSQL(f"Specific Dimensions names [{name}], which is on the sheet more than once: add the window columns ({SKILL})")
+                addressed += [c for c in found if c not in addressed]
+            if a.level_break:  # Restart Every: the listed fields before the break partition
+                m = DS_REF.fullmatch(a.level_break)
+                name = _unesc(m.group(2)) if m else _unbracket(a.level_break)
+                at = next((i for i, c in enumerate(addressed) if name in (c[0].instance, c[0].field.local if c[0].field else "")), None)
+                if at is None:
+                    raise _NoSQL(f"Restart Every at [{name}], which is not addressed: add the window columns ({SKILL})")
+                addressed = addressed[at:]
+        else:
+            addressed = {"across": on(cols), "down": on(rows), "table": on(rows) + on(cols), "pane across": [], "pane down": [],
+                         "pane": [], "cell": []}[a.mode]
+            if a.mode in ("pane across", "pane"):
+                addressed = (inner(rows) if a.mode == "pane" else []) + inner(cols)
+            elif a.mode == "pane down":
+                addressed = inner(rows)
+        return addressed
+
+    def _tc_order(self, c: tuple, refer: Any, n_dims: int, dense: bool) -> list[str]:
+        """ORDER BY items of one addressed dimension: the order of its members on the sheet (its sort, else natural order)."""
+        ctx = self._sheet
+        assert ctx is not None
+        inst = c[0].instance
+        srt, using = ctx.sorts.get(inst), ""
+        label, raw = refer(c)
+        if srt is not None and srt.kind == "computed":
+            agg = ctx.sort_by.get(inst, ("", ""))[1]
+            if not agg or n_dims > 1 or " over (" in agg or dense:
+                raise _NoSQL(f"a table calculation along {c[4]}, which is sorted by {srt.using}: order the window by that aggregate over "
+                             f"the whole view ({SKILL})")
+            using = agg
+        string = inst in ctx.labels or (c[0].field is not None and c[0].field.datatype == "string" and c[0].deriv in ("none", ""))
+        null_label = inst in ctx.labels and any(k == "%null%" for k, _ in c[0].field.aliases)
+        return self._dim_order(srt, label, label, raw, string, using, null_label)
+
+    def _table_calc_sql(self, r: _Ref, w: tcalc.Window, val: Any) -> str:
+        """Window SQL of one table calculation. `val(aggregate SQL)` -> how the window reads it (in the grouped SELECT, or a
+        column of the padded marks)."""
+        ctx = self._sheet
+        assert ctx is not None and r.ds is not None
+        spec = ctx.table_calcs[r.instance]
+        label = r.field.label if r.field is not None else r.instance
+        try:
+            if spec.type:
+                base = copy.copy(r)
+                base.table_calc = ""
+                v = val(self._column(base)[1])
+                total = None
+                if spec.type == "PctTotal":
+                    try:
+                        total = self._tc_expr(r.ds, self._quick_node(r), w, val, total=True)
+                    except ax.FormulaError:
+                        pass
+                return tcalc.quick(spec, v, w, total)
+            assert r.field is not None
+            text = self.prepped.get((r.ds.uid, r.field.local)) or scan_formula(r.field.formula or "")[0]
+            return self._tc_expr(r.ds, parse_formula(text, date_opts(r.ds)), w, val)
+        except tcalc.Unsupported as exc:
+            raise _NoSQL(f"table calculation [{label}]: {exc} has no window SQL here; write it over the tile's marks ({SKILL})") from None
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"table calculation [{label}] not translated ({exc}); write it as window SQL over the tile's marks ({SKILL})") from None
+
+    def _quick_node(self, r: _Ref) -> ax.Node:
+        """The aggregate a quick table calc runs on, as a formula."""
+        if r.special == "records":
+            return ax.Call("count", [ax.Num("1")])
+        assert r.field is not None
+        agg = {"sum": "sum", "avg": "avg", "cnt": "count", "ctd": "countd", "min": "min", "max": "max", "med": "median"}.get(r.deriv)
+        if agg is not None:
+            return ax.Call(agg, [ax.Ref(r.field.local)])
+        if r.deriv == "usr":
+            return ax.Ref(r.field.local)
+        raise ax.FormulaError(f"derivation {r.deriv!r}")
+
+    def _tc_expr(self, ds: TDatasource, node: ax.Node, w: tcalc.Window, val: Any, total: bool = False) -> str:
+        """SQL of an aggregate formula with table-calc functions, each one a window over the marks. `total`: the formula as
+        TOTAL() computes it, each aggregate over the partition's rows."""
+        holes: dict[str, str] = {}
+        types: dict[str, str] = {}
+
+        def hole(sql: str, typ: str) -> ax.Ref:
+            key = f"\x05{len(holes)}"
+            holes[key], types[key] = sql, typ
+            return ax.Ref(key)
+
+        def dtype(r: str) -> str:
+            return types[r] if r in types else self._dtype(ds, r)
+
+        def ref(r: str) -> str:
+            return holes[r] if r in holes else self._row_ref(ds, r)
+
+        def render(n: ax.Node, as_total: bool = False, inside: bool = False) -> str:
+            return ax.strip_outer(self._sql(ds, lift(n, as_total, inside), ref, dtype))
+
+        def aggregate(n: ax.Call, as_total: bool) -> ax.Ref:
+            agg = TABLEAU_AGGS[n.name][0]
+            arg = ax.strip_outer(self._sql(ds, n.args[0], lambda r: self._row_ref(ds, r), dtype))
+            typ = tc.type_of(n.args[0], dtype)
+            typ = "integer" if agg in ("count", "count_distinct") or (agg == "sum" and typ == "integer") else typ if agg in ("min", "max") else "real"
+            if not as_total:
+                return hole(val(AGG_SQL[agg].format(arg)), typ)
+            over = w.over(ordered=False)
+            if agg in ("sum", "count", "min", "max"):
+                return hole(f"{'sum' if agg == 'count' else agg}({val(AGG_SQL[agg].format(arg))}) {over}", typ)
+            if agg == "average":
+                return hole(f"1.0 * sum({val(AGG_SQL['sum'].format(arg))}) {over} / nullif(sum({val(AGG_SQL['count'].format(arg))}) {over}, 0)", "real")
+            raise ax.FormulaError(f"TOTAL() of {n.name.upper()}() recomputes it over the partition's rows, not from the marks")
+
+        def lift(n: ax.Node, as_total: bool, inside: bool) -> ax.Node:
+            if isinstance(n, ax.Call):
+                if n.name in OTHER_AGGS or (n.name in TABLEAU_AGGS and len(n.args) != 1):
+                    raise ax.FormulaError(f"{n.name.upper()}() is not translated")
+                if n.name in TABLEAU_AGGS:
+                    return aggregate(n, as_total)
+                if TABLE_CALC.fullmatch(n.name.upper() + "("):
+                    if inside or as_total:
+                        raise ax.FormulaError(f"nested table calculations ({n.name.upper()}() inside another): compute the inner one in a "
+                                              "CTE of the marks, then the outer window over it")
+                    return hole(*self._tc_fn(n, w, lambda x, t=False: render(x, t, True), dtype))
+                return ax.Call(n.name, [lift(a, as_total, inside) for a in n.args])
+            if isinstance(n, ax.BinOp):
+                return ax.BinOp(n.op, lift(n.left, as_total, inside), lift(n.right, as_total, inside))
+            if isinstance(n, ax.Unary):
+                return ax.Unary(n.op, lift(n.operand, as_total, inside))
+            if isinstance(n, ax.Ref) and not n.name.startswith(PARAM_ARG) and n.name not in holes:
+                g = ds.fields.get(n.name)
+                c = self._calc(ds, g) if g is not None and g.is_calc and not g.param else None
+                if g is not None and g.calc_class == "tableau" and TABLE_CALC.search(scan_formula(g.formula or "")[2]):
+                    raise ax.FormulaError(f"nested table calculations (it reads [{g.label}], another table calculation): compute that one "
+                                          "in a CTE of the marks, then this window over it")
+                if c is not None and c.kind == "agg":
+                    if as_total:
+                        text = self.prepped.get((ds.uid, g.local)) or scan_formula(g.formula or "")[0]
+                        return lift(parse_formula(text, date_opts(ds)), True, inside)
+                    try:
+                        return hole(val(_paren(self._agg_sql(ds, g, c))), "real" if g.datatype == "real" else g.datatype)
+                    except _NoSQL as exc:
+                        raise ax.FormulaError(str(exc)) from None
+            return n
+
+        return render(node, total)
+
+    def _tc_fn(self, n: ax.Call, w: tcalc.Window, render: Any, dtype: Any) -> tuple[str, str]:
+        """(window SQL, Tableau type) of one table-calc function call; its argument rendered with `render(node, total)`."""
+        name, args = n.name, n.args
+        if name in tcalc.TODO_FUNCS or name.startswith(("script_", "model_")):
+            raise ax.FormulaError(tcalc.TODO_FUNCS.get(name, f"{name.upper()}() has no SQL"))
+
+        def offset(x: ax.Node) -> int | None:
+            """An offset: an integer, or FIRST()/LAST() (None)."""
+            if isinstance(x, ax.Call) and x.name in ("first", "last") and not x.args:
+                return None
+            sign = -1 if isinstance(x, ax.Unary) and x.op == "-" else 1
+            num = x.operand if isinstance(x, ax.Unary) and x.op == "-" else x
+            if isinstance(num, ax.Num) and re.fullmatch(r"\d+", num.value):
+                return sign * int(num.value)
+            raise ax.FormulaError(f"{name.upper()}() with a computed offset")
+
+        def arg_type(i: int = 0) -> str:
+            return tc.type_of(args[i], dtype) if len(args) > i else ""
+
+        kind = name.split("_", 1)
+        if name in ("index", "size", "first", "last") and args:
+            raise ax.FormulaError(f"{name.upper()}() takes no arguments")
+        if name == "index":
+            return f"row_number() {w.over()}", "integer"
+        if name == "size":
+            return f"count(*) {w.over(ordered=False)}", "integer"
+        if name == "first":
+            return f"(1 - row_number() {w.over()})", "integer"
+        if name == "last":
+            return f"(count(*) {w.over(ordered=False)} - row_number() {w.over()})", "integer"
+        if name == "total" and len(args) == 1:
+            return render(args[0], True), arg_type()
+        fns = {"sum": "sum", "avg": "avg", "min": "min", "max": "max", "count": "count"}
+        if kind[0] == "running" and len(kind) == 2 and kind[1] in fns and len(args) == 1:
+            typ = "integer" if kind[1] == "count" else "real" if kind[1] == "avg" else arg_type()
+            return f"{fns[kind[1]]}({render(args[0])}) {w.over(tcalc.RUNNING_FRAME)}", typ
+        if kind[0] == "window" and len(kind) == 2 and kind[1] in fns and len(args) in (1, 3):
+            typ = "integer" if kind[1] == "count" else "real" if kind[1] == "avg" else arg_type()
+            e = render(args[0])
+            if len(args) == 1:
+                return f"{fns[kind[1]]}({e}) {w.over(ordered=False)}", typ
+            lo, hi = offset(args[1]), offset(args[2])
+            if (lo is None and isinstance(args[1], ax.Call) and args[1].name == "last") or (hi is None and isinstance(args[2], ax.Call) and args[2].name == "first") \
+                    or (lo is not None and hi is not None and lo > hi):
+                raise ax.FormulaError(f"{name.upper()}() with an empty or reversed window")
+            return f"{fns[kind[1]]}({e}) {w.over(f'rows between {tcalc.bound(lo, False)} and {tcalc.bound(hi, True)}')}", typ
+        if name == "lookup" and len(args) == 2:
+            k = offset(args[1])
+            return tcalc.lookup(render(args[0]), k, w, first=not (isinstance(args[1], ax.Call) and args[1].name == "last")), arg_type()
+        ranks = {"rank": "competition", "rank_dense": "dense", "rank_modified": "modified", "rank_unique": "unique", "rank_percentile": "percentile"}
+        if name in ranks and len(args) in (1, 2):
+            direction = args[1].value.lower() if len(args) == 2 and isinstance(args[1], ax.Str) else ("asc" if name == "rank_percentile" else "desc")
+            if direction not in ("asc", "desc"):
+                raise ax.FormulaError(f"{name.upper()}() direction {direction!r}")
+            e = _paren(render(args[0]))
+            if name == "rank_percentile":
+                return tcalc.percentile(e, w, direction == "desc"), "real"
+            return tcalc.rank(e, w, ranks[name], direction == "desc"), "integer"
+        raise ax.FormulaError(f"{name.upper()}() with {len(args)} argument(s) is not translated")
 
     def _ds_join(self, ds: TDatasource | None) -> str:
         """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""

@@ -172,7 +172,9 @@ def test_parse_dashboards_and_tiles(tmp_path: Path):
     assert sheets.views == 26 and sheets.layout == [["ventes-par-catégorie"], ["running-sales"], ["returns-by-region"]]
     pie = st["ventes-par-catégorie"]
     assert pie.mark == "arc" and pie.encodings["theta"].field == "sales" and pie.encodings["color"].field == "category"
-    assert st["running-sales"].sql == "" and "WINDOW_SUM" in st["running-sales"].todo
+    # WINDOW_SUM(SUM([Sales]), FIRST(), 0) along the months (Table (across)): a running sum over the marks
+    assert "sum(sum(sales)) over (order by date_trunc('month', order_date) rows between unbounded preceding and current row) as running_sales" \
+        in st["running-sales"].sql and not st["running-sales"].todo
     ret = st["returns-by-region"]
     assert ret.mark == "bar" and ret.sql.startswith("with custom_sql as (\nSELECT r.order_id")
     assert "from custom_sql" in ret.sql and "count(distinct order_id)" in ret.sql

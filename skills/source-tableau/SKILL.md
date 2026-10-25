@@ -240,7 +240,7 @@ dimension filters, then measure filters (`having`).
   filters leave, each on its own: the sheet's other dimension filters don't change which
   members they keep (make a filter a context filter to rank within it), and the top N is
   over the whole view, not per pane (the same N members in every pane; a top N per pane is a
-  table calculation, `RANK()`/`INDEX()` filter). Their groupfilters nest from the inside out: a
+  range filter on a `RANK()`/`INDEX()` table calculation, see Table calcs). Their groupfilters nest from the inside out: a
   list, then a wildcard, then a condition, then the top N.
 - Relative dates relative to today use the dashboard parameter `as_of` (`:as_of`; `None`
   = the warehouse's `current_date`). Tableau Cloud evaluates relative dates against the
@@ -414,21 +414,52 @@ averaged per region -> aggregate a subquery by `region, order_id`, then `avg()` 
 `{EXCLUDE [Month] : SUM([Sales])}` -> `sum(sum(sales)) over (partition by <other dims>)`.
 `{ SUM([Sales]) }` (no keyword) -> `sum(sum(sales)) over ()`.
 
-**Table calcs** (`WINDOW_SUM/AVG`, `RUNNING_SUM`, `RANK*`, `LOOKUP`, `INDEX`, `TOTAL`,
-`SIZE`, `FIRST/LAST`, `PREVIOUS_VALUE`, quick table calcs like `[pcto:sum:Sales:qk]`)
-are computed over the view: window SQL in the tile, never a metric. Check the
-"Compute using" (addressing/partitioning) in Tableau: it becomes `partition by` /
-`order by`.
+**Table calcs** (quick table calcs like `[pcto:sum:Sales:qk]`, and `RUNNING_*`, `WINDOW_*`,
+`LOOKUP`, `INDEX`, `SIZE`, `FIRST`/`LAST`, `TOTAL`, `RANK*` in formulas) run on the sheet's
+marks, after every filter (measure filters and top N included): tiles compute them as window
+SQL in the grouped query, never as metrics (the semantic layer keeps a TODO with the formula).
+The sheet's Compute Using (`<table-calc>` on the column instance, else the calculation's own,
+else Table (across)) becomes `partition by` / `order by`:
 
-| Tableau | SQL |
+| `ordering-type` | Compute Using | moves along (the rest partitions, Marks card dimensions too) |
+| --- | --- | --- |
+| `Rows` | Table (across) | the dimensions on Columns |
+| `Columns` | Table (down) | the dimensions on Rows |
+| `Table` | Table (across then down) | Rows' then Columns' dimensions |
+| `RowInPane` / `ColumnInPane` / `Pane` | Pane (across / down / across then down) | the innermost dimension of Columns / Rows / both |
+| `CellInPane` | Cell | nothing (each mark alone) |
+| `Field` | Specific Dimensions | `ordering-field` or the `<order field>` list, outermost first; `level-break` is the first field after Restart Every |
+
+The order along the addressed dimensions is the sheet's: their sort (manual, alphabetic, a
+computed sort on a one-dimension sheet), else natural order. Each instance name is one table
+calculation for the whole workbook (Tableau numbers others `...:qk:2`).
+
+A crosstab (discrete dimensions on Rows and on Columns) is padded first: every row header
+with every column header is a mark, NULL where there is no data, so INDEX, LOOKUP and moving
+windows count the empty cells and a running total carries over them. The tile SQL builds the
+marks in a CTE, cross joins the row and column headers (`domain`) and runs the windows over it.
+
+| Tableau | SQL over the marks |
 | --- | --- |
-| `RUNNING_SUM(SUM([Sales]))` along month | `sum(sum(sales)) over (order by month)` |
-| `WINDOW_SUM(SUM([Sales]), FIRST(), 0)` | same as running sum |
-| `WINDOW_AVG(SUM([Sales]), -2, 0)` | `avg(sum(sales)) over (order by month rows between 2 preceding and current row)` |
-| `SUM([Sales]) / TOTAL(SUM([Sales]))`, percent of total | `sum(sales) / sum(sum(sales)) over ()` |
-| `LOOKUP(SUM([Sales]), -1)` | `lag(sum(sales)) over (order by month)` |
-| `RANK(SUM([Sales]))` | `rank() over (order by sum(sales) desc)` |
-| `ZN(SUM([Sales])) - LOOKUP(ZN(SUM([Sales])), -12)` (YoY) | a `derived` metric with `offset_window: 1 year`, or `lag(..., 12)` |
+| Running total, `RUNNING_SUM(SUM([Sales]))` | `sum(sum(sales)) over (partition by … order by … rows between unbounded preceding and current row)` |
+| Difference, `ZN(x) - LOOKUP(ZN(x), -1)` | `coalesce(x, 0) - lag(coalesce(x, 0), 1) over (…)` |
+| Percent difference | `1.0 * (cur - prev) / nullif(abs(prev), 0)` (the absolute previous value) |
+| Percent from, `ZN(x) / LOOKUP(ZN(x), -1)` | `1.0 * cur / nullif(prev, 0)` |
+| Percent of total, `x / TOTAL(x)` | TOTAL recomputes the aggregate over the partition's rows: `sum(sum(x)) over (partition by …)`, for AVG `sum(sum(x)) / sum(count(x))` over it; COUNTD and MEDIAN stay TODO |
+| Rank (competition, dense, unique, modified) | `rank()`, `dense_rank()`, `row_number()` (ties in the addressing order), `count(x) over (… range …)`; NULL is not ranked |
+| Percentile, `RANK_PERCENTILE` | `(modified rank - 1) / (n - 1)`, 1 for a mark alone |
+| Moving calculation, `WINDOW_AVG(x, -2, 0)` | `avg(x) over (… rows between 2 preceding and current row)`; without Include Current the frame leaves the current mark out |
+| `LOOKUP(x, n)`, `INDEX()`, `SIZE()`, `FIRST()`, `LAST()` | `lag`/`lead`, `row_number()`, `count(*) over (partition by …)`, `1 - row_number()`, `count(*) - row_number()` |
+
+A range filter on a table calculation (`RANK()` or `INDEX()` from 1 to N: a top N per pane)
+hides marks after the calculations: the tile keeps the window query as `tile` and filters it.
+
+Still TODO, with the formula: nested table calculations (a table calc of another one: compute
+the inner one in a CTE of the marks, then the outer window), `PREVIOUS_VALUE` (usually a
+running aggregate), `SCRIPT_*`/`MODEL_*`, At the Level (`level-address`), a custom sort of the
+addressing, Null If Incomplete, relative to a fixed member, sheets with LODs or over related
+tables, crosstabs with Marks card dimensions, aliased or computed-sorted dimensions (Tableau
+pads them first), and totals (Tableau computes the calculations on the total rows too).
 
 A running total over time with no other partition can also be a `cumulative`
 metric (see translate-metrics).
