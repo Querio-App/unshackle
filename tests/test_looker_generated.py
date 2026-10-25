@@ -19,7 +19,7 @@ from test_looker import _by_name
 from unshackle.ir import Bundle
 from unshackle.raw import RawStore
 from unshackle.sources import get_source
-from unshackle.sources.looker import DIALECT_DATES, SYM_HASH, TF_GRAIN, TIMEFRAME_SQL, timeframe_sql
+from unshackle.sources.looker import DIALECT_DATES, SYM_HASH, TF_GRAIN, TIMEFRAME_SQL, looker_filter_sql, timeframe_sql
 from unshackle.target.ossie import AGGS
 
 FIX = Path(__file__).parent / "fixtures" / "looker_generated"
@@ -334,8 +334,15 @@ def test_every_filter_returns_lookers_count(bundle2, db2):
         if name == "count":
             continue
         m = metrics[name]
-        if name in RELATIVE:
-            assert m.todo and "Looker filter expression" in m.todo, name
+        if name in RELATIVE:  # counts depend on the day: the condition must be the one Looker wrote (tile SQL;
+            # metrics keep them TODO, MetricFlow's type for the day grain is not checked on BigQuery)
+            assert "Looker filter expression" in m.todo, name
+            value = re.search(r'on_date: "([^"]+)"', next(x for x in (FIX / "evidence2.view.lkml").read_text().splitlines()
+                                                         if f"measure: {name} " in x)).group(1)
+            ours = looker_filter_sql("ev_f.d", value, "time", "date", "bigquery")
+            line = next(x for x in (FIX / "filters.sql").read_text().splitlines() if x.rstrip(",").endswith(f"AS ev_f_{name}"))
+            theirs = re.search(r"COUNT\(CASE WHEN (.*) THEN 1 ELSE NULL END\)", line).group(1)
+            assert re.sub(r"[()\s]", "", ours) == re.sub(r"[()\s]", "", theirs), name
             continue
         assert not m.todo, (name, m.todo)
         assert db2.execute(f"select count(*) from ev_f where {sql(m.filter)}").fetchone()[0] == expected, (name, m.filter)
@@ -427,3 +434,84 @@ def test_bigquery_filters_return_lookers_counts():
     for field, value in looker("filters")[0].items():
         if field.split(".")[1] in ours:
             assert int(ours[field.split(".")[1]]) == value, field
+
+
+# ---------------------------------------------------------------- round 3: Liquid real projects use, quoting, hour timeframes
+
+def _evidence_links():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("evidence_links", Path(__file__).parent / "live/looker/evidence_links.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.CASES
+
+
+@pytest.fixture(scope="module")
+def tiles3(tmp_path_factory) -> dict:
+    """Round 3's captured queries as tiles of a LookML dashboard on BigQuery."""
+    cases = _evidence_links()
+    names = ["dialect", "liquid_none", "liquid_values", "date_start_month", "date_start_relative", "filter_field_sql",
+             "filter_quoted", "filter_apostrophe", "hour_timeframes"]
+    repo = tmp_path_factory.mktemp("r3")
+    (repo / "unshackle.toml").write_text('[datasources.warehouse]\ntype = "bigquery"\n')
+    store = RawStore(repo, "looker")
+    store.put_text("lookml/unshackle_evidence3.view.lkml", (FIX / "evidence3.view.lkml").read_text())
+    store.put_text("lookml/m.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence3.view"\nexplore: ev_l {}\n')
+    elements = "".join(
+        f"  - name: {n}\n    model: m\n    explore: ev_l\n    type: looker_grid\n    fields: [{', '.join(cases[n]['fields'])}]\n"
+        + (f"    sorts: [{', '.join(cases[n]['sorts'])}]\n" if cases[n].get("sorts") else "")
+        + ("    filters:\n" + "".join(f"      {k}: {json.dumps(v)}\n" for k, v in cases[n]["filters"].items()) if cases[n].get("filters") else "")
+        for n in names
+    )
+    store.put_text("lookml/r3.dashboard.lookml", f"- dashboard: r3\n  title: R3\n  elements:\n{elements}")
+    (d,) = get_source("looker").parse(store).dashboards
+    return {t.id: t for t in d.tiles}
+
+
+def _selects(sql: str) -> dict[str, str]:
+    """column -> expression of the final SELECT, whitespace normalized."""
+    body = sql[sql.rindex("SELECT"):].split("\nFROM")[0]
+    def bare(e: str) -> str:  # unshackle parenthesizes resolved expressions; Looker doesn't always
+        while e.startswith("(") and e.endswith(")"):
+            depth = 0
+            for i, c in enumerate(e):
+                depth += {"(": 1, ")": -1}.get(c, 0)
+                if depth == 0 and i < len(e) - 1:
+                    return e
+            e = e[1:-1].strip()
+        return e
+
+    return {m.group(2): bare(" ".join(m.group(1).split())) for m in re.finditer(r"^\s*(.*?)\s+AS (\w+),?$", body, re.M)}
+
+
+@pytest.mark.parametrize("case", ["dialect", "liquid_none", "liquid_values", "date_start_month", "date_start_relative"])
+def test_liquid_renders_as_looker_does(tiles3, case):
+    """Same LookML, same values: each rendered column is the SQL Looker wrote."""
+    tile = tiles3[case]
+    assert tile.sql, tile.todo
+    ours, theirs = _selects(tile.sql), _selects((FIX / f"{case}.sql").read_text())
+    for col, expr in theirs.items():
+        if ours[col] != expr:  # Looker computes some bounds in SQL (DATETIME_ADD ... 1 MONTH) where unshackle writes the value
+            literal = re.fullmatch(r"CAST\(TIMESTAMP\('([^']+)'\) AS STRING\)", ours[col])
+            returned = {r[f"ev_l.{col[5:]}"] for r in looker(case)}
+            assert literal and returned == {literal.group(1) + "+00"}, (case, col, ours[col], expr)
+
+
+@pytest.mark.parametrize("case", ["filter_field_sql", "filter_quoted", "filter_apostrophe"])
+def test_filters_with_quotes_and_filter_fields_as_looker_writes_them(tiles3, case):
+    """BigQuery escapes quotes with a backslash; a filter field's own sql goes in the WHERE clause."""
+    ours = re.search(r"WHERE (.*?)\n(?:GROUP|ORDER|LIMIT|$)", tiles3[case].sql + "\n", re.S).group(1)
+    theirs = re.search(r"WHERE (.*?)\n(?:GROUP|ORDER|LIMIT)", (FIX / f"{case}.sql").read_text(), re.S).group(1)
+    norm = lambda x: re.sub(r"[()\s]", "", x)  # noqa: E731 - Looker and unshackle parenthesize differently
+    assert norm(ours) == norm(theirs), case
+
+
+def test_hour_timeframes_return_lookers_values():
+    con = duckdb.connect()
+    con.execute("create table ev_l as select * from (values (1, timestamp '2026-12-31 23:30:45'), (2, timestamp '2026-12-01 08:05:00'),"
+                " (3, timestamp '2027-01-03 10:00:00'), (4, null)) t(id, ts)")
+    for r in looker("hour_timeframes"):
+        for tf in ("hour", "minute", "time_of_day"):
+            got = con.execute(f"select {timeframe_sql(tf, 'ts', 'duckdb')} from ev_l where id = {r['ev_l.id']}").fetchone()[0]
+            assert got == r[f"ev_l.at_{tf}"], (tf, r["ev_l.id"])
