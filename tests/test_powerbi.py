@@ -135,7 +135,10 @@ def test_parse_metrics(tmp_path: Path):
     aov = m["avg_order_value"]
     assert (aov.type, aov.numerator, aov.denominator) == ("ratio", "total_sales", "order_count")
     margin = m["margin_pct"]
-    assert margin.type == "derived" and margin.expr == "1.0 * (total_sales - total_cost) / nullif(total_sales, 0)"
+    assert margin.type == "derived" and margin.expr == (  # BLANK - x is -x in DAX, NULL in SQL
+        "1.0 * (CASE WHEN total_sales IS NULL AND total_cost IS NULL THEN NULL ELSE COALESCE(total_sales, 0) - COALESCE(total_cost, 0) END)"
+        " / nullif(total_sales, 0)"
+    )
     assert margin.metrics == ["total_sales", "total_cost"]
     assert m["eu_sales"].measure == "total_sales" and m["eu_sales"].filter == "{{ Dimension('customer__region') }} = 'EU'"
     assert m["online_sales"].filter == "{{ Dimension('sales__channel') }} IN ('Online', 'Mobile')"
@@ -145,9 +148,16 @@ def test_parse_metrics(tmp_path: Path):
     py = m["sales_py"]
     assert (py.type, py.expr, py.metrics, py.offsets) == ("derived", "total_sales", ["total_sales"], {"total_sales": "1 year"})
     assert m["sales_3m_ago"].offsets == {"total_sales": "3 months"}
-    assert m["sales_yoy_pct"].expr == "1.0 * (total_sales - sales_py) / nullif(sales_py, 0)"
+    assert m["sales_yoy_pct"].expr == (
+        "1.0 * (CASE WHEN total_sales IS NULL AND sales_py IS NULL THEN NULL ELSE COALESCE(total_sales, 0) - COALESCE(sales_py, 0) END)"
+        " / nullif(sales_py, 0)"
+    )
     dr = m["discount_rate"]  # VAR Gross = SUMX(..) RETURN DIVIDE(Gross - [Total Sales], Gross): inlined, reusing the measure
-    assert (dr.type, dr.expr, dr.todo) == ("derived", "1.0 * (extended_amount - total_sales) / nullif(extended_amount, 0)", "")
+    assert (dr.type, dr.todo) == ("derived", "")
+    assert dr.expr == (
+        "1.0 * (CASE WHEN extended_amount IS NULL AND total_sales IS NULL THEN NULL"
+        " ELSE COALESCE(extended_amount, 0) - COALESCE(total_sales, 0) END) / nullif(extended_amount, 0)"
+    )
     for name, needle in [
         ("sales_all_regions", "ALL"),
         ("ship_date_sales", "USERELATIONSHIP"),
@@ -215,7 +225,10 @@ def test_parse_pbir_report(tmp_path: Path):
     assert "CAST(:order_date_from AS DATE)" in bar.sql
     assert t["tableCustomers"].kind == "table" and "COUNT(*) AS order_count" in t["tableCustomers"].sql
     assert t["mapCountry"].mark == "unknown" and "filledMap" in t["mapCountry"].todo and t["mapCountry"].sql
-    assert t["colShare"].sql == "" and "ALL" in t["colShare"].todo
+    share = t["colShare"]  # CALCULATE([Total Sales], ALL(Customer[Region])) by region: the total over regions, page filters kept
+    assert not share.todo and "FROM (\n  SELECT\n    customer.Region AS region\n  FROM dbo.FactSales AS sales" in share.sql
+    assert "(SELECT SUM(sales_1.SalesAmount) FROM dbo.FactSales AS sales_1 LEFT JOIN" in share.sql and "customer_1.Region" not in share.sql
+    assert "date_t_1.CalendarYear IN (2025)" in share.sql
 
 
 def test_parse_legacy_report(tmp_path: Path):
@@ -546,7 +559,8 @@ def test_dax_operator_precedence_and_division(tmp_path: Path):
 
 def test_dax_vars_inlined_only_where_context_is_the_same(tmp_path: Path):
     m = _by_name(_sales(tmp_path).metrics)
-    assert (m["rev_delta"].type, m["rev_delta"].expr, m["rev_delta"].todo) == ("derived", "1.0 * (revenue - margin) / nullif(revenue, 0)", "")
+    assert (m["rev_delta"].type, m["rev_delta"].todo) == ("derived", "")
+    assert m["rev_delta"].expr == "1.0 * (CASE WHEN revenue IS NULL AND margin IS NULL THEN NULL ELSE COALESCE(revenue, 0) - COALESCE(margin, 0) END) / nullif(revenue, 0)"
     assert "r is used inside CALCULATE" in m["rev_red"].todo and m["rev_red"].source_expression.startswith("VAR r")
     assert dax_parse("VAR x = 1 RETURN CALCULATE([a], T[c] = x)").args[1].right.value == "1"  # constants are safe anywhere
 
@@ -704,3 +718,174 @@ def test_same_field_sliced_twice_is_one_parameter(tmp_path: Path):
     (d,) = b.dashboards
     assert [f.name for f in d.filters] == ["color"]
     assert d.tiles[0].sql.count(":color") == 2 and "color_2" not in d.tiles[0].sql
+
+
+# ---------------------------------------------------------------- filter context in tiles (ALL, ALLEXCEPT, ALLSELECTED, FILTER, VALUES)
+
+CTX_SALES = (
+    "table Sales\n"
+    "\tmeasure Revenue = SUM(Sales[Price])\n"
+    "\tmeasure 'Share of Color' = DIVIDE([Revenue], CALCULATE([Revenue], ALL(Product[Color])))\n"
+    "\tmeasure 'Share of Product' = DIVIDE([Revenue], CALCULATE([Revenue], REMOVEFILTERS(Product)))\n"
+    "\tmeasure 'Category Revenue' = CALCULATE([Revenue], ALLEXCEPT(Product, Product[Category]))\n"
+    "\tmeasure Red = CALCULATE([Revenue], Product[Color] = \"Red\")\n"
+    "\tmeasure Running = CALCULATE([Revenue], FILTER(ALLSELECTED('Calendar'[Date]), 'Calendar'[Date] <= MAX('Calendar'[Date])))\n"
+    "\tmeasure 'Running All' = CALCULATE([Revenue], FILTER(ALL('Calendar'[Date]), 'Calendar'[Date] <= MAX('Calendar'[Date])))\n"
+    "\tmeasure 'Avg per Day' = AVERAGEX(VALUES('Calendar'[Date]), [Revenue])\n"
+    "\tmeasure 'Avg per Day 0' = AVERAGEX(VALUES('Calendar'[Date]), [Revenue] + 0)\n"
+    "\tmeasure Margin = [Revenue] - SUM(Sales[Cost])\n"
+    "\tmeasure 'Per Unit' = DIVIDE([Revenue], SUM(Sales[Qty]), 0)\n"
+    + _col("OrderDate", "dateTime") + _col("ProductKey", "int64") + _col("Price") + _col("Qty", "int64") + _col("Cost") + _m("FactSales")
+)
+CTX_PRODUCT = "table Product\n" + _col("ProductKey", "int64", "\t\tisKey") + _col("Color", "string") + _col("Category", "string") + _m("DimProduct")
+CTX_CALENDAR = (
+    "table Calendar\n\tdataCategory: Time\n\n" + _col("Date", "dateTime", "\t\tisKey") + _col("YearMonth", "string") + _col("MonthName", "string")
+    + _m("DimCalendar")
+)
+CTX_RELS = (
+    "relationship r1\n\tfromColumn: Sales.ProductKey\n\ttoColumn: Product.ProductKey\n\n"
+    "relationship r2\n\tfromColumn: Sales.OrderDate\n\ttoColumn: Calendar.Date\n"
+)
+
+
+def _col_field(entity: str, prop: str) -> dict:
+    return {"field": {"Column": {"Expression": {"SourceRef": {"Entity": entity}}, "Property": prop}}, "queryRef": f"{entity}.{prop}"}
+
+
+def _chart(name: str, cats: list[tuple[str, str]], measures: list[str], vtype: str = "tableEx") -> str:
+    state = {"Values": {"projections": [_measure("Sales", m) for m in measures]}}
+    if cats:
+        state["Category"] = {"projections": [_col_field(e, p) for e, p in cats]}
+    return json.dumps({"name": name, "position": {"x": 0, "y": 0, "width": 100, "height": 100},
+                       "visual": {"visualType": vtype, "query": {"queryState": state}}})
+
+
+def _ctx_project(tmp_path: Path, calendar: str = CTX_CALENDAR, rels: str = CTX_RELS):
+    page = "reports/R/definition/pages/p1"
+    visuals = {
+        "byColor": _chart("byColor", [("Product", "Color")], ["Revenue", "Share of Color", "Share of Product", "Red"]),
+        "byColorCat": _chart("byColorCat", [("Product", "Color"), ("Product", "Category")], ["Category Revenue"]),
+        "byMonth": _chart("byMonth", [("Calendar", "YearMonth")], ["Revenue", "Running", "Running All", "Avg per Day", "Margin", "Per Unit"]),
+        "byMonthName": _chart("byMonthName", [("Calendar", "MonthName")], ["Running"]),
+        "byDate": _chart("byDate", [("Calendar", "Date")], ["Running"]),
+        "card": _chart("card", [], ["Running", "Avg per Day"], "card"),
+        "zeros": _chart("zeros", [], ["Avg per Day 0"], "card"),
+        "sCategory": _chart("sCategory", [("Product", "Category")], [], "slicer"),
+        "sDate": _chart("sDate", [("Calendar", "Date")], [], "slicer"),
+    }
+    return _mini(tmp_path, {
+        "models/Ctx/definition/tables/Sales.tmdl": CTX_SALES,
+        "models/Ctx/definition/tables/Product.tmdl": CTX_PRODUCT,
+        "models/Ctx/definition/tables/Calendar.tmdl": calendar,
+        "models/Ctx/definition/relationships.tmdl": rels,
+        "reports/R/definition.pbir": json.dumps({"datasetReference": {"byPath": {"path": "../Ctx.SemanticModel"}}}),
+        f"{page}/page.json": json.dumps({"name": "p1", "displayName": "Page"}),
+        **{f"{page}/visuals/{k}/visual.json": v for k, v in visuals.items()},
+    })
+
+
+def _ctx_duckdb(path: Path) -> str:
+    import duckdb
+
+    con = duckdb.connect(str(path))
+    con.execute("create schema dbo")
+    con.execute(
+        "create table dbo.FactSales as select * from (values "
+        "(timestamp '2024-01-05', 1, 10.0, 1, 4.0), (timestamp '2024-01-20', 2, 20.0, 2, null), (timestamp '2024-02-10', 3, 30.0, 0, 5.0),"
+        "(timestamp '2025-01-15', 2, 40.0, 4, 10.0), (timestamp '2024-03-03', 1, 50.0, 5, null), (timestamp '2024-01-05', 2, 6.0, 1, 1.0)"
+        ") t(OrderDate, ProductKey, Price, Qty, Cost)"
+    )
+    con.execute("create table dbo.DimProduct as select * from (values (1, 'Red', 'Bikes'), (2, 'Blue', 'Bikes'), (3, 'Red', 'Clothes')) t(ProductKey, Color, Category)")
+    con.execute(
+        "create table dbo.DimCalendar as select d::timestamp as Date, strftime(d, '%Y-%m') as YearMonth, strftime(d, '%b') as MonthName from ("
+        "select unnest(range(date '2024-01-01', date '2024-04-01', interval 1 day)) d union all "
+        "select unnest(range(date '2025-01-01', date '2025-02-01', interval 1 day)))"
+    )
+    con.close()
+    return f"duckdb:///{path}"
+
+
+def test_context_changing_dax_in_tiles_matches_dax(tmp_path: Path):
+    """Hand-computed DAX results on six sales rows (Revenue 156: Red 90, Blue 66; Bikes 126, Clothes 30)."""
+    from unshackle.run import query
+
+    b = _ctx_project(tmp_path)
+    t = {x.id: x for x in b.dashboards[0].tiles}
+    url = _ctx_duckdb(tmp_path / "wh.duckdb")
+    none = {"category": None, "date_from": None, "date_to": None}
+
+    def rows(tile: str, key: str, **params) -> dict:
+        assert t[tile].sql, t[tile].todo
+        df = query(t[tile].sql, {**none, **params}, url)
+        return {r[key]: r for r in df.to_dict("records")}
+
+    by_color = rows("byColor", "color")
+    assert {c: round(r["share_of_color"], 4) for c, r in by_color.items()} == {"Blue": round(66 / 156, 4), "Red": round(90 / 156, 4)}
+    assert {c: r["red"] for c, r in by_color.items()} == {"Blue": 90.0, "Red": 90.0}  # the filter replaces the grouping on Color
+    bikes = rows("byColor", "color", category="Bikes")  # ALL(Product[Color]) keeps the Category slicer, REMOVEFILTERS(Product) doesn't
+    assert {c: (round(r["share_of_color"], 4), round(r["share_of_product"], 4)) for c, r in bikes.items()} == {
+        "Blue": (round(66 / 126, 4), round(66 / 156, 4)), "Red": (round(60 / 126, 4), round(60 / 156, 4))}
+    by_cat = query(t["byColorCat"].sql, none, url)
+    assert sorted(zip(by_cat["color"], by_cat["category"], by_cat["category_revenue"])) == [
+        ("Blue", "Bikes", 126.0), ("Red", "Bikes", 126.0), ("Red", "Clothes", 30.0)]  # ALLEXCEPT(Product, Product[Category])
+
+    month = rows("byMonth", "year_month")
+    assert {m: r["running"] for m, r in month.items()} == {"2024-01": 36.0, "2024-02": 66.0, "2024-03": 116.0, "2025-01": 156.0}
+    assert {m: r["avg_per_day"] for m, r in month.items()} == {"2024-01": 18.0, "2024-02": 30.0, "2024-03": 50.0, "2025-01": 40.0}
+    assert month["2024-03"]["margin"] == 50.0  # Revenue - BLANK cost = Revenue
+    assert (month["2024-02"]["per_unit"], month["2024-01"]["per_unit"]) == (0.0, 9.0)  # DIVIDE(.., 0 units, 0)
+    since_feb = rows("byMonth", "year_month", date_from="2024-02-01")
+    assert {m: (r["running"], r["running_all"]) for m, r in since_feb.items()} == {
+        "2024-02": (30.0, 66.0), "2024-03": (80.0, 116.0), "2025-01": (120.0, 156.0)}  # ALLSELECTED starts at the slicer, ALL doesn't
+    # MAX('Calendar'[Date]) of a MonthName group is its last calendar day, whatever the groups' order
+    assert {m: r["running"] for m, r in rows("byMonthName", "month_name").items()} == {"Jan": 156.0, "Feb": 66.0, "Mar": 116.0}
+    by_date = rows("byDate", "date")
+    assert [by_date[k]["running"] for k in sorted(by_date)] == [16.0, 36.0, 66.0, 116.0, 156.0]
+    card = query(t["card"].sql, none, url).to_dict("records")
+    assert card == [{"running": 156.0, "avg_per_day": 31.2}]
+    assert not t["zeros"].sql and "never BLANK" in t["zeros"].todo  # days without sales would count as 0
+
+    m = _by_name(b.metrics)  # as metrics they depend on the visual's grouping: still TODO with the DAX
+    for name, needle in [("share_of_color", "ALL"), ("category_revenue", "ALLEXCEPT"), ("running", "FILTER"), ("avg_per_day", "AVERAGEX")]:
+        assert needle in m[name].todo and m[name].source_language == "dax", name
+
+
+def test_context_sql_shape_and_limits(tmp_path: Path):
+    b = _ctx_project(tmp_path)
+    t = {x.id: x for x in b.dashboards[0].tiles}
+    sql = t["byMonth"].sql
+    assert sql.startswith("SELECT\n  g.year_month AS year_month,\n  g._a1 AS revenue,") and ") AS g\nORDER BY 1" in sql
+    # marked date table: a filter on 'Calendar'[Date] also drops the YearMonth grouping; MAX() reads the group's calendar days
+    running = next(line for line in sql.splitlines() if line.endswith("AS running,"))
+    assert "calendar_2.Date <= (SELECT MAX(calendar_1.Date) FROM dbo.DimCalendar AS calendar_1 WHERE" in running
+    assert "calendar_1.YearMonth IS NOT DISTINCT FROM g.year_month" in running and "calendar_2.YearMonth" not in running
+    assert "1.0 * g._a1 / NULLIF((SELECT SUM(sales_1.Price) FROM dbo.FactSales AS sales_1 LEFT JOIN" in t["byColor"].sql
+    # not a date table: the YearMonth grouping stays, so the "running total" is the month's own revenue, as in DAX
+    plain = _ctx_project(tmp_path / "plain", calendar=CTX_CALENDAR.replace("\tdataCategory: Time\n\n", "").replace("dateTime", "string"))
+    running = next(line for line in {x.id: x for x in plain.dashboards[0].tiles}["byMonth"].sql.splitlines() if line.endswith("AS running,"))
+    assert "calendar_2.YearMonth IS NOT DISTINCT FROM g.year_month" in running
+    # a bi-directional relationship lets the fact table filter Calendar: no SQL
+    bidi = _ctx_project(tmp_path / "bidi", rels=CTX_RELS + "\tcrossFilteringBehavior: bothDirections\n")
+    tile = {x.id: x for x in bidi.dashboards[0].tiles}["byMonth"]
+    assert not tile.sql and "bi-directional relationship Sales - Calendar" in tile.todo
+
+
+def test_derived_metrics_follow_dax_blank_and_divide_alternate(tmp_path: Path):
+    import duckdb
+
+    m = _by_name(_ctx_project(tmp_path).metrics)
+    margin, per_unit = m["margin"], m["per_unit"]
+    assert (margin.type, margin.metrics) == ("derived", ["revenue", "sum_cost"])
+    assert margin.expr == "(CASE WHEN revenue IS NULL AND sum_cost IS NULL THEN NULL ELSE COALESCE(revenue, 0) - COALESCE(sum_cost, 0) END)"
+    assert per_unit.type == "derived" and per_unit.expr == "CASE WHEN coalesce(sum_qty, 0) = 0 THEN 0 ELSE 1.0 * revenue / nullif(sum_qty, 0) END"
+
+    def ev(expr: str, **values) -> object:
+        cols = ", ".join(f"{v if v is not None else 'NULL::DOUBLE'} AS {k}" for k, v in values.items())
+        return duckdb.connect().execute(f"SELECT {expr} AS v FROM (SELECT {cols})").fetchone()[0]
+
+    assert ev(margin.expr, revenue=50, sum_cost=None) == 50  # BLANK cost: DAX 50, plain SQL NULL
+    assert ev(margin.expr, revenue=None, sum_cost=5) == -5
+    assert ev(margin.expr, revenue=None, sum_cost=None) is None
+    assert ev(per_unit.expr, revenue=30, sum_qty=0) == 0 and ev(per_unit.expr, revenue=30, sum_qty=None) == 0
+    assert ev(per_unit.expr, revenue=None, sum_qty=5) is None  # DIVIDE(BLANK, 5, 0) is BLANK, not 0
+    assert ev(per_unit.expr, revenue=36, sum_qty=4) == 9
