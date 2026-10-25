@@ -142,4 +142,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Source parsers are tested from saved
 exports in `tests/fixtures/`, so most translation work doesn't need a live BI
 account. Please report security issues privately; see [SECURITY.md](SECURITY.md).
 
+## The name
+
+In January 1915, Ernest Shackleton's ship *Endurance* froze into the pack ice of
+the Weddell Sea. It drifted with the ice for most of a year before it was crushed
+and sank. All 28 men aboard still made it home, after a lifeboat crossing to South
+Georgia that is still hard to believe. The wreck was found in 2022, 3,000 metres
+down. Data stuck in a BI tool is a smaller problem, but we liked the name.
+
+If you've never read the story, start with Alfred Lansing's *Endurance:
+Shackleton's Incredible Voyage* (1959). For Frank Hurley's photographs from the
+expedition, see *The Endurance Photographs*, published with the Royal Geographical
+Society.
+
 Apache 2.0. Made by [Querio](https://querio.ai).
