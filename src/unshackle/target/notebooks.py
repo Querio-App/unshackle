@@ -226,7 +226,7 @@ def build_notebook(d: Dashboard, tool: str) -> dict:
                 f"# TODO(unshackle): dashboard filter {one_line_comment(f.name)} (default {f.default!r}) is not applied to any tile's SQL; "
                 f"add :{one_line_comment(f.name)} where the source dashboard applies it (skills/translate-dashboards)"
             )
-    lines += [f"{params[f.name]} = {f.default!r}" for f in d.filters]
+    lines += [f"{params[f.name]} = {f.default!r}" + (f"  # {one_line_comment(f.allowed)}" if f.allowed else "") for f in d.filters]
     cells = [_markdown("title", _title(d, tool)), _code("setup", SETUP), _code("parameters", lines, tags=["parameters"])]
 
     by_id = {t.id: t for t in d.tiles}

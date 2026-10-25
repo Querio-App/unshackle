@@ -85,8 +85,9 @@ def test_parse_metrics_and_todos(tmp_path: Path):
     assert [(e.name, e.type) for e in lod.entities] == [("customer_name", "primary")]
     first = _by_name(lod.dimensions)["customer_first_order"]
     assert (first.type, first.time_granularity, first.todo) == ("time", "day", "")
-    assert "parameter" in dims["above_target"].todo and "[Target Margin]" in dims["above_target"].todo
-    assert dims["above_target"].source_expression == "[Profit Ratio] > [Parameters].[Target Margin]"
+    # an aggregate that reads a parameter: a TODO metric (tiles compute it with :target_margin)
+    assert "[Target Margin]" in m["above_target"].todo and ":target_margin" in m["above_target"].todo
+    assert m["above_target"].source_expression == "[Profit Ratio] > [Parameters].[Target Margin]"
     assert "ATTR()" in dims["category_label"].todo
     assert "floor(sales / 100) * 100" in dims["sales_bin"].todo
     assert "case when region in ('East', 'West') then 'Coasts' else region end" in dims["region_group"].todo
@@ -156,7 +157,8 @@ def test_parse_dashboards_and_tiles(tmp_path: Path):
     assert bar.sql.endswith("order by sum(profit) desc\nlimit 10") and not bar.todo
 
     geo = t["sales-map"]
-    assert (geo.kind, geo.mark) == ("unknown", "unknown") and "map" in geo.todo and ":target_margin" in geo.todo
+    assert (geo.kind, geo.mark) == ("unknown", "unknown") and "map" in geo.todo and "parameter" not in geo.todo
+    assert "(1.0 * sum(profit) / nullif(sum(sales), 0)) > :target_margin as above_target" in geo.sql  # the parameter as a bind
     assert geo.encodings["detail"].field == "state" and "state" in geo.sql
 
     sheets = d["Superstore Sales sheets"]

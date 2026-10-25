@@ -21,6 +21,13 @@ DATA = Path(__file__).parent / "data" / "dunder_mifflin"
 SQLGLOT = {"postgres": "postgres", "redshift": "redshift", "snowflake": "snowflake", "bigquery": "bigquery", "databricks": "databricks",
            "duckdb": "duckdb"}
 NULL_CYCLE = "nullif(payment_cycle, '')"  # accounts with no payment cycle ('' in the data) as NULL
+BINDS = {"min_order_value": "500.0", "target_margin": "0.15", "growth_rate": "0.1", "churn_rate": "0.064", "commission_rate": "18.4", "revenue_target": "1500000",
+         "measure": "'Quantity'", "group_by": "'Status'", "start_date": "'2025-01-01'", "include_cancelled": "false", "max_days": "14"}
+
+
+def _bind(sql: str) -> str:
+    """The parameters' :binds as literals."""
+    return re.sub(r"(?<!:):(\w+)\b", lambda m: BINDS[m.group(1)], sql)
 
 
 def _parse(tmp_path: Path, fixture: str, warehouse: str = "", edit=None):
@@ -53,7 +60,7 @@ def _con(null_cycle: bool = False):
 
 def _rows(con, sql: str) -> list[tuple]:
     """Rows sorted on their non-numeric values, numbers as floats."""
-    rows = con.sql(sql.replace(":min_order_value", "500.0")).fetchall()
+    rows = con.sql(_bind(sql)).fetchall()
     rows = [tuple(float(v) if isinstance(v, (int, float)) or type(v).__name__ == "Decimal" else v for v in r) for r in rows]
     return sorted(rows, key=lambda r: repr([v for v in r if not isinstance(v, float)] + [round(v, 3) for v in r if isinstance(v, float)]))
 
@@ -85,7 +92,7 @@ def test_configured_type_applies_when_the_export_names_none(tmp_path: Path):
 
 
 @pytest.mark.parametrize("warehouse", sorted(SQLGLOT))
-@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates"])
+@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params"])
 def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, warehouse: str):
     sqlglot = pytest.importorskip("sqlglot")
     b = _parse(tmp_path, fixture, warehouse)
@@ -93,13 +100,13 @@ def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, war
     assert sqls
     for name, sql in sqls.items():
         try:
-            sqlglot.parse_one(sql.replace(":min_order_value", "500"), read=SQLGLOT[warehouse])
+            sqlglot.parse_one(_bind(sql), read=SQLGLOT[warehouse])
         except sqlglot.errors.ParseError as exc:
             pytest.fail(f"{name} does not parse as {warehouse}: {exc}")
     assert not [t.todo for d in b.dashboards for t in d.tiles if f"{warehouse}:" in (t.todo or "")]
 
 
-@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates"])
+@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params"])
 @pytest.mark.parametrize("null_cycle", [False, True])
 def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_cycle: bool):
     sqlglot = pytest.importorskip("sqlglot")
@@ -110,7 +117,7 @@ def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_c
         assert forms.keys() == base.keys()
         for name, sql in forms.items():
             if warehouse != "redshift":  # DuckDB reads the Redshift form as written
-                sql = sqlglot.transpile(sql.replace(":min_order_value", "500.0"), read=warehouse, write="duckdb")[0]
+                sql = sqlglot.transpile(_bind(sql), read=warehouse, write="duckdb")[0]
                 # their day of week is 1 on Sunday (BigQuery DAYOFWEEK, Databricks DOW); sqlglot keeps the name, and DuckDB's is 0
                 sql = re.sub(r"EXTRACT\(DAYOFWEEK FROM ([\w.]+)\)", r"(EXTRACT(DOW FROM \1) + 1)", sql)
             assert _same(_rows(con, sql), _rows(con, base[name])), (warehouse, name)
