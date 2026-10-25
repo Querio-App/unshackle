@@ -583,8 +583,12 @@ report names the connections. Whatever reads tables of two databases is a TODO: 
 sheet over the join (unless the sheet uses the first table only and every join is a left join
 on the other table's key, which can't change its rows), FIXED LODs over the joined rows, and
 sheets over related tables (relationships) from both; no foreign entity joins them. Sheets on
-one database keep their SQL. Load the tables into one warehouse (or a federated query engine),
-point the models at them and write the joins. An extract copied with `--with-data` is one
+one database keep their SQL. Each database's tables get their own semantic models: the same
+table of the same database is one model across data sources, and a table with the same schema
+and name in another database is another model, named after its database (`accounts_crm`), with
+a TODO because one warehouse holds one `public.accounts` (the catalog lists it once). Load the
+tables into one warehouse (or a federated query engine) under names that tell them apart, point
+the models at them and write the joins. An extract copied with `--with-data` is one
 table, so the join is gone.
 
 **Older and newer XML**: data sources with no tables (the connection has no relation) are
