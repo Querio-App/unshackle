@@ -24,6 +24,7 @@ import calendar
 import json
 import posixpath
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,14 @@ TIMEFRAME_GRAIN = [
     ("year", "year"),
 ]
 TF_GRAIN = dict(TIMEFRAME_GRAIN)
+
+
+def _grain(g: dict[str, Any]) -> str:
+    """A dimension_group's grain: its smallest timeframe, at least a day for a date."""
+    grain = next((gr for tf, gr in TIMEFRAME_GRAIN if tf in (g.get("timeframes") or ["time"])), "day")
+    return "day" if g.get("datatype") in ("date", "yyyymmdd") and grain in ("second", "minute", "hour") else grain
+
+
 VIS_MARK = {
     "looker_column": ("chart", "bar"),
     "looker_bar": ("chart", "bar"),
@@ -502,7 +511,75 @@ def _filter_pairs(measure: dict[str, Any]) -> list[tuple[str, str]]:
     return out
 
 
-def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
+NUM = r"-?\d+(?:\.\d+)?"
+
+
+def _number_filter(ref: str, v: str) -> str | None:
+    """Looker's number filter expressions, as its SQL writes them (tests/fixtures/looker_generated/filters.*)."""
+    if re.fullmatch(rf"NOT\s+{NUM}(\s*,\s*{NUM})*", v, re.I):  # NOT keeps no NULLs: NOT (n = 5)
+        vals = re.findall(NUM, v[3:])
+        return f"NOT ({ref} = {vals[0]})" if len(vals) == 1 else f"NOT ({ref} IN ({', '.join(vals)}))"
+    if re.fullmatch(rf"{NUM}(\s*,\s*{NUM})+", v):
+        return f"{ref} IN ({', '.join(re.findall(NUM, v))})"
+    m = re.fullmatch(rf"([\[(])\s*({NUM})\s*,\s*({NUM})\s*([\])])", v)
+    if m:
+        lo, hi = (">=" if m.group(1) == "[" else ">"), ("<=" if m.group(4) == "]" else "<")
+        return f"({ref} {lo} {m.group(2)} AND {ref} {hi} {m.group(3)})"
+    m = re.fullmatch(rf"({NUM})\s+to\s+({NUM})", v, re.I)
+    if m:
+        return f"{ref} BETWEEN {m.group(1)} AND {m.group(2)}"
+    for joiner in ("AND", "OR"):
+        ms = [re.fullmatch(rf"(>=|<=|<>|!=|>|<|=)\s*({NUM})", p.strip()) for p in re.split(rf"\s+{joiner}\s+", v, flags=re.I)]
+        if len(ms) > 1 and all(ms):
+            return "(" + f" {joiner} ".join(f"{ref} {m[1]} {m[2]}" for m in ms) + ")"
+    return None
+
+
+def _date_bounds(text: str) -> tuple[datetime, datetime | None] | None:
+    """An absolute date in a filter: (start, end of the period) for a year, month or day; (moment, None) for a time."""
+    t = text.strip()
+    try:
+        if re.fullmatch(r"\d{4}", t):
+            return datetime(int(t), 1, 1), datetime(int(t) + 1, 1, 1)
+        if re.fullmatch(r"\d{4}[-/]\d{2}", t):
+            y, mo = int(t[:4]), int(t[5:7])
+            return datetime(y, mo, 1), datetime(y + mo // 12, mo % 12 + 1, 1)
+        if re.fullmatch(r"\d{4}[-/]\d{2}[-/]\d{2}", t):
+            d = datetime(int(t[:4]), int(t[5:7]), int(t[8:10]))
+            return d, d + timedelta(days=1)
+        if re.fullmatch(r"\d{4}[-/]\d{2}[-/]\d{2} \d{2}:\d{2}(:\d{2})?", t):
+            return datetime.fromisoformat(t.replace("/", "-")), None
+    except ValueError:
+        return None
+    return None
+
+
+def _date_filter(ref: str, v: str, datatype: str) -> str | None:
+    """Absolute date filters as Looker writes them: a period is [start, start of the next), `before` is <,
+    `after` is >= and `A to B` is [A, B). Relative ones (`7 days`, `last month`) depend on the day: None."""
+    def lit(d: datetime) -> str | None:
+        if datatype == "date":
+            return None if (d.hour, d.minute, d.second) != (0, 0, 0) else f"'{d:%Y-%m-%d}'"
+        return f"'{d:%Y-%m-%d %H:%M:%S}'"
+
+    m = re.fullmatch(r"(before|after)\s+(.+)", v, re.I)
+    if m:
+        b = _date_bounds(m.group(2))
+        x = lit(b[0]) if b else None
+        return None if x is None else f"{ref} {'<' if m.group(1).lower() == 'before' else '>='} {x}"
+    m = re.fullmatch(r"(.+?)\s+to\s+(.+)", v, re.I)
+    if m:
+        a, b = _date_bounds(m.group(1)), _date_bounds(m.group(2))
+        lo, hi = (lit(a[0]) if a else None), (lit(b[0]) if b else None)
+        return None if lo is None or hi is None else f"({ref} >= {lo} AND {ref} < {hi})"
+    b = _date_bounds(v)
+    if b is None or b[1] is None:
+        return None
+    lo, hi = lit(b[0]), lit(b[1])
+    return None if lo is None or hi is None else f"({ref} >= {lo} AND {ref} < {hi})"
+
+
+def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str = "timestamp") -> str | None:
     """Translate a Looker filter expression to SQL on `ref`. None when it needs a person.
 
     Checked against Looker's generated SQL (BigQuery): string "is not" filters keep NULL rows
@@ -523,12 +600,16 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
         return f"({ref} IS NULL OR {ref} = '')"
     if v.upper() == "-EMPTY":
         return f"({ref} IS NOT NULL AND {ref} <> '')"
-    m = re.fullmatch(r"(>=|<=|<>|!=|>|<|=)?\s*(-?\d+(?:\.\d+)?)", v)
+    m = re.fullmatch(rf"(>=|<=|<>|!=|>|<|=)?\s*({NUM})", v)
     if m and (kind == "number" or m.group(1)):
         return f"{ref} {m.group(1) or '='} {m.group(2)}"
-    # dates, number ranges and anything that reads like a relative date need a person; brackets
-    # are literal in a string filter ("(5) Purchase")
-    if kind in ("time", "number") or (kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I)):
+    if kind == "number":
+        return _number_filter(ref, v)
+    if kind == "time":
+        return _date_filter(ref, v, datatype)
+    # anything that reads like a relative date needs a person; brackets are literal in a string
+    # filter ("(5) Purchase")
+    if kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
         return None
     if '"' in v:  # quoting in a filter value: leave it to a person
         return None
@@ -951,6 +1032,9 @@ class _Parser:
                     return f
         return None
 
+    def _group(self, vname: str, name: str) -> dict[str, Any]:
+        return next((x for x in (self.views.get(vname) or {}).get("dimension_groups", []) if x["name"] == name), {})
+
     def _pk(self, vname: str) -> dict[str, Any] | None:
         for d in (self.views.get(vname) or {}).get("dimensions", []):
             if _yes(d.get("primary_key")):
@@ -1091,7 +1175,7 @@ class _Parser:
     def _timeframe(self, view: str, group: str, tf: str, mode: str, seen: frozenset[str], q: _Query | None, at: str) -> tuple[str, list[str]]:
         """`${created_month}`: the dimension_group's SQL with Looker's truncation for the timeframe."""
         ref = f"{group}_{tf}" if mode == "table" else f"{at}.{group}_{tf}"
-        g = next((x for x in (self.views.get(view) or {}).get("dimension_groups", []) if x["name"] == group), {})
+        g = self._group(view, group)
         datatype = str(g.get("datatype") or "timestamp")
         if datatype in ("epoch", "yyyymmdd"):
             return "", [f"references timeframe {ref} of a datatype: {datatype} dimension_group (the column is a number, not a date)"]
@@ -1233,19 +1317,25 @@ class _Parser:
         parts.append("END")
         return " ".join(parts), list(dict.fromkeys(problems))
 
-    def field_ref(self, vname: str, ref: str) -> tuple[str, str] | None:
-        """Filter field -> ("{{ Dimension('v__f') }}", kind)."""
+    def field_ref(self, vname: str, ref: str) -> tuple[str, str, str] | None:
+        """Filter field -> ("{{ Dimension('v__f') }}", kind, datatype of a time)."""
         view, _, name = ref.rpartition(".")
         view = view or vname
         kind = self.fields.get(f"{view}.{name}")
         if not kind:
             return None
         if kind[0] == "time":
-            return f"{{{{ TimeDimension('{snake(view)}__{snake(kind[1])}', '{TF_GRAIN.get(kind[2], 'day')}') }}}}", "time"
+            # Looker filters the time itself, whatever the timeframe: the dimension at second grain when it
+            # has one (the time itself), else at day grain, compared with dates
+            exact = _grain(self._group(view, kind[1])) == "second"
+            grain, datatype = ("second", "timestamp") if exact else ("day", "date")
+            return f"{{{{ TimeDimension('{snake(view)}__{snake(kind[1])}', '{grain}') }}}}", "time", datatype
         if kind[0] != "dimension":
             return None
         f = self._field(view, name) or {}
-        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", _type_kind(f.get("type", "string"), "other")
+        t = f.get("type", "string")
+        kind = "string" if t == "tier" else _type_kind(t, "other")  # a tier is its label: '5 to 9'
+        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", kind, ""
 
     # ------------------------------------------------------------ views
 
@@ -1335,10 +1425,7 @@ class _Parser:
                 )
                 continue
             expr, problems = self.resolve(vname, g.get("sql") or f"${{TABLE}}.{g['name']}")
-            tfs = g.get("timeframes") or ["time"]
-            grain = next((gr for tf, gr in TIMEFRAME_GRAIN if tf in tfs), "day")
-            if g.get("datatype") in ("date", "yyyymmdd") and grain in ("second", "minute", "hour"):
-                grain = "day"
+            grain = _grain(g)
             dim = Dimension(g["name"], "time", "" if expr == g["name"] else expr, g.get("description", ""), _label(g), grain)
             if g.get("datatype") in ("epoch", "yyyymmdd"):
                 problems.append(f"datatype: {g['datatype']} (the column is a number, not a date); convert it to a date or timestamp in the expression")
@@ -1429,7 +1516,7 @@ class _Parser:
             filters, bad = [], []
             for field, value in _filter_pairs(m):
                 ref = self.field_ref(vname, field)
-                sql = looker_filter_sql(ref[0], value, ref[1]) if ref else None
+                sql = looker_filter_sql(ref[0], value, *ref[1:]) if ref else None
                 if sql is None:
                     bad.append(f"{field}: {value!r}")
                 else:
@@ -1956,7 +2043,10 @@ class _Parser:
             q.problems.extend(p)
             if not sql:
                 return
-            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind)
+            datatype = "timestamp"
+            if kind == "time":  # Looker filters the time itself, whatever the timeframe
+                sql, datatype = q.raw_time(field) or (sql, "date")
+            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind, datatype)
             if cond is None:
                 q.problems.append(f"{origin} filter {field}: {str(value)!r} is not translated (a Looker filter expression)")
             else:
@@ -2379,6 +2469,18 @@ class _Query:
         self.notes += [note] if note else []
         problems += [problem] if problem else []
         return table
+
+    def raw_time(self, ref: str) -> tuple[str, str] | None:
+        """(SQL, datatype) of the time behind a timeframe field `alias.group_tf`; None for other fields."""
+        qual, _, name = ref.rpartition(".")
+        a = self.alias(qual)
+        view = self.aliases.get(a)
+        kind = self.p.fields.get(f"{view}.{name}") if view else None
+        if not kind or kind[0] != "time":
+            return None
+        sql, p = self.p._timeframe(view, kind[1], "raw", "query", frozenset(), self, a)
+        g = self.p._group(view, kind[1])
+        return (sql, "date" if g.get("datatype") == "date" else "timestamp") if sql and not p else None
 
     def snapshot(self) -> tuple:
         return list(self.order), dict(self.join_sql), dict(self.join_reads), list(self.aggs), set(self.tz)
