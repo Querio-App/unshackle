@@ -11,7 +11,8 @@ Tableau's documented rules:
   per distinct combination of the view's and the FIXED dimensions;
 - blending: the first data source on a sheet is the primary. Each secondary is queried on its own (with its own data source
   filters, not the primary's), aggregated at the linking fields (the sheet's dimensions linked to it: the workbook's blend
-  relationship, else fields with the same name), and left joined to the primary's marks; a NULL link value matches NULL;
+  relationship, else fields with the same name), and left joined to the primary's marks; a NULL link value matches NULL.
+  A string dimension of a secondary shows its value where the mark's link has one and * where it has several (NULLs left out);
 - custom SQL: Tableau writes a parameter's value into the query as a literal of its type.
 """
 
@@ -211,9 +212,49 @@ def test_blend_sql_joins_one_row_per_link(tiles):
     assert "is not distinct from blend_1.blend_key_1" in sql and "max(blend_1.blend_value_1)" in sql
 
 
-def test_a_secondary_dimension_stays_todo(tiles):
-    t = tiles["blend_secondary_dim"]
-    assert not t.sql and "a dimension of the secondary data source Accounts" in t.todo and "*" in t.todo
+def test_secondary_string_dimensions_show_one_value_or_a_star(con, rows, accounts, tiles):
+    """A secondary dimension shows its value where the mark's link has one, * where it has several; NULLs are left out
+    (NULL and Low shows Low), and a link with only NULLs, or no secondary rows, shows NULL."""
+    completed = [r for r in rows if r["status"] == "COMPLETED"]
+
+    def shown(values: set) -> str | None:
+        values = {v for v in values if v is not None}
+        return None if not values else values.pop() if len(values) == 1 else "*"
+
+    tiers: dict = defaultdict(set)
+    for r in completed:
+        tiers[norm(r["purchased_at"])].add(tier(r))
+    cycles: dict = defaultdict(set)
+    for a in accounts:
+        cycles[a["account_manager"]].add(a["payment_cycle"])
+    assert {"*", "Low", "High", None} <= {shown(v) for v in tiers.values()}
+    assert any(None in v and len(v) == 2 for v in tiers.values())  # NULL and one value
+    cycle_of = {a["account_id"]: a["payment_cycle"] for a in accounts}
+    by_day = {(d, shown(tiers.get(d, set()))): q for (d,), q in agg(rows, (lambda r: norm(r["purchased_at"]),), "quantity").items()}
+    expected = {
+        "blend_secdim_rows": by_day,
+        "blend_secdim_detail": by_day,
+        "blend_secdim_mgr": {(m, shown(cycles[m])): v for (m,), v in agg(rows, MGR, REV).items()},
+        "blend_secdim_acct": {(a, cycle_of[a]): v for (a,), v in agg(rows, ACCT, REV).items()},
+    }
+    for sheet, want in expected.items():
+        t = tiles[sheet]
+        cols = list(t.source_config["columns"])
+        dim = next(i for i, c in enumerate(cols) if c in ("day_of_purchased_at", "account_manager", "account_id"))
+        shown_at = next(i for i, c in enumerate(cols) if c in ("completed_tier", "cycle"))
+        value = next(i for i in range(len(cols)) if i not in (dim, shown_at))
+        got = {(r[dim], r[shown_at], r[value]) for r in run(con, t)}
+        assert got == {(*k, round(float(v), 4)) for k, v in want.items()}, sheet
+    sql = tiles["blend_secdim_mgr"].sql
+    assert "when min(" in sql and "then '*' end" in sql
+
+
+def test_secondary_dimensions_that_stay_todo(tiles, tmp_path):
+    t = tiles["blend_secondary_dim"]  # the secondary's payment_cycle: a field of the primary has its name, so it links
+    assert not t.sql and "is a linking field" in t.todo
+    numeric = _tiles(_parse(tmp_path, lambda x: x.replace("caption=\"Cycle\" datatype='string'", "caption=\"Cycle\" datatype='integer'")))
+    t = numeric["blend_secdim_mgr"]  # * isn't a number
+    assert not t.sql and "integer dimension of the secondary data source" in t.todo
 
 
 @pytest.mark.parametrize("edit,sheet,todo", [

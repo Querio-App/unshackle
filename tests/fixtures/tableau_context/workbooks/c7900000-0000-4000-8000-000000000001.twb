@@ -106,6 +106,7 @@
       <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
       <column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
       <column caption="Discount Tier" datatype='string' name='[Calculation_7901]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [discount_percentage] &gt;= 10 THEN "High" ELSEIF [discount_percentage] &gt; 0 THEN "Low" END' /></column>
+      <column caption="Completed Tier" datatype='string' name='[Calculation_7920]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [discount_percentage] &gt;= 10 THEN "High" ELSEIF [discount_percentage] &gt; 0 THEN "Low" END' /></column>
       <date-options start-of-week='sunday' />
       <filter class='categorical' column='[status]' filter-group='2'><groupfilter function='member' level='[status]' member='&quot;COMPLETED&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' /></filter>
     </datasource>
@@ -122,7 +123,7 @@
         </metadata-records>
       </connection>
       <aliases enabled='yes' />
-
+      <column caption="Cycle" datatype='string' name='[Calculation_7921]' role='dimension' type='nominal'><calculation class='tableau' formula="[payment_cycle]" /></column>
     </datasource>
     <datasource caption="Accounts (mapped)" inline='true' name='federated.ctx0accmapped' version='18.1'>
       <connection class='federated'>
@@ -467,6 +468,86 @@ WHERE o.status = &lt;[Parameters].[Parameter 1]&gt;
         <cols></cols>
       </table>
     </worksheet>
+    <worksheet name="blend_secdim_rows">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.ctx0orders' /><datasource caption="Orders (completed)" name='federated.ctx0completed' /></datasources>
+          <datasource-dependencies datasource='federated.ctx0orders'><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[purchased_at]' derivation='Day-Trunc' name='[tdy:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[quantity]' derivation='Sum' name='[sum:quantity:qk]' pivot='key' type='quantitative' /></datasource-dependencies><datasource-dependencies datasource='federated.ctx0completed'><column caption="Completed Tier" datatype='string' name='[Calculation_7920]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [discount_percentage] &gt;= 10 THEN "High" ELSEIF [discount_percentage] &gt; 0 THEN "Low" END' /></column><column datatype='real' name='[discount_percentage]' role='measure' type='quantitative' /><column-instance column='[Calculation_7920]' derivation='None' name='[none:Calculation_7920:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.ctx0orders].[sum:quantity:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.ctx0orders].[tdy:purchased_at:ok] / [federated.ctx0completed].[none:Calculation_7920:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="blend_secdim_detail">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.ctx0orders' /><datasource caption="Orders (completed)" name='federated.ctx0completed' /></datasources>
+          <datasource-dependencies datasource='federated.ctx0orders'><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[purchased_at]' derivation='Day-Trunc' name='[tdy:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[quantity]' derivation='Sum' name='[sum:quantity:qk]' pivot='key' type='quantitative' /></datasource-dependencies><datasource-dependencies datasource='federated.ctx0completed'><column caption="Completed Tier" datatype='string' name='[Calculation_7920]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [discount_percentage] &gt;= 10 THEN "High" ELSEIF [discount_percentage] &gt; 0 THEN "Low" END' /></column><column datatype='real' name='[discount_percentage]' role='measure' type='quantitative' /><column-instance column='[Calculation_7920]' derivation='None' name='[none:Calculation_7920:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.ctx0orders].[sum:quantity:qk]' /><lod column='[federated.ctx0completed].[none:Calculation_7920:nk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.ctx0orders].[tdy:purchased_at:ok]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="blend_secdim_mgr">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.ctx0orders' /><datasource caption="Accounts" name='federated.ctx0accounts' /></datasources>
+          <datasource-dependencies datasource='federated.ctx0orders'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies><datasource-dependencies datasource='federated.ctx0accounts'><column caption="Cycle" datatype='string' name='[Calculation_7921]' role='dimension' type='nominal'><calculation class='tableau' formula="[payment_cycle]" /></column><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column-instance column='[Calculation_7921]' derivation='None' name='[none:Calculation_7921:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.ctx0orders].[sum:post_discount_revenue:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.ctx0orders].[none:account_manager:nk] / [federated.ctx0accounts].[none:Calculation_7921:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="blend_secdim_acct">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.ctx0orders' /><datasource caption="Accounts" name='federated.ctx0accounts' /></datasources>
+          <datasource-dependencies datasource='federated.ctx0orders'><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[account_id]' derivation='None' name='[none:account_id:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies><datasource-dependencies datasource='federated.ctx0accounts'><column caption="Cycle" datatype='string' name='[Calculation_7921]' role='dimension' type='nominal'><calculation class='tableau' formula="[payment_cycle]" /></column><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column-instance column='[Calculation_7921]' derivation='None' name='[none:Calculation_7921:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.ctx0orders].[sum:post_discount_revenue:qk]' /><lod column='[federated.ctx0accounts].[none:Calculation_7921:nk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.ctx0orders].[none:account_id:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
     <worksheet name='csql_by_paper'>
       <table>
         <view>
@@ -498,6 +579,10 @@ WHERE o.status = &lt;[Parameters].[Parameter 1]&gt;
     <window class='worksheet' name="blend_secondary_dim" />
     <window class='worksheet' name="blend_year" />
     <window class='worksheet' name="blend_mapped" />
+    <window class='worksheet' name="blend_secdim_rows" />
+    <window class='worksheet' name="blend_secdim_detail" />
+    <window class='worksheet' name="blend_secdim_mgr" />
+    <window class='worksheet' name="blend_secdim_acct" />
     <window class='worksheet' name='csql_by_paper' />
   </windows>
 </workbook>

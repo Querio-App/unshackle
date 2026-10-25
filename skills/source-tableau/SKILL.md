@@ -528,8 +528,12 @@ the secondary's fields with the same name. The tile SQL has one `blend_N` CTE pe
 grouped by the links, left joined to the primary's rows on them (`is not distinct from`: a
 NULL link matches NULL; one row per link, so nothing multiplies), and its measures per mark
 as `max(blend_1.blend_value_1)`: the same value on every mark of a link (a secondary count per
-manager repeats on each paper type). TODO: a dimension of the secondary on the sheet (Tableau
-shows `*` where a mark has several of its values), a filter on a secondary field, no active
+manager repeats on each paper type). A string dimension of the secondary shows its value where
+the mark's link has one and `*` where it has several, NULLs left out (`case when min(x) = max(x)
+then min(x) when min(x) <> max(x) then '*' end` in the blend's CTE; only NULLs, or no secondary
+rows: NULL). TODO: a numeric, date or boolean dimension of the secondary (`*` isn't a value of
+its type), a secondary field that links (the primary has a field of its name, or the
+relationship maps it: Tableau splits the marks by it), a filter on a secondary field, no active
 link, an LOD, set or alias of the secondary, totals, the same field instance from both
 sources, a primary with relationships, and a calc that reads another data source
 (`[other_ds].[field]`): aggregate each side by the linking dimensions, then left join; or

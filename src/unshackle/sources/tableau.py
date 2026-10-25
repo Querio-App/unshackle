@@ -5557,6 +5557,9 @@ class _Parser:
                     alias, sql, is_agg, display, etype, unit = self._column(r)
                     label = r.field.label if r.field else r.instance
                     if not is_agg:
+                        if r.field is not None and self._links_to(wb, primary, sds, r.field):
+                            raise _NoSQL(f"[{label}] of the secondary data source {sds.caption} is a linking field: on the sheet, Tableau "
+                                         "links on it and splits the primary's marks by it; put the primary's field on the sheet instead")
                         if r.field is None or r.field.datatype != "string" or r.deriv not in ("none", ""):
                             raise _NoSQL(f"[{label}], a {r.field.datatype if r.field else ''} dimension of the secondary data source "
                                          f"{sds.caption}: Tableau shows its value where a mark has one and * where it has several, "
@@ -5580,6 +5583,16 @@ class _Parser:
             ctx.blends.append((name, body, on))
             out += [(r, alias, f"max({name}.blend_value_{j})", True, display, etype, unit) for j, (r, alias, _, display, etype, unit) in enumerate(values, 1)]
         return out
+
+    def _links_to(self, wb: _Workbook, primary: str, sds: TDatasource, f: TField) -> bool:
+        """Whether a secondary field links to the primary: mapped in the pair's <datasource-relationship>, else a field of
+        the primary with the same name."""
+        rels = [el for el in wb.root.iter("datasource-relationship") if {el.get("source"), el.get("target")} == {primary, sds.name}]
+        if rels:
+            sides = [DS_REF.fullmatch(m.get(k, "")) for el in rels for m in el.iter("map") for k in ("key", "value")]
+            return any(x is not None and _unesc(x.group(1)) == sds.name and _unesc(x.group(2)).split(":")[1:-1] == [f.local] for x in sides)
+        pds = wb.datasources.get(primary)
+        return pds is not None and any(g.label == f.label and not g.param for g in pds.fields.values())
 
     def _blend_links(self, wb: _Workbook, primary: str, sds: TDatasource, dims: list) -> list[tuple[tuple, _Ref]]:
         """The sheet's linking fields with a secondary data source: (the primary's dimension column, the secondary's field).
