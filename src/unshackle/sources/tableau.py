@@ -368,7 +368,8 @@ class TableauSource(Source):
         ranked = sorted((v for v in views if view_wb.get(v["id"]) in set(extracted)), key=lambda v: (-_views(v), v.get("name", "")))
         for v in ranked[: self.top_views]:
             try:
-                resp = self.client().get(self._api(f"/views/{v['id']}/data"), headers={"Accept": "text/csv"})
+                # Tableau answers 406 to Accept: text/csv; the CSV comes back with */*.
+                resp = self.client().get(self._api(f"/views/{v['id']}/data"), headers={"Accept": "*/*"})
                 store.put_bytes(f"views/{v['id']}.csv", resp.content)
             except SourceError as exc:
                 errors.append({"item": f"view {v.get('name', v['id'])} ({v['id']}) data", "error": str(exc)[:400]})
@@ -426,6 +427,11 @@ class TableauSource(Source):
         except SourceError as exc:
             errors.append({"item": "metadata api", "error": f"{str(exc)[:300]} (Server: `tsm maintenance metadata-services enable`)"})
             sql_tables = []
+        else:
+            for luid in luids:
+                if luid not in found:
+                    errors.append({"item": f"metadata {luid}", "error": "workbook not in the Metadata API yet (new and changed content is "
+                                   "indexed with a delay; on Server the metadata services may be off): no lineage; re-run extract later"})
         for t in sql_tables:
             for wb in t.get("downstreamWorkbooks") or []:
                 if wb.get("luid") in found:
@@ -797,6 +803,11 @@ class TDatasource:
     filters: list[ET.Element] = field(default_factory=list)
     connection_class: str = ""
     published: str = ""  # sqlproxy dbname (published datasource content url)
+    # left-deep join tree as steps after the first relation: (join type, right relation name, ON sql); "" = not translatable
+    join_steps: list[tuple[str, str, str]] = field(default_factory=list)
+    origin: "TDatasource | None" = None  # the published datasource a workbook's sqlproxy stub was linked to
+    inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
+    hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
 
 
 @dataclass
@@ -864,8 +875,8 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         top = next((c for c in conn if _local(c.tag) == "relation"), None)
         if top is None:
             top = next((c for c in conn if _local(c.tag).endswith("relation")), None)
-        if top is None and conn.find("relation") is None and ds.connection_class not in ("federated", "sqlproxy", ""):
-            top = None
+        if ds.connection_class == "sqlproxy":
+            top = None  # <relation name='sqlproxy' table='[sqlproxy]'> is a stub; the tables are in the published .tds
         for rel in _leaf_relations(top, ds):
             nc = named.get(rel.get("connection", "")) if rel.get("connection") else None
             cattrs = nc if nc is not None else conn
@@ -909,6 +920,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         f.role = col.get("role") or f.role
         f.ftype = col.get("type") or f.ftype
         f.hidden = col.get("hidden") == "true"
+        f.default_agg = (col.get("aggregation") or "").lower() or f.default_agg  # Default Properties > Aggregation, set by the author
         f.description = _text(col.find("desc")) or f.description
         calc = col.find("calculation")
         if calc is not None:
@@ -937,6 +949,8 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         if not f.relation and ds.relations and not f.is_calc:
             f.relation = next(iter(ds.relations))
     ds.filters = el.findall("filter")
+    for dp in el.findall("drill-paths/drill-path"):
+        ds.hierarchies.append((dp.get("name", ""), [_unbracket(x.text) for x in dp.findall("field") if x.text]))
     return ds
 
 
@@ -947,14 +961,32 @@ def _leaf_relations(rel: ET.Element | None, ds: TDatasource) -> list[ET.Element]
     if typ in ("table", "text"):
         return [rel]
     out: list[ET.Element] = []
+    children = [c for c in rel if _local(c.tag).endswith("relation")]
+    for child in children:
+        out += _leaf_relations(child, ds)
     if typ == "join":
-        for clause in rel.iter("clause"):
-            ops = [e.get("op", "") for e in clause.iter("expression") if e.get("op") and e.get("op") not in ("=", "AND")]
-            ds.joins.append(f"{rel.get('join', 'inner')} join on {' = '.join(ops)}")
-    for child in rel:
-        if _local(child.tag).endswith("relation"):
-            out += _leaf_relations(child, ds)
+        clause = rel.find("clause")
+        cond = clause.find("expression") if clause is not None else None
+        ops = [e.get("op", "") for e in (cond.iter("expression") if cond is not None else []) if e.get("op") not in ("=", "AND", None)]
+        ds.joins.append(f"{rel.get('join', 'inner')} join on {' = '.join(ops)}")
+        right = children[-1] if len(children) == 2 and children[-1].get("type") in ("table", "text") else None
+        name = (right.get("name") or (_name_parts(right.get("table", "")) or ["table"])[-1]) if right is not None else ""
+        ds.join_steps.append((rel.get("join", "inner"), name, _join_on(cond) if name else ""))
     return out
+
+
+def _join_on(expr: ET.Element | None) -> str:
+    """<expression op='='><expression op='[orders].[account_id]' />... -> orders.account_id = accounts.account_id ("" if not that simple)."""
+    if expr is None:
+        return ""
+    op, kids = expr.get("op", ""), list(expr.findall("expression"))
+    if op in ("=", "AND") and len(kids) >= 2:
+        parts = [_join_on(k) for k in kids]
+        if not all(parts) or (op == "=" and len(parts) != 2):
+            return ""
+        return f" {op.lower()} ".join(f"({p})" if " and " in p else p for p in parts) if op == "AND" else f"{parts[0]} = {parts[1]}"
+    names = _name_parts(op) if op.startswith("[") and not kids else []
+    return ".".join(_ident(n) for n in names) if len(names) == 2 else ""
 
 
 # ==================================================================== parser
@@ -983,6 +1015,7 @@ class _Parser:
         self.wb_slugs: dict[str, list[str]] = {}
         self.workbooks: list[_Workbook] = []
         self.tds: list[TDatasource] = []
+        self._joined: TDatasource | None = None  # tile SQL over a join: qualify physical columns with their relation
 
     def _json(self, rel: str) -> Any:
         if not self.store.exists(rel):
@@ -1072,8 +1105,13 @@ class _Parser:
             return
         ds.relations = dict(target.relations)
         ds.joins = list(target.joins)
+        ds.join_steps = list(target.join_steps)
+        ds.hierarchies = ds.hierarchies or list(target.hierarchies)
+        ds.origin = target
         for local, tf in target.fields.items():
             mine = ds.fields.get(local)
+            if mine is None or not mine.formula:
+                ds.inherited.add(local)
             if mine is None:
                 ds.fields[local] = copy.deepcopy(tf)
             elif not mine.formula:
@@ -1226,6 +1264,11 @@ class _Parser:
             return self.cache[key]
         if key in stack:
             return _Calc("todo", todo=f"circular reference through [{f.label}]")
+        if ds.origin is not None and f.local in ds.inherited:
+            # A calc of the published datasource: translate it once, there (no duplicate metrics, LOD queries or row filters).
+            res = self._calc(ds.origin, ds.origin.fields[f.local], stack)
+            self.cache[key] = res
+            return res
         res = self._translate(ds, f, stack + (key,))
         self.cache[key] = res
         return res
@@ -1537,6 +1580,8 @@ class _Parser:
         if calc is not None and calc.kind in ("todo", "security"):
             raise _NoSQL(f"[{label}] is not translated yet: {calc.todo}")
         base = calc.sql if calc is not None and calc.kind == "row" else (_ident(f.remote) if f.remote else "")
+        if calc is None and base and ds is self._joined and f.relation:
+            base = f"{_ident(f.relation)}.{base}"
         if calc is None and not base:
             raise _NoSQL(f"[{label}] has no physical column")
         d = r.deriv
@@ -1710,6 +1755,8 @@ class _Parser:
             if r.instance not in seen:
                 ordered.append((r, False))
                 seen.add(r.instance)
+        join_from = self._tile_join(wb, ordered, data_ds)
+        self._joined = wb.datasources[data_ds[0]] if join_from else None  # set for this tile's _column/_filter calls
         problems: list[str] = []
         columns: list[tuple[_Ref, str, str, bool, str, str, str]] = []
         dropped: set[str] = set()
@@ -1740,7 +1787,7 @@ class _Parser:
                 models = {id(first): first}
         if len(data_ds) > 1:
             problems.append(f"blends {len(data_ds)} datasources ({', '.join(data_ds)}): join them in the tile SQL ({SKILL})")
-        elif len(models) > 1:
+        elif len(models) > 1 and not join_from:
             problems.append("fields come from several joined tables: write the join in the tile SQL")
         where, having, order, limit = [], [], [], ""
         for flt in view.findall("filter"):
@@ -1761,7 +1808,7 @@ class _Parser:
             todos += problems
         elif columns and models:
             model = next(iter(models.values()))
-            from_sql, cte = model.from_sql
+            from_sql, cte = (join_from, "") if join_from else model.from_sql
             dims = [c for c in columns if not c[3]]
             meas = [c for c in columns if c[3]]
             columns = dims + meas
@@ -1805,7 +1852,7 @@ class _Parser:
         layers = [Layer(m, {ch: e}) for m, ch, r in layer_refs if (e := to_encoding(r)) is not None]  # type: ignore[arg-type]
         for p in meta["params"]:
             pf = wb.params.get(p)
-            if pf is not None:
+            if pf is not None and not re.search(rf":{_name(pf.label)}\b", sql):  # already bound by a filter: nothing left to do
                 todos.append(f"uses parameter [{pf.label}] (:{_name(pf.label)} in the parameters cell)")
         config: dict[str, Any] = {
             "workbook": wb.id,
@@ -1830,10 +1877,28 @@ class _Parser:
                 except (OSError, UnicodeDecodeError):
                     header = []
                 config["csv_columns"] = header
+        self._joined = None
         tile = Tile(tid, name, kind, mark, sql, encodings, source_type=mark_cls, source_config=config,  # type: ignore[arg-type]
                     todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose)  # type: ignore[arg-type]
         meta["aliases"] = aliases
         return tile, meta
+
+    def _tile_join(self, wb: _Workbook, ordered: list[tuple[_Ref, bool]], data_ds: list[str]) -> str:
+        """The FROM clause when the sheet's fields span several tables of one datasource's join tree, else ""."""
+        ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
+        if ds is None or not ds.join_steps or not all(on for _, _, on in ds.join_steps):
+            return ""
+        by_rel = self.ds_models.get(ds.uid) or {}
+        used = {id(m) for r, _ in ordered if r.ds is ds and r.field and (m := self._field_model(ds, r.field)) is not None}
+        if len(used) < 2 or any(m.rel.kind != "table" for m in by_rel.values()):
+            return ""
+        first = next(iter(ds.relations))
+        if first not in by_rel or any(name not in by_rel for _, name, _ in ds.join_steps):
+            return ""
+        sql = f"{by_rel[first].sm.table} as {_ident(first)}"
+        for kind, name, on in ds.join_steps:
+            sql += f"\n{kind.lower()} join {by_rel[name].sm.table} as {_ident(name)} on {on}"
+        return sql
 
     def _filter(self, wb: _Workbook, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, Any] | None:
         refs = self._shelf(wb, flt.get("column"), deps)
@@ -1852,7 +1917,10 @@ class _Parser:
         try:
             _, expr, is_agg, *_ = self._column(r)
         except _NoSQL as exc:
-            return ("todo", f"filter on [{label}] not applied: {exc}")
+            bound = self._param_bound(wb, r)
+            if bound is None:
+                return ("todo", f"filter on [{label}] not applied: {exc}")
+            expr, is_agg = bound, False
         if r.field is not None:
             meta["filters"][(r.dsname, r.field.local)] = label
         cls = flt.get("class", "")
@@ -1876,6 +1944,7 @@ class _Parser:
                 return ("top", (f"{osql} {'desc' if end != 'bottom' else 'asc'}", count))
             lits = [_member_sql(v) for v in vals]
             nonnull = [x for x in lits if x is not None]
+            expr = _paren(expr)
             parts = []
             if nonnull:
                 op = "=" if len(nonnull) == 1 else "in"
@@ -1908,6 +1977,32 @@ class _Parser:
             return ("todo", f"relative date filter on [{label}] (last {flt.get('period-type-v2') or flt.get('period-type', '')} "
                             f"{flt.get('first-period', '')}..{flt.get('last-period', '')}): pin a fixed window or add :date_from/:date_to binds")
         return ("todo", f"{cls} filter on [{label}] not translated")
+
+    def _param_bound(self, wb: _Workbook, r: _Ref) -> str | None:
+        """A row-level calc whose only blocker is a workbook parameter, with each [Parameters].[x] as a :x bind (tile SQL only)."""
+        f, ds = r.field, r.ds
+        if f is None or ds is None or not f.formula or r.deriv not in ("none", ""):
+            return None
+        clean, code, bare, _ = scan_formula(f.formula)
+        if not PARAM_REF.search(code) or LOD.search(bare) or "{" in bare or TABLE_CALC.search(bare) or USER_FN.search(bare):
+            return None
+        binds: dict[str, str] = {}
+
+        def bind(m: re.Match) -> str:
+            p = wb.params.get(_unesc(m.group(1)))
+            if p is None:
+                raise ax.FormulaError(f"unknown parameter [{m.group(1)}]")
+            key = f"unshackle_param_{len(binds)}"
+            binds[key] = ":" + _name(p.label)
+            return f"[{key}]"
+
+        try:
+            node = parse_formula(PARAM_REF.sub(bind, clean))
+            if _has_agg(node):
+                return None
+            return ax.strip_outer(ax.to_sql(node, lambda n: binds[n] if n in binds else self._row_ref(ds, n)))
+        except ax.FormulaError:
+            return None
 
     def _members(self, gf: ET.Element) -> tuple[str, Any] | None:
         fn = gf.get("function", "")
@@ -2084,6 +2179,9 @@ class _Parser:
                 calcs.append(f"- **{f.label}** ({ds.caption}): `{one}`{desc}{note}")
             elif f.description:
                 described.append(f"- **{f.label}** ({ds.caption}): {f.description}")
+        for name, path in ds.hierarchies:
+            labels = [ds.fields[x].label if x in ds.fields else x for x in path]
+            described.append(f"- **{name}** ({ds.caption}): hierarchy {' > '.join(labels)}")
         return calcs, described
 
     def _knowledge(self, wb: _Workbook) -> None:

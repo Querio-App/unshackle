@@ -21,6 +21,8 @@ description: Use when migrating Tableau (Server or Cloud workbooks, published da
 - **Metadata API** (calculated fields, lineage, custom SQL): on by default on
   Tableau Cloud; on Server run `tsm maintenance metadata-services enable` (then
   wait for the backfill). If it is off, extract still works; lineage is missing.
+  New or republished workbooks show up there after a delay (seconds to minutes);
+  extract lists any it could not find in `_errors.json`: re-run it later.
 - Auth: `POST /api/{ver}/auth/signin` with `personalAccessTokenName/Secret` and
   `site.contentUrl` -> `X-Tableau-Auth: <token>`; paths use the returned site **id**.
   unshackle signs out at the end. PATs expire after 15 days unused (Cloud admins can
@@ -81,7 +83,7 @@ unshackle build tableau
 | --- | --- |
 | `<relation type='table' table='[schema].[table]'>` | `catalog/` table + semantic model (one per table; the same table in many workbooks merges into one) |
 | `<metadata-record class='column'>` | catalog column (`remote-name`, `local-type`); primary entity guessed from `row_id` / `id` / `<table>_id` / the only `*_id` column |
-| numeric column (`role='measure'`) | measure with the column's default aggregation (`Sum`, `Avg`, `CountD`...) + simple metric |
+| numeric column (`role='measure'`) | measure with the column's default aggregation (`Sum`, `Avg`, `CountD`...; `<column aggregation='Avg'>` set in Desktop wins over the metadata record) + simple metric |
 | date / datetime column | time dimension (`day`); the only one is `agg_time_dimension`; with several, a TODO lists them |
 | `SUM([Sales])`, `AVG`, `COUNT`, `COUNTD`, `MIN`, `MAX`, `MEDIAN` | measure + simple metric (`COUNTD` -> `count_distinct`) |
 | `SUM(IF [Returned] = 'Yes' THEN 1 ELSE 0 END)`, `SUM(ZN([x]))` | measure whose `expr` is the row expression |
@@ -95,7 +97,7 @@ unshackle build tableau
 | dashboard | notebook; zones grouped into layout rows by `y` (cell order, `unshackle.layout` metadata); text zones -> markdown cells; quick filter / parameter zones -> parameters cell |
 | worksheets on no dashboard | one extra notebook `<workbook>-sheets` |
 | group Read / Write on a workbook | Cedar `view` / `edit` on each of its notebooks (`Deny` -> `forbid`) |
-| calc formulas, `<desc>`, parameters, sheet captions, lineage | `knowledge/<workbook>-glossary.md` |
+| calc formulas, `<desc>`, parameters, hierarchies (`<drill-path>`), sheet captions, lineage | `knowledge/<workbook>-glossary.md` |
 
 Names: snake_case of the caption (`Profit Ratio` -> `profit_ratio`, `Margin %` ->
 `margin_pct`). A caption used in two tables becomes `<model>_<name>`
@@ -121,9 +123,16 @@ Shelf refs look like `[federated.x].[sum:Sales:qk]` = derivation : field : type
 horizontal bar (x = measure, y = dimension). Extra dimension -> color; `lod` ->
 detail; first tooltip field -> tooltip. SQL is `select <dims>, <aggs> from
 <schema.table> [where] group by ... order by ...` (custom SQL datasources become a
-`with custom_sql as (...)` CTE). Categorical filters (include / exclude / null) ->
-`where` (or `having` on aggregates), range filters -> `>=`/`<=`, Top N by an
-aggregate -> `order by ... desc limit N`. Aliases follow Tableau's display names
+`with custom_sql as (...)` CTE). A sheet using fields from several tables of a joined
+datasource gets the datasource's joins (`from public.orders as orders inner join
+public.products as products on ...`, physical columns qualified); a sheet on one table
+queries only that table, as Tableau does when it culls joins (with inner joins and
+missing keys Tableau may drop rows that SQL keeps: check). Categorical filters
+(include / exclude / null) -> `where` (or `having` on aggregates), range filters ->
+`>=`/`<=`, Top N by an aggregate -> `order by ... desc limit N`. A filter on a row-level
+calc that compares with a parameter (`[Revenue] >= [Parameters].[Min Order Value]`)
+becomes `where (post_discount_revenue >= :min_order_value) = true`, bound from the
+parameters cell. Aliases follow Tableau's display names
 (`Month of Order Date` -> `month_of_order_date`); `source_config.columns` maps each
 alias back to its Tableau name.
 
@@ -262,9 +271,17 @@ keys: [category, month of order date]
 - The CSV reflects the view's **saved** filters and the API user's user filters: use
   a PAT of a user who sees all rows, or compare row-filtered tiles as that user.
 - Re-export with filters: `GET .../views/{id}/data?vf_Region=West&vf_Order%20Date=2025`
-  (filter by field caption); `maxAge=1` bypasses the cache. Pin dates on both sides.
-- Dates come back formatted (`January 2025`), numbers unformatted; format the target
-  column the same way or cast both.
+  (filter by field caption; `vf_<parameter caption>=1000` sets a parameter);
+  `maxAge=1` bypasses the cache. Pin dates on both sides. Send `Accept: */*`: Tableau
+  Cloud answers `406` to `Accept: text/csv`.
+- Dates and numbers come back formatted (`January 2025`, `"3,794,927.81"`); `unshackle
+  verify` reads both, so alias the target columns to the CSV header and compare.
+- Headers are display names: an uncaptioned field keeps its column name
+  (`paper_type`), a captioned one its caption (`Revenue`), a date part reads `Month of
+  purchased_at`.
+- For calculated fields no sheet shows, query the published datasource with VizQL Data
+  Service (`POST /api/v1/vizql-data-service/query-datasource`, fields by caption,
+  `"function": "SUM"`): it returns JSON rows to save as a CSV.
 - Measure Names/Values views export long format (`Measure Names`, `Measure Values`
   columns).
 - Extract-based views show the data as of the last refresh; compare after a refresh.
@@ -293,7 +310,8 @@ keys: [category, month of order date]
   definition of a calc name wins; a later, different formula under the same caption is
   skipped with a warning in the report: reconcile them (rename one) before migrating.
 - Joined datasources (`<relation type='join'>`, new object-model relationships) give
-  one model per table; add foreign entities by hand (unshackle warns).
+  one model per table; add foreign entities by hand (unshackle warns). Join columns with
+  the same name get a table suffix in Tableau (`[account_id (accounts)]`).
 - Local names vs captions: formulas reference local names (`[Calculation_123]`,
   sometimes `[sales]` with caption `Sales`); unshackle resolves both.
 - Hidden fields are still migrated (they may feed calcs); `hidden: true` columns get

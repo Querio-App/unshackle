@@ -1,0 +1,79 @@
+{
+  "permissions": {
+    "granteeCapabilities": [
+      {
+        "capabilities": {
+          "capability": [
+            {
+              "mode": "Allow",
+              "name": "ViewUnderlyingData"
+            },
+            {
+              "mode": "Allow",
+              "name": "ShareView"
+            },
+            {
+              "mode": "Allow",
+              "name": "Connect"
+            },
+            {
+              "mode": "Allow",
+              "name": "ExportImage"
+            },
+            {
+              "mode": "Allow",
+              "name": "ViewComments"
+            },
+            {
+              "mode": "Allow",
+              "name": "ExportData"
+            },
+            {
+              "mode": "Allow",
+              "name": "Filter"
+            },
+            {
+              "mode": "Allow",
+              "name": "AddComment"
+            },
+            {
+              "mode": "Allow",
+              "name": "Read"
+            }
+          ]
+        },
+        "group": {
+          "id": "00000000-0000-4000-8000-000000000006"
+        }
+      },
+      {
+        "capabilities": {
+          "capability": [
+            {
+              "mode": "Deny",
+              "name": "Write"
+            },
+            {
+              "mode": "Allow",
+              "name": "ExportData"
+            },
+            {
+              "mode": "Allow",
+              "name": "Read"
+            }
+          ]
+        },
+        "group": {
+          "id": "00000000-0000-4000-8000-000000000007"
+        }
+      }
+    ],
+    "workbook": {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "name": "Dunder Mifflin Sales",
+      "owner": {
+        "id": "00000000-0000-4000-8000-000000000003"
+      }
+    }
+  }
+}

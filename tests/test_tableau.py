@@ -258,7 +258,9 @@ def test_published_datasource_link(tmp_path: Path):
   <datasources>
     <datasource caption='Sales Targets' inline='true' name='sqlproxy.1abc' version='18.1'>
       <repository-location id='SalesTargets' path='/t/acme/datasources' revision='1.2' site='acme' />
-      <connection channel='https' class='sqlproxy' dbname='SalesTargets' port='443' server='tableau.acme.com' server-ds-friendly-name='Sales Targets' />
+      <connection channel='https' class='sqlproxy' dbname='SalesTargets' port='443' server='tableau.acme.com' server-ds-friendly-name='Sales Targets'>
+        <relation name='sqlproxy' table='[sqlproxy]' type='table' />
+      </connection>
       <column caption='Target (k)' datatype='real' name='[Calculation_77]' role='measure' type='quantitative'>
         <calculation class='tableau' formula='SUM([Target]) / 1000' />
       </column>
@@ -372,6 +374,8 @@ def _mock_tableau(calls: list[str], gql: list[dict]):
         if path == f"{base}/views/a1000000-0000-4000-8000-000000000001/data":
             return httpx.Response(404, json={"error": {"summary": "Not found"}})
         if path.startswith(f"{base}/views/") and path.endswith("/data"):
+            if req.headers.get("accept") == "text/csv":  # what Tableau Cloud does
+                return httpx.Response(406, text="<!doctype html><title>HTTP Status 406 – Not Acceptable</title>")
             return httpx.Response(200, content=b"Category,Sales\r\nFurniture,10\r\n", headers={"content-type": "text/csv"})
         return httpx.Response(404, json={"error": {"summary": f"no route {path}"}})
 
@@ -450,3 +454,22 @@ def test_same_table_in_two_workbooks_merges(tmp_path: Path):
     assert [m.name for m in b.metrics].count("total_sales") == 1
     assert any("different formula" in w.message and "Total Sales" in w.item for w in b.warnings)
     assert {d.slug for d in b.dashboards} >= {"executive-overview", "wb-copy-executive-overview"}
+
+
+def test_workbook_missing_from_metadata_api_is_reported(tmp_path: Path, monkeypatch):
+    """Tableau indexes new content with a delay: a workbook the Metadata API doesn't know yet is an error, not silence."""
+    monkeypatch.setenv("TABLEAU_PAT_NAME", "unshackle")
+    monkeypatch.setenv("TABLEAU_PAT_SECRET", "s3cret")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/auth/signin"):
+            return httpx.Response(200, json={"credentials": {"token": "tok", "site": {"id": SITE, "contentUrl": "acme"}, "user": {"id": "u1"}}})
+        body = json.loads(req.content)
+        key = "customSQLTablesConnection" if "customSQLTablesConnection" in body["query"] else "workbooksConnection"
+        return httpx.Response(200, json={"data": {key: {"nodes": [], "pageInfo": {"hasNextPage": False}}}})
+
+    client = Client("https://tableau.acme.com", per_minute=0, max_retries=0, transport=httpx.MockTransport(handler))
+    src = TableauSource(client=client, server_url="https://tableau.acme.com", site="acme")
+    errors: list[dict] = []
+    src._metadata(RawStore(tmp_path, "tableau"), ["wb-new"], errors)
+    assert [e["item"] for e in errors] == ["metadata wb-new"] and "indexed with a delay" in errors[0]["error"]

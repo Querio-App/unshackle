@@ -1,0 +1,29 @@
+[
+  {
+    "contentUrl": "DunderMifflinSales_17927655589810",
+    "createdAt": "2026-10-23T14:25:58Z",
+    "dataAccelerationConfig": {},
+    "defaultViewId": "00000000-0000-4000-8000-000000000009",
+    "encryptExtracts": "false",
+    "id": "00000000-0000-4000-8000-000000000008",
+    "location": {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "name": "unshackle-live",
+      "type": "Project"
+    },
+    "name": "Dunder Mifflin Sales",
+    "owner": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "user@example.com"
+    },
+    "project": {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "name": "unshackle-live"
+    },
+    "showTabs": "false",
+    "size": "1",
+    "tags": {},
+    "updatedAt": "2026-10-23T14:25:59Z",
+    "webpageUrl": "https://example.online.tableau.com/#/site/example/workbooks/3061448"
+  }
+]

@@ -23,6 +23,15 @@
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.
 - The README banner no longer draws window buttons.
+- Tableau: live test against a Tableau Cloud site (`tests/live/test_tableau_live.py`) and
+  its real export as fixtures (`tests/fixtures/tableau_live`). Fixed: view CSVs failed
+  with `406` (`Accept: text/csv`); workbooks on a published data source got no tables
+  (the `sqlproxy` stub relation was read as a table); calcs of a published data source
+  were translated twice (duplicate LOD queries and row filters); a column's default
+  aggregation set in Desktop was ignored (`Avg` became `SUM`); join clauses were listed
+  twice. Sheets over several joined tables now get the join in their SQL, filters on a
+  calc that compares with a parameter bind `:parameter`, hierarchies go to the glossary,
+  and workbooks the Metadata API hasn't indexed yet are reported.
 - Power BI: tested on published projects (`tests/fixtures/powerbi_real`). DAX `VAR`/`RETURN`
   is inlined where that keeps its meaning; `CALCULATE` without filters and the `+ 0` idiom
   translate; Direct Lake tables map to their SQL endpoint table; thin reports find a model
