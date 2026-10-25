@@ -241,6 +241,30 @@ datasource's Extract settings and add those filters to the semantic model or SQL
 Extracts from Excel/CSV/Google Sheets have no warehouse table: unshackle warns; point the
 model at the warehouse copy of that data.
 
+**Warehouse dialect**: tile, LOD model and semantic SQL is written for the warehouse type
+in `unshackle.toml` (`[datasources.warehouse] type`), else the one the connection classes
+report (none for extract-only or mixed connections: set the type and re-run `build`).
+Postgres, Redshift, Snowflake, Databricks, BigQuery and DuckDB read it as written except:
+BigQuery and Databricks quote names with backticks and escape strings with `\`; BigQuery
+writes `date_trunc(x, month)` (`week(monday)` for weeks) and maps `extract` parts to the
+Postgres numbering (`dow` 0 = Sunday, ISO weeks); Databricks `dow` is shifted the same way;
+Postgres `median(x)` is `percentile_cont(0.5) within group (order by x)`; Redshift averages
+and divides in double precision (`avg(cast(x as double precision))`,
+`cast(1.0 as double precision) * a / nullif(b, 0)`), because its `avg()` of integers and
+decimals and its decimal division truncate to the input's scale, while Tableau computes
+them as floats. `is not distinct from` (NULL keys of FIXED/EXCLUDE joins) runs on all of
+them. A tile BigQuery has no form for (`MEDIAN`) keeps its SQL with a TODO. Custom SQL is
+left as written. Other warehouse types (SQL Server, Oracle, MySQL) get a warning: translate
+the SQL by hand.
+
+**Initial SQL and connection options**: a connection's `one-time-sql` (Initial SQL) and
+`odbc-connect-string-extras` are not part of the migrated SQL. unshackle warns per data
+source and copies them into the knowledge file. Run the Initial SQL in the warehouse session
+before the migrated queries (a connect hook on the notebooks' engine, dbt `on-run-start`) or
+fold its effect into the models; `[TableauServerUser]`, `[WorkbookName]` and parameters in it
+are filled in by Tableau per viewer, so replace them (per-user filtering:
+`skills/translate-permissions`).
+
 ## Permissions and user filters
 
 - `permissions/<wb>.json` grants -> Cedar per notebook of the workbook. Read ->
