@@ -5,30 +5,31 @@ SET DateFormat='YYYY-MM-DD';
 SET TimestampFormat='YYYY-MM-DD hh:mm:ss[.fff]';
 SET vCompletedStatus = 'COMPLETED';
 
-///$tab Section
+///$tab Access
 Section Access;
 LOAD * INLINE [
 ACCESS, USERID, PAPER_TYPE, OMIT
-ADMIN, DM\MICHAEL, *,
-USER, DM\JIM, COPY,
-USER, DM\JIM, PRINTER,
-USER, DM\DWIGHT, MULTIPURPOSE, order_contact_email
-USER, DM\DWIGHT, KRAFT ROLL, order_contact_email
-USER, DM\ANGELA, CARDSTOCK,
+ADMIN, DM\DAVID, *,
+USER, DM\PAM, COPY,
+USER, DM\PAM, PRINTER,
+USER, DM\STANLEY, MULTIPURPOSE, order_contact_email
+USER, DM\STANLEY, KRAFT ROLL, order_contact_email
+USER, DM\OSCAR, CARDSTOCK,
 ];
 Section Application;
 
-///$tab Data
+///$tab Tables
 accounts:
 LOAD account_id, account_name, business_size, payment_cycle, account_manager
-FROM [lib://unshackle-live:DataFiles/accounts.parquet] (parquet);
+FROM [lib://Sales:DataFiles/accounts.parquet] (parquet);
 
+// PAPER_TYPE is the Section Access reduction field: upper case, as Section Access requires.
 products:
 LOAD *, Upper(paper_type) AS PAPER_TYPE
-FROM [lib://unshackle-live:DataFiles/products.parquet] (parquet);
+FROM [lib://Sales:DataFiles/products.parquet] (parquet);
 
 orders:
-LOAD * FROM [lib://unshackle-live:DataFiles/orders.parquet] (parquet);
+LOAD * FROM [lib://Sales:DataFiles/orders.parquet] (parquet);
 
 shippings:
 LOAD
@@ -43,14 +44,15 @@ LOAD
     shipping_mode,
     shipping_cost,
     days_to_ship
-FROM [lib://unshackle-live:DataFiles/shippings.parquet] (parquet);
+FROM [lib://Sales:DataFiles/shippings.parquet] (parquet);
 
 reviews:
 LOAD review_id, order_id, review, reviewed_at, rating,
     If(rating >= 4, 'Positive', 'Negative') AS sentiment
-FROM [lib://unshackle-live:DataFiles/reviews.parquet] (parquet);
+FROM [lib://Sales:DataFiles/reviews.parquet] (parquet);
 
-// Monthly targets: 10% over what was sold, aggregated in the script.
+///$tab Targets
+// A target per month: what was sold that month plus 10%.
 monthly_targets:
 LOAD MonthStart(purchased_at) AS target_month, Sum(post_discount_revenue) * 1.1 AS revenue_target
 RESIDENT orders

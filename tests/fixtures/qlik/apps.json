@@ -1,13 +1,13 @@
 [
   {
-    "hasSectionAccess": true,
     "id": "00000000-0000-4000-8000-000000000001",
-    "itemViews": {
-      "total": 1,
-      "unique": 1
-    },
-    "lastReloadTime": "2026-10-23T15:25:36.220Z",
     "name": "Dunder Mifflin sales",
-    "spaceId": "000000000000000000000003"
+    "spaceId": "000000000000000000000001",
+    "itemViews": {
+      "total": 12,
+      "unique": 4
+    },
+    "lastReloadTime": "2026-01-15T09:00:00.000Z",
+    "hasSectionAccess": true
   }
 ]
