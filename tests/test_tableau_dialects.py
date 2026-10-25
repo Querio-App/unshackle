@@ -6,6 +6,7 @@ DuckDB (BigQuery and Databricks through sqlglot) and return the same rows as the
 keys: Tableau groups NULL dimension values as one mark, and a FIXED or EXCLUDE value joins to it (IS NOT DISTINCT FROM).
 """
 
+import re
 import shutil
 from pathlib import Path
 
@@ -84,7 +85,7 @@ def test_configured_type_applies_when_the_export_names_none(tmp_path: Path):
 
 
 @pytest.mark.parametrize("warehouse", sorted(SQLGLOT))
-@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published"])
+@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates"])
 def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, warehouse: str):
     sqlglot = pytest.importorskip("sqlglot")
     b = _parse(tmp_path, fixture, warehouse)
@@ -98,7 +99,7 @@ def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, war
     assert not [t.todo for d in b.dashboards for t in d.tiles if f"{warehouse}:" in (t.todo or "")]
 
 
-@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published"])
+@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates"])
 @pytest.mark.parametrize("null_cycle", [False, True])
 def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_cycle: bool):
     sqlglot = pytest.importorskip("sqlglot")
@@ -110,6 +111,8 @@ def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_c
         for name, sql in forms.items():
             if warehouse != "redshift":  # DuckDB reads the Redshift form as written
                 sql = sqlglot.transpile(sql.replace(":min_order_value", "500.0"), read=warehouse, write="duckdb")[0]
+                # their day of week is 1 on Sunday (BigQuery DAYOFWEEK, Databricks DOW); sqlglot keeps the name, and DuckDB's is 0
+                sql = re.sub(r"EXTRACT\(DAYOFWEEK FROM ([\w.]+)\)", r"(EXTRACT(DOW FROM \1) + 1)", sql)
             assert _same(_rows(con, sql), _rows(con, base[name])), (warehouse, name)
 
 

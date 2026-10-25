@@ -1,0 +1,245 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <datasources>
+    <datasource caption='Orders' inline='true' name='federated.dates0demo' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='warehouse' name='postgres.dates'>
+            <connection class='postgres' dbname='dunder_mifflin' server='warehouse.example.com' author-locale='en_US' />
+          </named-connection>
+        </named-connections>
+        <relation connection='postgres.dates' name='orders' table='[public].[orders]' type='table' />
+        <metadata-records>
+          <metadata-record class='column'><remote-name>order_id</remote-name><local-name>[order_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>purchased_at</remote-name><local-name>[purchased_at]</local-name><parent-name>[orders]</parent-name><local-type>date</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>cancelled_at</remote-name><local-name>[cancelled_at]</local-name><parent-name>[orders]</parent-name><local-type>date</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>quantity</remote-name><local-name>[quantity]</local-name><parent-name>[orders]</parent-name><local-type>integer</local-type></metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+    <column caption="Week" datatype="date" name="[Calculation_100]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATETRUNC(&apos;week&apos;, [purchased_at])" />
+    </column>
+    <column caption="Monday Week" datatype="date" name="[Calculation_101]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATETRUNC(&apos;week&apos;, [purchased_at], &apos;monday&apos;)" />
+    </column>
+    <column caption="Quarter Start" datatype="date" name="[Calculation_102]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATETRUNC(&apos;quarter&apos;, [purchased_at])" />
+    </column>
+    <column caption="Year Start" datatype="date" name="[Calculation_103]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATETRUNC(&apos;year&apos;, [purchased_at])" />
+    </column>
+    <column caption="Week Number" datatype="integer" name="[Calculation_104]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATEPART(&apos;week&apos;, [purchased_at])" />
+    </column>
+    <column caption="Weekday" datatype="integer" name="[Calculation_105]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATEPART(&apos;weekday&apos;, [purchased_at])" />
+    </column>
+    <column caption="Weekday Monday Arg" datatype="integer" name="[Calculation_106]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATEPART(&apos;weekday&apos;, [purchased_at], &apos;monday&apos;)" />
+    </column>
+    <column caption="Monday Week Number" datatype="integer" name="[Calculation_107]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATEPART(&apos;week&apos;, [purchased_at], &apos;monday&apos;)" />
+    </column>
+    <column caption="Quarter Number" datatype="integer" name="[Calculation_108]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATEPART(&apos;quarter&apos;, [purchased_at])" />
+    </column>
+    <column caption="Year Number" datatype="integer" name="[Calculation_109]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATEPART(&apos;year&apos;, [purchased_at])" />
+    </column>
+    <column caption="Weekday Name" datatype="string" name="[Calculation_110]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATENAME(&apos;weekday&apos;, [purchased_at])" />
+    </column>
+    <column caption="Week Name" datatype="string" name="[Calculation_111]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATENAME(&apos;week&apos;, [purchased_at])" />
+    </column>
+    <column caption="Quarter Name" datatype="string" name="[Calculation_112]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATENAME(&apos;quarter&apos;, [purchased_at])" />
+    </column>
+    <column caption="Year Name" datatype="string" name="[Calculation_113]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATENAME(&apos;year&apos;, [purchased_at])" />
+    </column>
+    <column caption="Cancelled Week" datatype="date" name="[Calculation_114]" role="dimension" type="ordinal">
+      <calculation class="tableau" formula="DATETRUNC(&apos;week&apos;, [cancelled_at])" />
+    </column>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name="twk">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[twk:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="tqr">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[tqr:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="tyr">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[tyr:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="wk">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[wk:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="qr">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[qr:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="yr">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[yr:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="wd">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[wd:purchased_at:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Week">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_100:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Monday Week">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_101:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Quarter Start">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_102:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Year Start">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_103:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Week Number">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_104:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Weekday">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_105:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Weekday Monday Arg">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_106:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Monday Week Number">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_107:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Quarter Number">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_108:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Year Number">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_109:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Weekday Name">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_110:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Week Name">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_111:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Quarter Name">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_112:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Year Name">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_113:ok]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Cancelled Week">
+      <table>
+        <view><datasources><datasource caption="Orders" name="federated.dates0demo" /></datasources></view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.dates0demo].[sum:quantity:qk]</rows>
+        <cols>[federated.dates0demo].[none:Calculation_114:ok]</cols>
+      </table>
+    </worksheet>
+  </worksheets>
+</workbook>

@@ -49,52 +49,14 @@ CALCS = {
 SHELF = ["twk", "tqr", "tyr", "wk", "qr", "yr", "wd"]
 
 
+FIXTURE = Path(__file__).parent / "fixtures" / "tableau_dates" / "workbooks" / "d7000000-0000-4000-8000-000000000001.twb"
+
+
 def _workbook(date_options: str = "", locale: str = "") -> str:
-    cols = "\n".join(
-        f"""    <column caption="{cap}" datatype="{'date' if 'DATETRUNC' in f else 'string' if 'DATENAME' in f else 'integer'}" name="[Calculation_{i}]" role="dimension" type="ordinal">
-      <calculation class="tableau" formula="{f.replace("'", '&apos;')}" />
-    </column>"""
-        for i, (cap, f) in enumerate(CALCS.items(), 100)
-    )
-    sheets = "\n".join(
-        f"""    <worksheet name="{d}">
-      <table>
-        <view><datasources><datasource caption="Orders" name="{DS}" /></datasources></view>
-        <panes><pane><mark class="Bar" /></pane></panes>
-        <rows>[{DS}].[sum:quantity:qk]</rows>
-        <cols>[{DS}].[{d}:purchased_at:ok]</cols>
-      </table>
-    </worksheet>"""
-        for d in SHELF
-    )
-    loc = f" author-locale='{locale}'" if locale else ""
-    return f"""<?xml version='1.0' encoding='utf-8' ?>
-<workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
-  <datasources>
-    <datasource caption='Orders' inline='true' name='{DS}' version='18.1'>
-      <connection class='federated'>
-        <named-connections>
-          <named-connection caption='warehouse' name='postgres.dates'>
-            <connection class='postgres' dbname='dunder_mifflin' server='warehouse.example.com'{loc} />
-          </named-connection>
-        </named-connections>
-        <relation connection='postgres.dates' name='orders' table='[public].[orders]' type='table' />
-        <metadata-records>
-          <metadata-record class='column'><remote-name>order_id</remote-name><local-name>[order_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
-          <metadata-record class='column'><remote-name>purchased_at</remote-name><local-name>[purchased_at]</local-name><parent-name>[orders]</parent-name><local-type>date</local-type></metadata-record>
-          <metadata-record class='column'><remote-name>cancelled_at</remote-name><local-name>[cancelled_at]</local-name><parent-name>[orders]</parent-name><local-type>date</local-type></metadata-record>
-          <metadata-record class='column'><remote-name>quantity</remote-name><local-name>[quantity]</local-name><parent-name>[orders]</parent-name><local-type>integer</local-type></metadata-record>
-        </metadata-records>
-      </connection>
-      <aliases enabled='yes' />
-{cols}
-      {date_options}
-    </datasource>
-  </datasources>
-  <worksheets>
-{sheets}
-  </worksheets>
-</workbook>"""
+    """The fixture (no Date Properties, an en_US author locale) with other Date Properties or locale. Its sheets: sum of
+    quantity by each shelf date (named after the derivation) and by each calc (named after the calc)."""
+    xml = FIXTURE.read_text().replace(" author-locale='en_US'", f" author-locale='{locale}'" if locale else "")
+    return xml.replace("    </datasource>\n  </datasources>", f"      {date_options}\n    </datasource>\n  </datasources>")
 
 
 VARIANTS = {
@@ -303,3 +265,13 @@ def test_sigma_and_thoughtspot_weeks_unchanged():
     assert ax.ROW_FUNCS["start_of_week"][0] == "date_trunc('week', {0})"
     node = ax.Call("datetrunc", [ax.Str("week"), ax.Ref("d")])
     assert ax.to_sql(node, lambda r: r) == "date_trunc('week', d)"
+
+
+def test_week_sql_per_dialect():
+    from unshackle.sources import _dialect as dialect
+
+    sql = "select cast(x as varchar) as n, date_trunc('week', x + interval '1 day') - interval '1 day' as w from t"
+    for w in ("postgres", "redshift", "snowflake", "duckdb"):
+        assert dialect.render(sql, w) == sql
+    assert dialect.render(sql, "bigquery") == "select cast(x as string) as n, date_trunc(x + interval 1 day, week(monday)) - interval 1 day as w from t"
+    assert dialect.render(sql, "databricks") == "select cast(x as string) as n, date_trunc('week', x + interval 1 day) - interval 1 day as w from t"

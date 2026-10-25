@@ -834,8 +834,14 @@ def date_sql(fn: str, unit: str, x: str, opts: _DateOpts, start: str = "", fisca
             return None if f == 1 else _year_start(x, f)
         raise ax.FormulaError(f"DATETRUNC('{unit}') is not translated")
     if unit == "week":
-        # whole weeks between the week of the year's first day and x's week; both are week starts, so the division is exact
-        part = (f"cast((cast({_week_trunc(x, start)} as date) - cast({_week_trunc(_year_start(x, f), start)} as date)) / 7 + 1 as integer)")
+        if f != 1:  # a fiscal field (TODO hints only): whole weeks between the fiscal year's first week and x's week
+            part = f"cast((cast({_week_trunc(x, start)} as date) - cast({_week_trunc(_year_start(x, f), start)} as date)) / 7 + 1 as integer)"
+        else:
+            # day of year minus x's place in its week (0 on the Week start) is the day of year of its week's first day
+            # (<= 0 in week 1): floor((doy - place + 5) / 7) + 1, with no date arithmetic
+            s = WEEKDAYS.index(start)
+            place = f"extract(dow from {x})" if not s else f"(extract(dow from {x}) + {7 - s} - 7 * floor((extract(dow from {x}) + {7 - s}) / 7))"
+            part = f"cast(floor((extract(doy from {x}) - {place} + 5) / 7) + 1 as integer)"
     elif unit == "weekday":
         dow = f"extract(dow from {x})"
         if fn == "name":

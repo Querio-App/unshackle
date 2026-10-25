@@ -141,10 +141,11 @@ setting is the one that counts; the copy is used only when the `.tds` wasn't ext
   with the calendar ones (January, April, July or October).
 - The ISO-8601 week-based calendar stays TODO for week and weekday results.
 
-The SQL is Postgres/DuckDB. Snowflake and Redshift take the same `interval` forms (Snowflake's
-`date_trunc('week')` follows `WEEK_START`, Monday by default, so the shift still applies);
-BigQuery writes `DATE_TRUNC(d, WEEK(SUNDAY))` and `INTERVAL 1 DAY`, and `EXTRACT(DAYOFWEEK ...)`
-is already Tableau's weekday there (1 on Sunday; Postgres `dow` is 0).
+The week SQL shifts Monday weeks (`date_trunc('week')` in Postgres, DuckDB, Redshift, Databricks,
+BigQuery's `week(monday)`) with `interval` arithmetic; for BigQuery and Databricks the dialect
+pass writes `interval 1 day`. Snowflake's `date_trunc('week')` follows the session's `WEEK_START`:
+the SQL assumes the default (Monday); check it if the account sets another. Weekday numbers use
+`extract(dow) + 1` (mapped per dialect).
 
 | Mark | Tile |
 | --- | --- |
