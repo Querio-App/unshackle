@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Literal, get_args, get_origin, get_type_hints
 
-Mark = Literal["bar", "line", "area", "point", "arc", "rect", "text", "table", "unknown"]
+Mark = Literal["bar", "line", "area", "point", "arc", "rect", "geoshape", "text", "table", "unknown"]
 FieldType = Literal["quantitative", "nominal", "temporal", "ordinal"]
 
 
@@ -131,7 +131,7 @@ class Encoding:
     aggregate: str = ""
     title: str = ""
     time_unit: str = ""
-    sort: str = ""  # Vega-Lite sort ("ascending", "-y", ...); "none" keeps the rows' order (the SQL's ORDER BY)
+    sort: str | list[str] = ""  # Vega-Lite sort ("ascending", "-y", ...), or the values in order; "none" keeps the rows' order (the SQL's ORDER BY)
     format: str = ""  # d3-format number format for axes, labels and tooltips (",.2f", "$,.0f", ".1%")
 
 
@@ -172,6 +172,8 @@ class Tile:
     layers: list[Layer] = field(default_factory=list)
     compose: Literal["layer", "dual_axis", "hconcat", "vconcat"] = "layer"
     references: list[Reference] = field(default_factory=list)
+    # A map (mark "geoshape"): the shapes ("us_states" or "countries") whose names are looked up in the `key` encoding's field.
+    geo: str = ""
 
 
 @dataclass

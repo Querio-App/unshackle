@@ -162,9 +162,10 @@ def test_parse_dashboards_and_tiles(tmp_path: Path):
     assert "where filter_rank <= 10" in bar.sql and "where (customer_name in (select member from filter_1)" in bar.sql
 
     geo = t["sales-map"]
-    assert (geo.kind, geo.mark) == ("unknown", "unknown") and "map" in geo.todo and "parameter" not in geo.todo
+    assert (geo.kind, geo.mark, geo.geo) == ("chart", "geoshape", "us_states") and "parameter" not in geo.todo
+    assert "US state names" in geo.todo  # names are looked up in the map's shapes
     assert "(cast(1.0 as double precision) * sum(profit) / nullif(sum(sales), 0)) > :target_margin as above_target" in geo.sql  # the parameter as a bind
-    assert geo.encodings["detail"].field == "state" and "state" in geo.sql
+    assert geo.encodings["key"].field == "state" and geo.encodings["color"].field == "sales" and "state" in geo.sql
 
     sheets = d["Superstore Sales sheets"]
     st = {x.id: x for x in sheets.tiles}
@@ -230,7 +231,7 @@ def test_build_and_run_notebook(tmp_path: Path):
     path = tmp_path / "notebooks/executive-overview.ipynb"
     out = run_notebook(path, url=f"duckdb:///{db}")
     html = out.read_text()
-    assert "vegaEmbed" in html and "Sales Map" in html  # the map tile shows its data instead of a chart
+    assert "vegaEmbed" in html and "Sales Map" in html and "us-atlas" in html  # the map tile draws the states
     params, sqls = notebook_queries(path)
     trend = query(sqls["sales_trend"], params, url=f"duckdb:///{db}")
     assert list(trend.columns) == ["month_of_order_date", "category", "sales"] and len(trend) == 2

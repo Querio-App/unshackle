@@ -31,6 +31,8 @@ CHANNEL_CLASS = {
     "row": "alt.Row",
     "column": "alt.Column",
     "facet": "alt.Facet",
+    "latitude": "alt.Latitude",
+    "longitude": "alt.Longitude",
 }
 FACETS = ("row", "column", "facet")
 SORTABLE = ("x", "y", "color", "xOffset", "theta", "row", "column", "facet")
@@ -44,7 +46,13 @@ MARK_METHOD = {
     "point": "mark_point()",
     "arc": "mark_arc()",
     "rect": "mark_rect()",
+    "geoshape": "mark_geoshape()",
     "text": "mark_text()",
+}
+# Map shapes (TopoJSON with a `name` property per feature): (URL, feature collection, projection)
+GEO_SHAPES = {
+    "us_states": ("https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-10m.json", "states", "albersUsa"),
+    "countries": ("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json", "countries", "equalEarth"),
 }
 RESERVED = {"alt", "pd", "os", "text", "engine", "create_engine", "base"}
 PARAM = re.compile(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)")
@@ -116,7 +124,29 @@ def _mark(tile: Tile, mark: str) -> str | None:
     return method
 
 
+def _map_chart(ident: str, tile: Tile) -> list[str]:
+    """Shapes looked up by name: each feature takes the row whose `key` field equals its name."""
+    url, feature, projection = GEO_SHAPES[tile.geo]
+    encodings = dict(tile.encodings)
+    key = encodings.pop("key")
+    args, notes = _encode_args(encodings)
+    lines = _todos(notes) + [
+        f"{ident}_chart = (",
+        f"    alt.Chart(alt.topo_feature({_py_str(url)}, {_py_str(feature)}))",
+        "    .mark_geoshape(stroke='white')",
+        f"    .transform_lookup(lookup='properties.name', from_=alt.LookupData({ident}, {_py_str(key.field)}, list({ident}.columns)))",
+    ]
+    if args:
+        lines += ["    .encode(", *[f"        {a}," for a in args], "    )"]
+    lines.append(f"    .project(type={_py_str(projection)})")
+    if tile.title:
+        lines.append(f"    .properties(title={_py_str(tile.title)})")
+    return lines + [")", f"{ident}_chart"]
+
+
 def _single_chart(ident: str, tile: Tile) -> list[str]:
+    if tile.mark == "geoshape" and tile.geo in GEO_SHAPES and "key" in tile.encodings:
+        return _map_chart(ident, tile)
     mark = _mark(tile, tile.mark)
     args, notes = _encode_args(tile.encodings)
     if not mark:
@@ -125,6 +155,8 @@ def _single_chart(ident: str, tile: Tile) -> list[str]:
     lines = _todos(notes) + [f"{ident}_chart = (", f"    alt.Chart({ident})", f"    .{mark}"]
     if args:
         lines += ["    .encode(", *[f"        {a}," for a in args], "    )"]
+    if "latitude" in tile.encodings and "longitude" in tile.encodings:
+        lines.append("    .project(type='mercator')")
     if tile.title:
         lines.append(f"    .properties(title={_py_str(tile.title)})")
     return lines + [")", f"{ident}_chart"]
@@ -161,8 +193,9 @@ def _composed_chart(ident: str, tile: Tile) -> list[str]:
         else:
             lines.append(f"        base.{mark},")
     lines.append("    )")
-    if tile.compose == "dual_axis":
-        lines.append("    .resolve_scale(y='independent')")
+    if tile.compose == "dual_axis":  # on the layers' measure axis (columns: x)
+        axis = "x" if all("x" in layer.encodings and "y" not in layer.encodings for layer in tile.layers) else "y"
+        lines.append(f"    .resolve_scale({axis}='independent')")
     if facets:
         fargs, more = _encode_args(facets)
         notes += more
