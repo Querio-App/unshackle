@@ -155,4 +155,4 @@ Shackleton's Incredible Voyage* (1959). For Frank Hurley's photographs from the
 expedition, see *The Endurance Photographs*, published with the Royal Geographical
 Society.
 
-Apache 2.0. Made by [Querio](https://querio.ai).
+Apache 2.0. Built and maintained by [Querio](https://querio.ai).
