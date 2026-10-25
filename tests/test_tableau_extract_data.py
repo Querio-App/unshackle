@@ -356,3 +356,45 @@ def test_types_the_author_changed(tmp_path: Path):
     assert [r[0] for r in rows] == [1.5, None, None, 2.0]
     assert dict(map(tuple, copy["columns"])) == {"duration": "DOUBLE", "requested_on": "DATE"}
     assert copy["notes"] == ["requested_on: Tableau shows it as string, the extract holds DATE; kept as DATE, convert it as Tableau does"]
+
+
+def test_live_files_follow_the_extract_rules(tmp_path: Path):
+    """Tableau answers a live Excel or text file from a hidden extract, so its calcs follow the extract (Hyper) rules:
+    ROUND(x) rounds halves away from zero, as `round(x, 0)`; on a live warehouse it is the warehouse's round()."""
+    raw = tmp_path / "migration" / "raw" / "tableau"
+    shutil.copytree(FIX, raw)
+    twb = raw / "workbooks" / f"{WB}.twb"
+    calc = ("<column caption='Size Band' datatype='real' name='[Calculation_8001]' role='measure' type='quantitative'>"
+            "<calculation class='tableau' formula='ROUND([business_size] / 3)' /></column>")
+    twb.write_text(twb.read_text().replace("    </datasource>\n    <datasource caption='Products'", f"      {calc}\n    </datasource>\n    <datasource caption='Products'"))
+    b = get_source("tableau").parse(RawStore(tmp_path, "tableau"))
+    accounts = next(sm for sm in b.semantic_models if sm.name == "accounts")
+    (band,) = [m for m in accounts.measures if m.name == "size_band"]
+    assert band.expr == "round(1.0 * business_size / nullif(3, 0), 0)"
+    for cls in ("excel-direct", "textscan", "hyper"):
+        conn = (f"<connection class='federated'><named-connections><named-connection name='c'><connection class='{cls}' filename='f' />"
+                "</named-connection></named-connections><relation connection='c' name='t' table='[t$]' type='table' /></connection>")
+        assert _ds(f"<datasource name='d'>{conn}</datasource>").extract, cls
+    assert not _ds("<datasource name='d'><connection class='postgres' dbname='db'><relation name='t' table='[public].[t]' type='table' />"
+                   "</connection></datasource>").extract
+
+
+def test_init_keeps_copied_data_out_of_git(tmp_path: Path):
+    from unshackle import scaffold
+
+    fresh = tmp_path / "fresh"
+    scaffold.init(fresh)
+    assert "/data/tableau/" in (fresh / ".gitignore").read_text().splitlines()
+
+    custom = tmp_path / "custom"  # [paths] data in unshackle.toml
+    custom.mkdir()
+    (custom / "unshackle.toml").write_text('[paths]\ndata = "warehouse_files"\n')
+    (custom / ".gitignore").write_text(".unshackle/\n")
+    scaffold.init(custom)
+    assert (custom / ".gitignore").read_text().splitlines() == [".unshackle/", "/warehouse_files/tableau/"]
+
+    # the data belongs in Git: the line is removed after copying, and init doesn't add it back
+    (fresh / ".gitignore").write_text((fresh / ".gitignore").read_text().replace("/data/tableau/\n", ""))
+    (fresh / "data" / "tableau").mkdir(parents=True)
+    scaffold.init(fresh)
+    assert "/data/tableau/" not in (fresh / ".gitignore").read_text()

@@ -307,8 +307,9 @@ Tableau formulas render with Tableau's rules (`sources/_tableau_calc.py`, its fu
 | `REGEXP_MATCH`, `REGEXP_EXTRACT`, `REGEXP_REPLACE` | live: the warehouse's regular expressions, as Tableau sends them (`~`, `regexp_match(...)[1]`, `regexp_replace(..., 'g')`); extract (ICU): translated only for patterns every engine reads alike (no `\d \w \s \b`, classes or `(?`; for EXTRACT/REPLACE no alternation and one quantifier), `$1` becomes `\1`; REGEXP_EXTRACT needs one capturing group |
 
 Strings compare with the connection's collation. On a live connection that is the
-warehouse's, so the SQL does what Tableau did. An extract (`<extract enabled='true'>`)
-compares by code point (case- and accent-sensitive, `'B' < 'a'`), maps `ß` to `SS` and a
+warehouse's, so the SQL does what Tableau did. An extract (`<extract enabled='true'>`), a
+Hyper file (`hyper`) and a live Excel or text file (`excel-direct`, `textscan`: Tableau answers
+them from a hidden extract) follow the extract rows of the table above, and compare by code point (case- and accent-sensitive, `'B' < 'a'`), maps `ß` to `SS` and a
 final `Σ` to `ς` in UPPER/LOWER, and also trims tabs: when a calc relies on these, the
 semantic model's description says so (also: LTRIM/RTRIM trim tabs, `.` in an extract's regular
 expression matches line breaks). Check string calcs on an extract against a
@@ -427,8 +428,10 @@ openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
   Parquet files); for another warehouse, load each file into `tableau_data.<table>` (Snowflake
   `COPY INTO`, `bq load`, Redshift `COPY`, a dbt seed or dbt-duckdb external source), replace
   the file with that step and set the warehouse type. Also decide how the tables are refreshed
-  (Tableau refreshed the extract) and whether the data belongs in Git before committing
-  `data/`.
+  (Tableau refreshed the extract).
+- The Parquet files are the customer's data, so `unshackle init` adds `/data/tableau/` (the
+  configured `[paths] data`) to `.gitignore` before any is copied. Remove that line if the data
+  belongs in Git; running `init` again doesn't add it back once the folder exists.
 
 Without `--with-data` they keep their file's table and the report says to copy the data or
 point the model at a warehouse table holding it.

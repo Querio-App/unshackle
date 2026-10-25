@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from unshackle.target.layout import DBT_OVERRIDES, DEFAULT_PATHS
+from unshackle.target.layout import DBT_OVERRIDES, DEFAULT_PATHS, Layout
 
 CONFIG_TOML = """\
 # unshackle output config. Set source credentials in environment variables, not here.
@@ -99,12 +99,19 @@ def init(repo: Path, name: str | None = None, update_skills: bool = False) -> li
     skills = copy_skills(repo, update=update_skills)
     if skills:
         created.append(f"migration/skills/ and migration/spec/ ({len(skills)} files)")
+    # data copied out of a BI tool (`extract --with-data`) is the customer's data, not definitions: kept out of Git. Added
+    # only before any is copied, so a removed line (the data belongs in Git) stays removed when init runs again.
+    data = Layout.load(repo).paths["data"].strip("/")
+    data_line = f"/{data}/tableau/"
     gi = repo / ".gitignore"
     if gi.exists():
         text = gi.read_text()
-        if ".unshackle/" not in text:
-            gi.write_text(text.rstrip() + "\n" + GITIGNORE)
+        add = GITIGNORE if ".unshackle/" not in text else ""
+        if data_line not in text.splitlines() and not (repo / data / "tableau").exists():
+            add += data_line + "\n"
+        if add:
+            gi.write_text(text.rstrip() + "\n" + add)
             created.append(".gitignore (updated)")
     else:
-        create(".gitignore", GITIGNORE)
+        create(".gitignore", GITIGNORE + data_line + "\n")
     return created

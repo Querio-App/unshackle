@@ -111,6 +111,8 @@ KNOWN_DERIV = set(DERIV_AGG) | set(TRUNC) | set(PART) | {"none", "usr", "attr", 
 MARKS = {"bar": ("chart", "bar"), "line": ("chart", "line"), "area": ("chart", "area"), "circle": ("chart", "point"), "shape": ("chart", "point"), "pie": ("chart", "arc"), "ganttbar": ("chart", "bar")}
 MAP_MARKS = {"multipolygon", "polygon", "map", "filledmap", "density"}
 FILE_CONNECTIONS = {"excel-direct", "textscan", "hyper", "dataengine", "ogrdirect", "stat-direct", "google-sheets", "excel", "msaccess"}
+# connections Tableau answers in Hyper even without <extract>: Hyper files, and live Excel and text files (from a hidden extract)
+HYPER_ENGINE = {"hyper", "dataengine", "excel-direct", "textscan"}
 # connectors to files in cloud storage and to applications: no warehouse table holds what Tableau reads
 APP_CONNECTION = re.compile(r"salesforce|google|servicenow|marketo|eloqua|quickbooks|webdata|odata|sharepoint|onedrive|dropbox|box|drive|sheet|file", re.I)
 COLUMN_TYPE = {"integer": "integer", "real": "number", "string": "string", "date": "date", "datetime": "timestamp", "boolean": "boolean"}
@@ -1431,7 +1433,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                 connection_class=(cattrs.get("class", "") if cattrs is not None else ""),
             )
             ds.relations.setdefault(r.name, r)
-            ds.extract = ds.extract or r.connection_class in ("hyper", "dataengine")  # a Hyper file: Tableau computes in Hyper too
+            ds.extract = ds.extract or r.connection_class in HYPER_ENGINE
         for mr in conn.iter("metadata-record"):
             if mr.get("class") != "column":
                 continue
@@ -1889,7 +1891,8 @@ class _Parser:
                   f"read {tdata.SCHEMA}.<table>). Another warehouse: load each Parquet file into {tdata.SCHEMA}.<table> (Snowflake "
                   "COPY INTO, BigQuery `bq load`, Redshift COPY, Databricks COPY INTO, or a dbt seed / dbt-duckdb external source), "
                   "replace this file with that load step and set the warehouse type in unshackle.toml. Decide how they are refreshed "
-                  "(Tableau refreshed the extract) and whether the data belongs in Git before committing the data folder"),
+                  "(Tableau refreshed the extract). The Parquet files hold the data itself, so `unshackle init` lists their folder in "
+                  ".gitignore; remove that line only if the data belongs in Git"),
         ))
 
     def _assign_models(self, ds: TDatasource) -> None:
