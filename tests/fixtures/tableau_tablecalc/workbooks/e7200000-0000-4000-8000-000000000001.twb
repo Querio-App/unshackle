@@ -101,6 +101,7 @@
     <column caption="Orders Share" datatype='real' name='[Calculation_7243]' role='measure' type='quantitative'><calculation class='tableau' formula="COUNT([order_id]) / TOTAL(COUNT([order_id]))"></calculation></column>
     <column caption="Ratio Running" datatype='real' name='[Calculation_7244]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]) / SUM([quantity]))"></calculation></column>
     <column caption="Ratio Share" datatype='real' name='[Calculation_7245]' role='measure' type='quantitative'><calculation class='tableau' formula="(SUM([post_discount_revenue]) / SUM([quantity])) / TOTAL(SUM([post_discount_revenue]) / SUM([quantity]))"></calculation></column>
+    <column caption="Revenue Rank" datatype='integer' name='[Calculation_7246]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([post_discount_revenue]))"></calculation></column>
     <column caption="Running of Running" datatype='real' name='[Calculation_7240]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM([Calculation_7211])"></calculation></column>
     <column caption="Previous Value" datatype='real' name='[Calculation_7241]' role='measure' type='quantitative'><calculation class='tableau' formula="PREVIOUS_VALUE(0) + SUM([post_discount_revenue])"></calculation></column>
     <column caption="Script Value" datatype='real' name='[Calculation_7242]' role='measure' type='quantitative'><calculation class='tableau' formula="SCRIPT_REAL('return _arg1', SUM([post_discount_revenue]))"></calculation></column>
@@ -988,6 +989,48 @@
         <cols>[federated.tablecalc0].[max:quantity:qk]</cols>
       </table>
       <simple-id uuid='{344D3B13-E9F7-5864-99C2-3E44AA775553}' />
+    </worksheet>
+    <worksheet name="Top Managers per Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Revenue Rank" datatype='integer' name='[Calculation_7246]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([post_discount_revenue]))"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_7246]' derivation='User' name='[usr:Calculation_7246:qk]' pivot='key' type='quantitative'><table-calc ordering-type="ColumnInPane" /></column-instance></datasource-dependencies>
+          <filter class='quantitative' column="[federated.tablecalc0].[usr:Calculation_7246:qk]" included-values='in-range'><min>1</min><max>3</max></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[usr:Calculation_7246:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:account_manager:nk])</rows>
+        <cols>[federated.tablecalc0].[sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{D3C4D80F-83B9-57E7-9BB0-7220A69FD0A7}' />
+    </worksheet>
+    <worksheet name="Top Managers per Status Filter Only">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Revenue Rank" datatype='integer' name='[Calculation_7246]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([post_discount_revenue]))"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_7246]' derivation='User' name='[usr:Calculation_7246:qk]' pivot='key' type='quantitative'><table-calc ordering-type="ColumnInPane" /></column-instance></datasource-dependencies>
+          <filter class='quantitative' column="[federated.tablecalc0].[usr:Calculation_7246:qk]" included-values='in-range'><max>2</max></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:account_manager:nk])</rows>
+        <cols>[federated.tablecalc0].[sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{A69DD6C7-D7E4-5076-92DA-5614B417CB15}' />
     </worksheet>
     <worksheet name="At the Level">
       <table>

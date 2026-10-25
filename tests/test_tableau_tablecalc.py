@@ -233,6 +233,35 @@ def test_sheet_sorts_order_the_calculation(tiles, con, rows):
     assert df.paper_type.tolist() == m.sort_values("by_revenue").paper_type.tolist()
 
 
+def test_restart_every_year(tiles, con, rows):
+    """Specific Dimensions YEAR then QUARTER, Restart Every YEAR (`level-break` on the quarter)."""
+    m = marks(rows, ["year", "quarter"], revenue=(REV, "sum"))
+    check(_run(con, tiles["Restart Every Year"]), m, {"year_of_purchased_at": "year", "quarter_of_purchased_at": "quarter"},
+          {"running_sum_of_revenue": along(m, ["year"], ["quarter"], running(REV))})
+
+
+def test_top_n_filter_comes_before_the_table_calcs(tiles, con, rows):
+    """A top N filter is a dimension filter: the running total runs over the top three paper types only."""
+    m = marks(rows, ["paper_type"], revenue=(REV, "sum")).nlargest(3, REV).reset_index(drop=True)
+    check(_run(con, tiles["Top Paper Types Running"]), m, {"paper_type": "paper_type"},
+          {"running_sum_of_revenue": along(m, [], ["paper_type"], running(REV))})
+
+
+def test_filter_on_a_table_calc_keeps_top_n_per_pane(tiles, con, rows):
+    """A range filter on RANK() addressed Pane (down): the top managers of each status. Tableau ranks all the marks, then
+    hides the others; a calculation only on the Filters shelf is not a column of the tile."""
+    m = marks(rows, ["status", "account_manager"], revenue=(REV, "sum"))
+    m["rank"] = m.groupby("status")[REV].rank(method="min", ascending=False)
+    keys = {"status": "status", "account_manager": "account_manager"}
+    top3 = m[m["rank"] <= 3].reset_index(drop=True)
+    check(_run(con, tiles["Top Managers per Status"]), top3, keys, {"revenue": top3[REV], "revenue_rank": top3["rank"]})
+    top2 = m[m["rank"] <= 2].reset_index(drop=True)
+    tile = tiles["Top Managers per Status Filter Only"]
+    df = _run(con, tile)
+    assert list(df.columns) == ["status", "account_manager", "revenue"] and "revenue_rank" not in tile.source_config["columns"]
+    check(df, top2, keys, {"revenue": top2[REV]})
+
+
 # ------------------------------------------------------------------ quick table calcs
 
 
@@ -391,7 +420,6 @@ def test_window_variants(tiles, con, rows):
     ("At the Level", ["At the level"]),
     ("Custom Sort Addressing", ["custom sort"]),
     ("Moving Average Null If Incomplete", ["NullIfIncomplete"]),
-    ("Top Paper Types Running", ["Top N"]),
     ("Running with Color in Grid", ["pads the crosstab"]),
 ])
 def test_untranslated_table_calcs_stay_todo(tiles, sheet, says):

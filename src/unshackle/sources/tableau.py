@@ -23,9 +23,9 @@ from connection relations + metadata-records, joins -> relationships, plain aggr
 row-level calcs (IF/CASE/ZN/IFNULL/DATETRUNC/arithmetic), ratios of aggregates, FIXED
 LODs -> SQL models at their grain, user filters -> row filters, worksheets -> tiles with
 generated SQL (FIXED, INCLUDE and EXCLUDE LODs included), dashboards -> notebooks with
-layout. Table calcs, parameters, sets, groups, bins, blending, ATTR and the LODs the
-tiles can't place keep their Tableau formula with a TODO(unshackle) for the agent
-(skills/source-tableau, skills/translate-metrics).
+layout, table calcs -> window SQL over a sheet's marks. Parameters, sets, groups, bins,
+blending, ATTR and the LODs and table calcs the tiles can't place keep their Tableau formula
+with a TODO(unshackle) for the agent (skills/source-tableau, skills/translate-metrics).
 """
 
 from __future__ import annotations
@@ -4015,7 +4015,7 @@ class _Parser:
                 todos.append("custom SQL uses Tableau parameters (<[Parameters].[x]>): replace them with :binds from the parameters cell")
         elif not columns and not problems:
             todos.append("no fields on the sheet's shelves")
-        columns = [c for c in columns if c[0].instance not in self._sheet.hidden]  # type: ignore[union-attr]  # table calcs only filtered on
+        columns = [c for c in columns if c[0].instance not in self._sheet.hidden]  # type: ignore[union-attr]  # only on the Filters shelf
         by_inst = {c[0].instance: c for c in columns}
         styles = {(rule.get("element", ""), _unesc(ref[0][1])): fm.get("value", "")  # the sheet's Format > Numbers
                   for rule in table.findall("style/style-rule") for fm in rule.findall("format")
