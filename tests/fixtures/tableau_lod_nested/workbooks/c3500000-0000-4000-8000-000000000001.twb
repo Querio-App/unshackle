@@ -1,0 +1,364 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <datasources>
+    <datasource caption='Orders' inline='true' name='federated.lod0nested' version='18.1'>
+      <connection class='federated'>
+        <named-connections><named-connection caption='warehouse.example.com' name='postgres.lod0nested'>
+          <connection class='postgres' dbname='dunder_mifflin' port='5432' server='warehouse.example.com' username='reader' />
+        </named-connection></named-connections>
+        <relation join='inner' type='join'>
+          <clause type='join'><expression op='='><expression op='[orders].[product_id]' /><expression op='[products].[product_id]' /></expression></clause>
+          <relation join='inner' type='join'>
+            <clause type='join'><expression op='='><expression op='[orders].[account_id]' /><expression op='[accounts].[account_id]' /></expression></clause>
+            <relation connection='postgres.lod0nested' name='orders' table='[public].[orders]' type='table' />
+            <relation connection='postgres.lod0nested' name='accounts' table='[public].[accounts]' type='table' />
+          </relation>
+          <relation connection='postgres.lod0nested' name='products' table='[public].[products]' type='table' />
+        </relation>
+        <cols>
+          <map key='[order_id]' value='[orders].[order_id]' />
+          <map key='[status]' value='[orders].[status]' />
+          <map key='[purchased_at]' value='[orders].[purchased_at]' />
+          <map key='[product_id]' value='[orders].[product_id]' />
+          <map key='[quantity]' value='[orders].[quantity]' />
+          <map key='[discount_percentage]' value='[orders].[discount_percentage]' />
+          <map key='[post_discount_revenue]' value='[orders].[post_discount_revenue]' />
+          <map key='[account_id]' value='[orders].[account_id]' />
+          <map key='[account_id (accounts)]' value='[accounts].[account_id]' />
+          <map key='[payment_cycle]' value='[accounts].[payment_cycle]' />
+          <map key='[account_manager]' value='[accounts].[account_manager]' />
+          <map key='[product_id (products)]' value='[products].[product_id]' />
+          <map key='[paper_type]' value='[products].[paper_type]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'><remote-name>order_id</remote-name><local-name>[order_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>status</remote-name><local-name>[status]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>purchased_at</remote-name><local-name>[purchased_at]</local-name><parent-name>[orders]</parent-name><local-type>date</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>product_id</remote-name><local-name>[product_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>quantity</remote-name><local-name>[quantity]</local-name><parent-name>[orders]</parent-name><local-type>integer</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>discount_percentage</remote-name><local-name>[discount_percentage]</local-name><parent-name>[orders]</parent-name><local-type>real</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>post_discount_revenue</remote-name><local-name>[post_discount_revenue]</local-name><parent-name>[orders]</parent-name><local-type>real</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>account_id</remote-name><local-name>[account_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>account_id</remote-name><local-name>[account_id (accounts)]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>payment_cycle</remote-name><local-name>[payment_cycle]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>account_manager</remote-name><local-name>[account_manager]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>product_id</remote-name><local-name>[product_id (products)]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
+          <metadata-record class='column'><remote-name>paper_type</remote-name><local-name>[paper_type]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+      <column caption="Cycle Avg Account Revenue" datatype='real' name='[Calculation_3501]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})}" /></column>
+      <column caption="Account Revenue per Paper" datatype='real' name='[Calculation_3502]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_id], [paper_type] : SUM({EXCLUDE [paper_type] : SUM([post_discount_revenue])})}" /></column>
+      <column caption="Manager Max Account Paper Qty" datatype='integer' name='[Calculation_3503]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_manager] : MAX({INCLUDE [account_id], [paper_type] : SUM([quantity])})}" /></column>
+      <column caption="Cycle Orders" datatype='integer' name='[Calculation_3504]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : SUM({EXCLUDE [paper_type] : COUNTD([order_id])})}" /></column>
+      <column caption="Cycle Avg Account Paper Revenue" datatype='real' name='[Calculation_3505]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({FIXED [account_id], [paper_type] : SUM([post_discount_revenue])})}" /></column>
+      <column caption="Cycle Avg Account Revenue k" datatype='real' name='[Calculation_3506]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})} / 1000" /></column>
+      <column caption="Cycle Band" datatype='string' name='[Calculation_3507]' role='dimension' type='nominal'><calculation class='tableau' formula='IF {FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})} &gt;= 1700000 THEN "High" ELSE "Low" END' /></column>
+      <column caption="Revenue vs Cycle Avg" datatype='real' name='[Calculation_3508]' role='measure' type='quantitative'><calculation class='tableau' formula="SUM([post_discount_revenue]) / SUM({FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})})" /></column>
+      <column caption="Manager Accounts" datatype='integer' name='[Calculation_3509]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_manager] : COUNT({INCLUDE [account_id] : SUM([quantity])})}" /></column>
+      <column caption="Cycle Grand Qty" datatype='integer' name='[Calculation_3510]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : SUM({EXCLUDE [payment_cycle] : SUM([quantity])})}" /></column>
+      <column caption="Discount Tier" datatype='string' name='[Calculation_3511]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [discount_percentage] &gt;= 10 THEN "High" ELSEIF [discount_percentage] &gt; 0 THEN "Low" END' /></column>
+      <column caption="Tier Avg Account Qty" datatype='real' name='[Calculation_3512]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [Calculation_3511] : AVG({INCLUDE [account_id] : SUM([quantity])})}" /></column>
+      <date-options start-of-week='sunday' />
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name="include_in_fixed">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Avg Account Revenue" datatype='real' name='[Calculation_3501]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3501]' derivation='Avg' name='[avg:Calculation_3501:qk]' pivot='key' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3501:qk]' /><text column='[federated.lod0nested].[sum:post_discount_revenue:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="exclude_in_fixed">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Account Revenue per Paper" datatype='real' name='[Calculation_3502]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_id], [paper_type] : SUM({EXCLUDE [paper_type] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3502]' derivation='Avg' name='[avg:Calculation_3502:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_3502]' derivation='Sum' name='[sum:Calculation_3502:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3502:qk]' /><text column='[federated.lod0nested].[sum:Calculation_3502:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:paper_type:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="exclude_in_fixed_mgr_paper">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Account Revenue per Paper" datatype='real' name='[Calculation_3502]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_id], [paper_type] : SUM({EXCLUDE [paper_type] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3502]' derivation='Min' name='[min:Calculation_3502:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[min:Calculation_3502:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:account_manager:nk] / [federated.lod0nested].[none:paper_type:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="include_two_dims">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Manager Max Account Paper Qty" datatype='integer' name='[Calculation_3503]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_manager] : MAX({INCLUDE [account_id], [paper_type] : SUM([quantity])})}" /></column><column caption="Manager Accounts" datatype='integer' name='[Calculation_3509]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_manager] : COUNT({INCLUDE [account_id] : SUM([quantity])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3503]' derivation='Max' name='[max:Calculation_3503:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_3509]' derivation='Avg' name='[avg:Calculation_3509:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[max:Calculation_3503:qk]' /><text column='[federated.lod0nested].[avg:Calculation_3509:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:account_manager:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="exclude_absent_dim">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Orders" datatype='integer' name='[Calculation_3504]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : SUM({EXCLUDE [paper_type] : COUNTD([order_id])})}" /></column><column datatype='string' name='[order_id]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3504]' derivation='Sum' name='[sum:Calculation_3504:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[sum:Calculation_3504:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="fixed_two_dims_nested">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Avg Account Paper Revenue" datatype='real' name='[Calculation_3505]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({FIXED [account_id], [paper_type] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3505]' derivation='Avg' name='[avg:Calculation_3505:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3505:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="nested_row_expr">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Avg Account Revenue k" datatype='real' name='[Calculation_3506]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})} / 1000" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3506]' derivation='Sum' name='[sum:Calculation_3506:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[sum:Calculation_3506:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:status:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="nested_band">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Band" datatype='string' name='[Calculation_3507]' role='dimension' type='nominal'><calculation class='tableau' formula='IF {FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})} &gt;= 1700000 THEN "High" ELSE "Low" END' /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[Calculation_3507]' derivation='None' name='[none:Calculation_3507:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[sum:post_discount_revenue:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:Calculation_3507:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="nested_ratio">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Revenue vs Cycle Avg" datatype='real' name='[Calculation_3508]' role='measure' type='quantitative'><calculation class='tableau' formula="SUM([post_discount_revenue]) / SUM({FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})})" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3508]' derivation='User' name='[usr:Calculation_3508:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[usr:Calculation_3508:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:status:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="exclude_all_dims">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Grand Qty" datatype='integer' name='[Calculation_3510]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : SUM({EXCLUDE [payment_cycle] : SUM([quantity])})}" /></column><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3510]' derivation='Sum' name='[sum:Calculation_3510:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[sum:Calculation_3510:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="include_null_key">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Discount Tier" datatype='string' name='[Calculation_3511]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [discount_percentage] &gt;= 10 THEN "High" ELSEIF [discount_percentage] &gt; 0 THEN "Low" END' /></column><column caption="Tier Avg Account Qty" datatype='real' name='[Calculation_3512]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [Calculation_3511] : AVG({INCLUDE [account_id] : SUM([quantity])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='real' name='[discount_percentage]' role='measure' type='quantitative' /><column datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[Calculation_3511]' derivation='None' name='[none:Calculation_3511:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3512]' derivation='Avg' name='[avg:Calculation_3512:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3512:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:Calculation_3511:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="include_dim_filter">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Avg Account Revenue" datatype='real' name='[Calculation_3501]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3501]' derivation='Avg' name='[avg:Calculation_3501:qk]' pivot='key' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          <filter class='categorical' column='[federated.lod0nested].[none:status:nk]'><groupfilter function='member' level='[none:status:nk]' member='"COMPLETED"' user:ui-enumeration='inclusive' /></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3501:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="include_context">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Cycle Avg Account Revenue" datatype='real' name='[Calculation_3501]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({INCLUDE [account_id] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3501]' derivation='Avg' name='[avg:Calculation_3501:qk]' pivot='key' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          <filter class='categorical' context='true' column='[federated.lod0nested].[none:status:nk]'><groupfilter function='member' level='[none:status:nk]' member='"COMPLETED"' user:ui-enumeration='inclusive' /></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3501:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="exclude_context">
+      <table>
+        <view>
+          <datasources><datasource caption="Orders" name='federated.lod0nested' /></datasources>
+          <datasource-dependencies datasource='federated.lod0nested'><column caption="Account Revenue per Paper" datatype='real' name='[Calculation_3502]' role='measure' type='quantitative'><calculation class='tableau' formula="{FIXED [account_id], [paper_type] : SUM({EXCLUDE [paper_type] : SUM([post_discount_revenue])})}" /></column><column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_3502]' derivation='Avg' name='[avg:Calculation_3502:qk]' pivot='key' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          <filter class='categorical' context='true' column='[federated.lod0nested].[none:status:nk]'><groupfilter function='member' level='[none:status:nk]' member='"COMPLETED"' user:ui-enumeration='inclusive' /></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.lod0nested].[avg:Calculation_3502:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.lod0nested].[none:paper_type:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+  </worksheets>
+  <windows source-height='30'>
+    <window class='worksheet' name="include_in_fixed" />
+    <window class='worksheet' name="exclude_in_fixed" />
+    <window class='worksheet' name="exclude_in_fixed_mgr_paper" />
+    <window class='worksheet' name="include_two_dims" />
+    <window class='worksheet' name="exclude_absent_dim" />
+    <window class='worksheet' name="fixed_two_dims_nested" />
+    <window class='worksheet' name="nested_row_expr" />
+    <window class='worksheet' name="nested_band" />
+    <window class='worksheet' name="nested_ratio" />
+    <window class='worksheet' name="exclude_all_dims" />
+    <window class='worksheet' name="include_null_key" />
+    <window class='worksheet' name="include_dim_filter" />
+    <window class='worksheet' name="include_context" />
+    <window class='worksheet' name="exclude_context" />
+  </windows>
+</workbook>

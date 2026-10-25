@@ -1042,7 +1042,12 @@ def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
 
 
 def _nested_fixed(text: str) -> tuple[str, str, str] | None:
-    """{FIXED [a] : AGG({FIXED [b] : ...})} -> (agg, the inner FIXED's text, its body); None for any other nesting."""
+    """{FIXED [a] : AGG({FIXED [b] : ...})} -> (agg, the inner FIXED's text, its body); None for any other nesting.
+
+    An INCLUDE or EXCLUDE inside a FIXED takes its dimensions from the FIXED around it, not from the view (Tableau's
+    nested LOD rule): {INCLUDE [b] : x} there is {FIXED [a], [b] : x}, and {EXCLUDE [a] : x} inside {FIXED [a], [b] : ...}
+    is {FIXED [b] : x}. The inner text returned is that FIXED. Excluding every outer dimension (a table-scoped value) is
+    None."""
     m = LOD_PARTS.fullmatch(text)
     if m is None or m.group(1).upper() != "FIXED":
         return None
@@ -1052,9 +1057,41 @@ def _nested_fixed(text: str) -> tuple[str, str, str] | None:
     inner = body.group(2).strip()
     spans = lod_spans(inner)
     im = LOD_PARTS.fullmatch(inner)
-    if spans != [(0, len(inner), False)] or im is None or im.group(1).upper() != "FIXED":
+    if spans != [(0, len(inner), False)] or im is None:
         return None
+    kind = im.group(1).upper()
+    if kind != "FIXED":
+        outer = [_unesc(d) for d in BRACKETED.findall(m.group(2))]
+        own = [_unesc(d) for d in BRACKETED.findall(im.group(2))]
+        dims = list(dict.fromkeys(outer + own)) if kind == "INCLUDE" else [d for d in outer if d not in own]
+        if not dims:
+            return None
+        inner = "{FIXED " + ", ".join(_fref(d) for d in dims) + " : " + im.group(3).strip() + "}"
     return body.group(1).lower(), inner, im.group(3)
+
+
+def _nested_todo(text: str) -> str:
+    """The TODO for a nested LOD that tiles don't compute."""
+    m = LOD_PARTS.fullmatch(text)
+    body = re.fullmatch(r"\s*\w+\s*\((.*)\)\s*", m.group(3), re.S) if m is not None and m.group(1).upper() == "FIXED" else None
+    im = LOD_PARTS.fullmatch(body.group(1).strip()) if body is not None else None
+    if im is not None and im.group(1).upper() == "EXCLUDE":
+        return ("nested LOD: an EXCLUDE of every dimension of the FIXED around it is one value over all of the datasource's rows "
+                "(Tableau repeats it for each FIXED key); compute it as a one-row subquery, cross join it to the distinct FIXED "
+                "dimensions and aggregate per FIXED key in the tile SQL; see skills/translate-metrics")
+    return ("nested LOD expressions: tiles compute one aggregate of a FIXED, INCLUDE or EXCLUDE directly inside a FIXED; for "
+            "this nesting compute the inner level as a subquery grouped by its dimensions (an INCLUDE or EXCLUDE takes the "
+            "dimensions of the LOD around it, or the view's at the top), join it to the distinct outer and inner dimension "
+            "values, then aggregate at the outer level in the tile SQL; see skills/translate-metrics")
+
+
+def _nested_rows(keys: list[tuple[str, str]], inner_keys: list[str], rows: str, where: str, inner: "_Lod", inner_sql: str) -> str:
+    """FROM for {FIXED [a] : AGG({FIXED [b] : ...})}: the distinct (a, b) of the rows (`where` applied), each with the inner
+    grain's value for its b. Tableau takes the inner value once per distinct (a, b), then aggregates per a."""
+    domain = ", ".join([f"{s} as {_ident(a)}" for s, a in keys] + [f"{k} as lod_key_{j}" for j, k in enumerate(inner_keys, 1)])
+    on = " and ".join(f"d.lod_key_{j} is not distinct from {inner.name}.{_ident(a)}" for j, (_, a) in enumerate(inner.keys, 1))
+    return (f"(\nselect distinct {domain}\nfrom {rows}{f' where {where}' if where else ''}\n) as d\n"
+            f"left join (\n{inner_sql}\n) as {inner.name} on {on}")
 
 
 def lod_spans(clean: str) -> list[tuple[int, int, bool]]:
@@ -1544,6 +1581,8 @@ class _Lod:
     cols: dict[str, str] = field(default_factory=dict)  # output column -> aggregate SQL
     model: "_Model | None" = None
     where: str = ""  # the datasource's extract and data source filters, which Tableau applies before FIXED LODs
+    # a FIXED around another FIXED: (the inner grain, the outer dimensions as (row SQL, alias), the inner dimensions' row SQL)
+    nest: "tuple[_Lod, list[tuple[str, str]], list[str]] | None" = None
 
     def select(self) -> str:
         items = [sql if sql == _ident(alias) else f"{sql} as {_ident(alias)}" for sql, alias in self.keys]
@@ -3017,8 +3056,9 @@ class _Parser:
                  stack: tuple) -> _Calc | str:
         """LOD expressions in a formula. A formula that is one FIXED LOD becomes a column of the grain's SQL model; FIXED
         LODs inside a formula are replaced by references to their columns (returns the new formula); anything else is TODO."""
-        if any(nested and _nested_fixed(clean[a:b]) is None for a, b, nested in spans):
-            return self._todo(ds, f, model, "nested LOD expressions: build the inner one first (a FIXED grain as a SQL model), then the outer one; see skills/translate-metrics")
+        bad = next((clean[a:b] for a, b, nested in spans if nested and _nested_fixed(clean[a:b]) is None), None)
+        if bad is not None:
+            return self._todo(ds, f, model, _nested_todo(bad))
         kinds = [(m.group(1).upper() if (m := LOD.match(clean[a:b])) else "") for a, b, _ in spans]
         if "" in kinds:
             return self._todo(ds, f, model, "table-scoped LOD ({ AGG(...) } = grand total): a window over all rows (`sum(x) over ()`) in the tile SQL; see skills/translate-metrics")
@@ -3030,7 +3070,11 @@ class _Parser:
             tiles = self._view_lod(ds, f, clean, spans)
             how = ("notebook tiles that show it compute it from the sheet's dimensions" if tiles
                    else "write it as window or grouped-subquery SQL in the notebook tile")
-            return self._todo(ds, f, model, f"Tableau {kind} LOD depends on the view's dimensions, so it can't be a metric: {how}; see skills/translate-metrics")
+            shape = ("group the rows by the view's dimensions plus the INCLUDE dimensions, then aggregate those values per mark"
+                     if kind == "INCLUDE" else "group the rows by the view's dimensions minus the EXCLUDE dimensions, then join "
+                     "that value to each mark")
+            return self._todo(ds, f, model, f"Tableau {kind} LOD depends on the view's dimensions, so it can't be a metric: {how} "
+                                            f"({shape}); see skills/translate-metrics")
         if ds.related:
             tables = self._tables_of(ds, f)
             first = next(iter((self.ds_models.get(ds.uid) or {}).values()), None)
@@ -3101,14 +3145,13 @@ class _Parser:
             self._joined = prev
         if len({a for _, a in keys}) != len(keys):
             raise ax.FormulaError("two FIXED dimensions have the same name")
+        nest = None
         if inner is not None:
             # {FIXED [a] : AGG({FIXED [b] : ...})}: Tableau takes the inner value once per distinct (a, b) of the
             # datasource's rows, then aggregates per a.
             lod_in, col_in = inner
-            domain = ", ".join([f"{s} as {_ident(a)}" for s, a in keys] + [f"{k} as lod_key_{j}" for j, k in enumerate(inner_keys, 1)])
-            on = " and ".join(f"d.lod_key_{j} is not distinct from {lod_in.name}.{_ident(a)}" for j, (_, a) in enumerate(lod_in.keys, 1))
-            from_sql = (f"(\nselect distinct {domain}\nfrom {from_sql}{f' where {where}' if where else ''}\n) as d\n"
-                        f"left join (\n{lod_in.select()}\n) as {lod_in.name} on {on}")
+            nest = (lod_in, keys, inner_keys)
+            from_sql = _nested_rows(keys, inner_keys, from_sql, where, lod_in, lod_in.select())
             keys = [(f"d.{_ident(a)}", a) for _, a in keys]
             where = ""
             agg_sql = AGG_SQL[TABLEAU_AGGS[nested[0]][0]].format(f"{lod_in.name}.{_ident(col_in)}")  # type: ignore[index]
@@ -3124,7 +3167,7 @@ class _Parser:
             name, n = base, 2
             while name in taken:
                 name, n = f"{base}_{n}", n + 1
-            lod = _Lod(name, keys, from_sql, cte, dims, where=where)
+            lod = _Lod(name, keys, from_sql, cte, dims, where=where, nest=nest)
             self.lods[key] = lod
             self.lod_names[name] = lod
             if len(dims) == 1:
@@ -5645,8 +5688,12 @@ class _Parser:
         grouped here over the sheet's own rows (`from_sql`) with the context's predicates, instead of the shared grain."""
         ctx = self._sheet
         assert ctx is not None
+        if lod.nest is not None:  # a FIXED around another: the context filters apply to both, and to the outer one's domain
+            lod_in, keys, inner_keys = lod.nest
+            rows = _nested_rows(keys, inner_keys, from_sql, " and ".join(ctx.context), lod_in, self._context_lod(lod_in, from_sql))
+            return _Lod(lod.name, lod.keys, rows, dims=lod.dims, cols=lod.cols).select()
         if from_sql != lod.from_sql and not from_sql.startswith(lod.from_sql + " as "):
-            raise _NoSQL(f"context filters with the FIXED grain {lod.name} (a nested FIXED or another table): Tableau computes it over "
+            raise _NoSQL(f"context filters with the FIXED grain {lod.name} (on another table): Tableau computes it over "
                          "the rows the context filters leave; add them inside its subqueries in the tile SQL")
         if any(re.search(rf"\b{re.escape(lod.name)}\.", p) for p in ctx.context):
             raise _NoSQL(f"a context filter on a FIXED value of {lod.name}: Tableau computes the grain after the context; write it in the tile SQL")
