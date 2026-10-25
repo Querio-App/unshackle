@@ -1056,6 +1056,28 @@ class TRelation:
 
 
 @dataclass
+class TObject:
+    """A logical table of a data source with relationships (<object-graph>): one physical table or custom SQL, or a join."""
+
+    id: str
+    caption: str
+    relations: list[str] = field(default_factory=list)  # names of the physical relations in it
+    join: bool = False
+
+
+@dataclass
+class TRelationship:
+    """A relationship between two logical tables: ON pairs of field local names (one per logical table, in either order);
+    [] when the clause is not equalities ANDed together. `ends`: attributes of the end points besides object-id
+    (Performance Options), keyed "first" / "second"."""
+
+    first: str  # object ids
+    second: str
+    pairs: list[tuple[str, str]] = field(default_factory=list)
+    ends: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+@dataclass
 class TDatasource:
     uid: str
     name: str
@@ -1082,6 +1104,17 @@ class TDatasource:
     fiscal_start: str = ""
     calendar: str = ""
     locale: str = ""
+    # Relationships (the logical layer, <object-graph>): logical tables by object id, and the relationships between them
+    objects: dict[str, TObject] = field(default_factory=dict)
+    relationships: list[TRelationship] = field(default_factory=list)
+
+    @property
+    def related(self) -> bool:
+        """Several logical tables related by relationships (not one table or one join tree)."""
+        return len(self.objects) > 1
+
+    def object_of(self, relation: str) -> TObject | None:
+        return next((o for o in self.objects.values() if relation in o.relations), None)
 
 
 @dataclass
@@ -1291,7 +1324,51 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         ds.fiscal_start = (opts.get("fiscal-year-start") or "").lower() or ds.fiscal_start
     ds.calendar = (el.findtext("overridable-settings/default-calendar-type") or el.findtext("default-calendar-type") or "").strip()
     ds.locale = locale or next((v for c in el.iter() if (v := c.get("author-locale") or c.get("locale"))), "")
+    _read_object_graph(el, ds)
     return ds
+
+
+def _read_object_graph(el: ET.Element, ds: TDatasource) -> None:
+    """<object-graph> (Tableau 2020.2+): logical tables and the relationships between them. Desktop may write it twice,
+    as `_.fcp.ObjectModelEncapsulateLegacy.true...object-graph` and a legacy copy; the current one wins."""
+    graphs = [c for c in el if _local(c.tag).endswith("object-graph")]
+    graph = next((g for g in graphs if ".true..." in g.tag), graphs[0] if graphs else None)
+    if graph is None:
+        return
+    for obj in graph.iter("object"):
+        oid = obj.get("id", "")
+        props = obj.find("properties")
+        top = next((c for c in (props if props is not None else []) if _local(c.tag).endswith("relation")), None)
+        rels: list[ET.Element] = []
+        stack = [top] if top is not None else []
+        while stack:
+            r = stack.pop()
+            if r.get("type") in ("table", "text"):
+                rels.append(r)
+            stack += [c for c in r if _local(c.tag).endswith("relation")]
+        names = [r.get("name") or (_name_parts(r.get("table", "")) or ["table"])[-1] for r in rels]
+        ds.objects[oid] = TObject(oid, obj.get("caption", "") or oid, names, join=top is not None and top.get("type") == "join")
+    for rs in graph.iter("relationship"):
+        ends = {k: dict(e.attrib) for k in ("first", "second") if (e := rs.find(f"{k}-end-point")) is not None}
+        first, second = (ends.get(k, {}).pop("object-id", "") for k in ("first", "second"))
+        ds.relationships.append(TRelationship(first, second, _field_pairs(rs.find("expression")), {k: v for k, v in ends.items() if v}))
+    if ds.related:
+        # A join inside one logical table was read as if it joined the whole data source; relationships are not joins.
+        ds.joins, ds.join_steps = [], []
+
+
+def _field_pairs(expr: ET.Element | None) -> list[tuple[str, str]]:
+    """Relationship clause -> [(field, field)] (local names) when it is equalities ANDed together, else []."""
+    if expr is None:
+        return []
+    op, kids = expr.get("op", ""), list(expr.findall("expression"))
+    if op == "AND" and len(kids) >= 2:
+        parts = [_field_pairs(k) for k in kids]
+        return [p for ps in parts for p in ps] if all(parts) else []
+    if op == "=" and len(kids) == 2 and all(k.get("op", "").startswith("[") and not list(k) for k in kids):
+        a, b = (_unbracket(k.get("op")) for k in kids)
+        return [(a, b)]
+    return []
 
 
 def _leaf_relations(rel: ET.Element | None, ds: TDatasource) -> list[ET.Element]:
@@ -1499,6 +1576,8 @@ class _Parser:
         ds.relations = dict(target.relations)
         ds.joins = list(target.joins)
         ds.join_steps = list(target.join_steps)
+        ds.objects = dict(target.objects)
+        ds.relationships = list(target.relationships)
         ds.hierarchies = ds.hierarchies or list(target.hierarchies)
         ds.origin = target
         for local, tf in target.fields.items():
@@ -1654,6 +1733,20 @@ class _Parser:
         if f.extra.get("of") and f.extra["of"] in ds.fields:
             return self._field_model(ds, ds.fields[f.extra["of"]], seen | {f.local})
         return next(iter(models.values()))
+
+    def _tables_of(self, ds: TDatasource, f: TField, seen: frozenset[str] = frozenset()) -> set[str]:
+        """The physical relations a field reads, through the calculations it references (parameters read none)."""
+        if f.param or f.local in seen:
+            return set()
+        if not f.is_calc:
+            return {f.relation} if f.relation else set()
+        refs = [_unesc(r) for r in BRACKETED.findall(f.formula or "")] + ([f.extra["of"]] if f.extra.get("of") else [])
+        out: set[str] = set()
+        for r in refs:
+            g = ds.fields.get(r)
+            if g is not None and g is not f:
+                out |= self._tables_of(ds, g, seen | {f.local})
+        return out
 
     def _count_names(self, sources: list[TDatasource]) -> None:
         for ds in sources:
@@ -1914,6 +2007,15 @@ class _Parser:
                 homes.add("")
         if model is None:
             return self._todo(ds, f, None, "datasource has no table; see skills/translate-metrics")
+        tables = sorted(self._tables_of(ds, f)) if ds.related else []
+        if len(tables) > 1:
+            if _has_agg(node) or dep_agg:
+                return self._todo(ds, f, model, f"aggregates fields of related tables ({', '.join(tables)}): with relationships Tableau aggregates "
+                                                "each table's fields on that table's own rows at the view's dimensions, then combines the "
+                                                f"results, so it is not one metric on one table; see {SKILL}", True)
+            return self._todo(ds, f, model, f"a row-level calculation over fields of related tables ({', '.join(tables)}): Tableau computes it "
+                                            "over those tables joined by their relationship; write that join in a SQL model and put the "
+                                            f"calculation there; see {SKILL}")
         src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
         grains = homes - {"", "mixed"}
         if len(grains) > 1:
@@ -2093,6 +2195,13 @@ class _Parser:
             how = ("notebook tiles that show it compute it from the sheet's dimensions" if tiles
                    else "write it as window or grouped-subquery SQL in the notebook tile")
             return self._todo(ds, f, model, f"Tableau {kind} LOD depends on the view's dimensions, so it can't be a metric: {how}; see skills/translate-metrics")
+        if ds.related:
+            tables = self._tables_of(ds, f)
+            first = next(iter((self.ds_models.get(ds.uid) or {}).values()), None)
+            if len(tables) > 1 or (first is not None and tables and tables != {first.rel.name}):
+                return self._todo(ds, f, model, f"FIXED LOD on a data source with relationships ({', '.join(sorted(tables))}): Tableau computes it "
+                                                "over the related tables its fields come from; pre-aggregate it in a SQL model on those tables; "
+                                                "see skills/translate-metrics")
         whole = len(spans) == 1 and spans[0][:2] == (0, len(clean))
         try:
             if whole:
@@ -2875,6 +2984,12 @@ class _Parser:
                 ordered.append((r, False))
                 seen.add(r.instance)
         tile_ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
+        related = self._related_tables(tile_ds, ordered)
+        rel_todo = []
+        if len(related) > 1:
+            rel_todo.append(f"fields from related tables ({', '.join(related)}): with relationships Tableau aggregates each measure on its own "
+                         "table's rows at the sheet's dimensions, then joins the results on the dimensions; a join of the tables would "
+                         f"repeat rows; write that in the tile SQL ({SKILL})")
         join_from, join_todo = self._tile_join(tile_ds, ordered)
         if join_todo:
             todos.append(join_todo)
@@ -2935,11 +3050,11 @@ class _Parser:
                 models = {id(first): first}
         if len(data_ds) > 1:
             problems.append(f"blends {len(data_ds)} datasources ({', '.join(data_ds)}): join them in the tile SQL ({SKILL})")
-        elif len(models) > 1 and not join_from:
+        elif len(models) > 1 and not join_from and not rel_todo:
             problems.append("fields come from several joined tables: write the join in the tile SQL")
         sql = ""
-        if problems:
-            todos += problems
+        if problems or rel_todo:
+            todos += rel_todo + problems
         elif columns and models:
             model = next(iter(models.values()))
             from_sql, cte = (join_from, "") if join_from else model.from_sql
@@ -3006,6 +3121,15 @@ class _Parser:
                     todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose)  # type: ignore[arg-type]
         meta["aliases"] = aliases
         return tile, meta
+
+    def _related_tables(self, ds: TDatasource | None, ordered: list[tuple[_Ref, bool]]) -> list[str]:
+        """On a data source with relationships, the logical tables a sheet's fields read."""
+        if ds is None or not ds.related:
+            return []
+        rels = {t for r, _ in ordered if r.ds is ds and r.field is not None for t in self._tables_of(ds, r.field)}
+        if any(r.special == "records" for r, _ in ordered):
+            rels.add("Number of Records")  # with relationships, each logical table has its own count
+        return sorted({o.caption if (o := ds.object_of(t)) is not None else t for t in rels})
 
     def _ds_join(self, ds: TDatasource | None) -> str:
         """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""

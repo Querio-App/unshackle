@@ -1,0 +1,501 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <ObjectModelEncapsulateLegacy />
+    <ObjectModelTableType />
+  </document-format-change-manifest>
+  <datasources>
+    <datasource caption='Dunder Mifflin Relationships' inline='true' name='federated.rel0demo' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption="warehouse.example.com" name='postgres.rel0demo'>
+            <connection authentication='username-password' class='postgres' dbname="dunder_mifflin" port='5432' server="warehouse.example.com" sslmode='require' username="reader" />
+          </named-connection>
+        </named-connections>
+        <relation type='collection'>
+          <relation connection='postgres.rel0demo' name='orders' table='[public].[orders]' type='table' />
+          <relation connection='postgres.rel0demo' name='accounts' table='[public].[accounts]' type='table' />
+          <relation connection='postgres.rel0demo' name='shippings' table='[public].[shippings]' type='table' />
+          <relation connection='postgres.rel0demo' name='targets' type='text'>select 'COMPLETED' as target_status, 100 as target union all select 'CANCELLED', 50 union all select 'LOST', 7</relation>
+        </relation>
+        <cols>
+          <map key='[account_id]' value='[orders].[account_id]' />
+          <map key='[account_id (accounts)]' value='[accounts].[account_id]' />
+          <map key='[account_name]' value='[accounts].[account_name]' />
+          <map key='[business_size]' value='[accounts].[business_size]' />
+          <map key='[order_id]' value='[orders].[order_id]' />
+          <map key='[payment_cycle]' value='[accounts].[payment_cycle]' />
+          <map key='[post_discount_revenue]' value='[orders].[post_discount_revenue]' />
+          <map key='[quantity]' value='[orders].[quantity]' />
+          <map key='[shipping_cost]' value='[shippings].[shipping_cost]' />
+          <map key='[shipping_id]' value='[orders].[shipping_id]' />
+          <map key='[shipping_id (shippings)]' value='[shippings].[shipping_id]' />
+          <map key='[shipping_mode]' value='[shippings].[shipping_mode]' />
+          <map key='[status]' value='[orders].[status]' />
+          <map key='[target]' value='[targets].[target]' />
+          <map key='[target_status]' value='[targets].[target_status]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'><remote-name>order_id</remote-name><remote-type>129</remote-type><local-name>[order_id]</local-name><parent-name>[orders]</parent-name><remote-alias>order_id</remote-alias><ordinal>0</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>status</remote-name><remote-type>129</remote-type><local-name>[status]</local-name><parent-name>[orders]</parent-name><remote-alias>status</remote-alias><ordinal>1</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>quantity</remote-name><remote-type>20</remote-type><local-name>[quantity]</local-name><parent-name>[orders]</parent-name><remote-alias>quantity</remote-alias><ordinal>6</ordinal><local-type>integer</local-type><aggregation>Sum</aggregation><contains-null>true</contains-null><object-id>[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>post_discount_revenue</remote-name><remote-type>5</remote-type><local-name>[post_discount_revenue]</local-name><parent-name>[orders]</parent-name><remote-alias>post_discount_revenue</remote-alias><ordinal>9</ordinal><local-type>real</local-type><aggregation>Sum</aggregation><contains-null>true</contains-null><object-id>[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>account_id</remote-name><remote-type>129</remote-type><local-name>[account_id]</local-name><parent-name>[orders]</parent-name><remote-alias>account_id</remote-alias><ordinal>13</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>shipping_id</remote-name><remote-type>129</remote-type><local-name>[shipping_id]</local-name><parent-name>[orders]</parent-name><remote-alias>shipping_id</remote-alias><ordinal>14</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>account_id</remote-name><remote-type>129</remote-type><local-name>[account_id (accounts)]</local-name><parent-name>[accounts]</parent-name><remote-alias>account_id</remote-alias><ordinal>0</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>account_name</remote-name><remote-type>129</remote-type><local-name>[account_name]</local-name><parent-name>[accounts]</parent-name><remote-alias>account_name</remote-alias><ordinal>1</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>business_size</remote-name><remote-type>20</remote-type><local-name>[business_size]</local-name><parent-name>[accounts]</parent-name><remote-alias>business_size</remote-alias><ordinal>2</ordinal><local-type>integer</local-type><aggregation>Sum</aggregation><contains-null>true</contains-null><object-id>[accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>payment_cycle</remote-name><remote-type>129</remote-type><local-name>[payment_cycle]</local-name><parent-name>[accounts]</parent-name><remote-alias>payment_cycle</remote-alias><ordinal>3</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>shipping_id</remote-name><remote-type>129</remote-type><local-name>[shipping_id (shippings)]</local-name><parent-name>[shippings]</parent-name><remote-alias>shipping_id</remote-alias><ordinal>0</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[shippings_2C3D4E5F6071829304B5C6D7E8F90A1B]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>shipping_mode</remote-name><remote-type>129</remote-type><local-name>[shipping_mode]</local-name><parent-name>[shippings]</parent-name><remote-alias>shipping_mode</remote-alias><ordinal>8</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[shippings_2C3D4E5F6071829304B5C6D7E8F90A1B]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>shipping_cost</remote-name><remote-type>5</remote-type><local-name>[shipping_cost]</local-name><parent-name>[shippings]</parent-name><remote-alias>shipping_cost</remote-alias><ordinal>9</ordinal><local-type>real</local-type><aggregation>Sum</aggregation><contains-null>true</contains-null><object-id>[shippings_2C3D4E5F6071829304B5C6D7E8F90A1B]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>target_status</remote-name><remote-type>129</remote-type><local-name>[target_status]</local-name><parent-name>[targets]</parent-name><remote-alias>target_status</remote-alias><ordinal>0</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null><object-id>[targets_4E5F60718293041526D7E8F90A1B2C3D]</object-id></metadata-record>
+          <metadata-record class='column'><remote-name>target</remote-name><remote-type>20</remote-type><local-name>[target]</local-name><parent-name>[targets]</parent-name><remote-alias>target</remote-alias><ordinal>1</ordinal><local-type>integer</local-type><aggregation>Sum</aggregation><contains-null>true</contains-null><object-id>[targets_4E5F60718293041526D7E8F90A1B2C3D]</object-id></metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[order_id]' role='dimension' type='nominal' />
+      <column datatype='string' name='[status]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[quantity]' role='measure' type='quantitative' />
+      <column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+      <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+      <column datatype='string' name='[shipping_id]' role='dimension' type='nominal' />
+      <column datatype='string' name='[account_id (accounts)]' role='dimension' type='nominal' />
+      <column datatype='string' name='[account_name]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[business_size]' role='measure' type='quantitative' />
+      <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+      <column datatype='string' name='[shipping_id (shippings)]' role='dimension' type='nominal' />
+      <column datatype='string' name='[shipping_mode]' role='dimension' type='nominal' />
+      <column datatype='real' name='[shipping_cost]' role='measure' type='quantitative' />
+      <column datatype='string' name='[target_status]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[target]' role='measure' type='quantitative' />
+      <column caption="Revenue per Account Size" datatype='real' name='[Calculation_201]' role='measure' type='quantitative'><calculation class='tableau' formula="SUM([post_discount_revenue]) / SUM([business_size])" /></column>
+      <column caption='orders' datatype='table' name='[__tableau_internal_object_id__].[orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9]' role='measure' type='quantitative' />
+      <column caption='accounts' datatype='table' name='[__tableau_internal_object_id__].[accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A]' role='measure' type='quantitative' />
+      <column caption='shippings' datatype='table' name='[__tableau_internal_object_id__].[shippings_2C3D4E5F6071829304B5C6D7E8F90A1B]' role='measure' type='quantitative' />
+      <column caption='targets' datatype='table' name='[__tableau_internal_object_id__].[targets_4E5F60718293041526D7E8F90A1B2C3D]' role='measure' type='quantitative' />
+      <object-graph>
+        <objects>
+          <object caption='orders' id='orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9'><properties context=''><relation connection='postgres.rel0demo' name='orders' table='[public].[orders]' type='table' /></properties></object>
+          <object caption='accounts' id='accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A'><properties context=''><relation connection='postgres.rel0demo' name='accounts' table='[public].[accounts]' type='table' /></properties></object>
+          <object caption='shippings' id='shippings_2C3D4E5F6071829304B5C6D7E8F90A1B'><properties context=''><relation connection='postgres.rel0demo' name='shippings' table='[public].[shippings]' type='table' /></properties></object>
+          <object caption='targets' id='targets_4E5F60718293041526D7E8F90A1B2C3D'><properties context=''><relation connection='postgres.rel0demo' name='targets' type='text'>select 'COMPLETED' as target_status, 100 as target union all select 'CANCELLED', 50 union all select 'LOST', 7</relation></properties></object>
+        </objects>
+        <relationships>
+          <relationship><expression op='='><expression op='[account_id]' /><expression op='[account_id (accounts)]' /></expression><first-end-point object-id='orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9' /><second-end-point object-id='accounts_1B2C3D4E5F60718293A4B5C6D7E8F90A' /></relationship>
+          <relationship><expression op='='><expression op='[shipping_id]' /><expression op='[shipping_id (shippings)]' /></expression><first-end-point object-id='orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9' /><second-end-point object-id='shippings_2C3D4E5F6071829304B5C6D7E8F90A1B' /></relationship>
+          <relationship><expression op='='><expression op='[status]' /><expression op='[target_status]' /></expression><first-end-point object-id='orders_0A1B2C3D4E5F40718293A4B5C6D7E8F9' /><second-end-point object-id='targets_4E5F60718293041526D7E8F90A1B2C3D' /></relationship>
+        </relationships>
+      </object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name="Revenue by Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk]</rows>
+        <cols>[federated.rel0demo].[sum:post_discount_revenue:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Business Size by Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='integer' name='[business_size]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[business_size]' derivation='Sum' name='[sum:business_size:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk]</rows>
+        <cols>[federated.rel0demo].[sum:business_size:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Avg Business Size by Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='integer' name='[business_size]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[business_size]' derivation='Avg' name='[avg:business_size:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk]</rows>
+        <cols>[federated.rel0demo].[avg:business_size:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Revenue by Shipping Mode">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[shipping_mode]' role='dimension' type='nominal' /><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[shipping_mode]' derivation='None' name='[none:shipping_mode:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:shipping_mode:nk]</rows>
+        <cols>[federated.rel0demo].[sum:post_discount_revenue:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Revenue and Shipping Cost by Payment Cycle">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='real' name='[shipping_cost]' role='measure' type='quantitative' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column-instance column='[shipping_cost]' derivation='Sum' name='[sum:shipping_cost:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.rel0demo].[sum:post_discount_revenue:qk]' /><text column='[federated.rel0demo].[sum:shipping_cost:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="Status by Shipping Mode">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[shipping_mode]' role='dimension' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[shipping_mode]' derivation='None' name='[none:shipping_mode:nk]' pivot='key' type='nominal' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk] / [federated.rel0demo].[none:shipping_mode:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="Total Business Size">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='integer' name='[business_size]' role='measure' type='quantitative' /><column-instance column='[business_size]' derivation='Sum' name='[sum:business_size:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.rel0demo].[sum:business_size:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows></rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="Revenue per Account Size by Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue per Account Size" datatype='real' name='[Calculation_201]' role='measure' type='quantitative'><calculation class='tableau' formula="SUM([post_discount_revenue]) / SUM([business_size])" /></column><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='integer' name='[business_size]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_201]' derivation='User' name='[usr:Calculation_201:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk]</rows>
+        <cols>[federated.rel0demo].[usr:Calculation_201:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Target by Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='integer' name='[target]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[target]' derivation='Sum' name='[sum:target:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk]</rows>
+        <cols>[federated.rel0demo].[sum:target:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Revenue and Target by Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='integer' name='[target]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column-instance column='[target]' derivation='Sum' name='[sum:target:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.rel0demo].[sum:post_discount_revenue:qk]' /><text column='[federated.rel0demo].[sum:target:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="Revenue by Target Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[target_status]' role='dimension' type='nominal' /><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[target_status]' derivation='None' name='[none:target_status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:target_status:nk]</rows>
+        <cols>[federated.rel0demo].[sum:post_discount_revenue:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Revenue by Status and Shipping Mode">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[shipping_mode]' role='dimension' type='nominal' /><column datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[shipping_mode]' derivation='None' name='[none:shipping_mode:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.rel0demo].[sum:post_discount_revenue:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk] / [federated.rel0demo].[none:shipping_mode:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="Shipping Cost by Status and Payment Cycle">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='real' name='[shipping_cost]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[shipping_cost]' derivation='Sum' name='[sum:shipping_cost:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.rel0demo].[sum:shipping_cost:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk] / [federated.rel0demo].[none:payment_cycle:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+    <worksheet name="Business Size by Shipping Mode">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[shipping_mode]' role='dimension' type='nominal' /><column datatype='integer' name='[business_size]' role='measure' type='quantitative' /><column-instance column='[shipping_mode]' derivation='None' name='[none:shipping_mode:nk]' pivot='key' type='nominal' /><column-instance column='[business_size]' derivation='Sum' name='[sum:business_size:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:shipping_mode:nk]</rows>
+        <cols>[federated.rel0demo].[sum:business_size:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Status by Target Status">
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Dunder Mifflin Relationships' name='federated.rel0demo' />
+            
+          </datasources>
+          
+          <datasource-dependencies datasource='federated.rel0demo'>
+            <column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[target_status]' role='dimension' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[target_status]' derivation='None' name='[none:target_status:nk]' pivot='key' type='nominal' />
+          </datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.rel0demo].[none:status:nk] / [federated.rel0demo].[none:target_status:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
+  </worksheets>
+  <windows source-height='30'>
+    <window class='worksheet' name="Revenue by Status" />
+    <window class='worksheet' name="Business Size by Status" />
+    <window class='worksheet' name="Avg Business Size by Status" />
+    <window class='worksheet' name="Revenue by Shipping Mode" />
+    <window class='worksheet' name="Revenue and Shipping Cost by Payment Cycle" />
+    <window class='worksheet' name="Status by Shipping Mode" />
+    <window class='worksheet' name="Total Business Size" />
+    <window class='worksheet' name="Revenue per Account Size by Status" />
+    <window class='worksheet' name="Target by Status" />
+    <window class='worksheet' name="Revenue and Target by Status" />
+    <window class='worksheet' name="Revenue by Target Status" />
+    <window class='worksheet' name="Revenue by Status and Shipping Mode" />
+    <window class='worksheet' name="Shipping Cost by Status and Payment Cycle" />
+    <window class='worksheet' name="Business Size by Shipping Mode" />
+    <window class='worksheet' name="Status by Target Status" />
+  </windows>
+</workbook>
