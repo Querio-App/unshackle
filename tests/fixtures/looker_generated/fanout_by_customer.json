@@ -1,0 +1,42 @@
+[
+ {
+  "ev_orders.customer": null,
+  "ev_orders.count": 1,
+  "ev_orders.total_shipping": 3,
+  "ev_orders.avg_shipping": 3,
+  "ev_items.count": 1,
+  "ev_items.total_price": 8,
+  "ev_items.shipping_sum_distinct": 3,
+  "ev_items.shipping_avg_distinct": 3
+ },
+ {
+  "ev_orders.customer": "acme",
+  "ev_orders.count": 2,
+  "ev_orders.total_shipping": 30,
+  "ev_orders.avg_shipping": 15,
+  "ev_items.count": 4,
+  "ev_items.total_price": 20,
+  "ev_items.shipping_sum_distinct": 30,
+  "ev_items.shipping_avg_distinct": 15
+ },
+ {
+  "ev_orders.customer": "bolt",
+  "ev_orders.count": 1,
+  "ev_orders.total_shipping": 5,
+  "ev_orders.avg_shipping": 5,
+  "ev_items.count": 2,
+  "ev_items.total_price": 5,
+  "ev_items.shipping_sum_distinct": 5,
+  "ev_items.shipping_avg_distinct": 5
+ },
+ {
+  "ev_orders.customer": "core",
+  "ev_orders.count": 1,
+  "ev_orders.total_shipping": 7.5,
+  "ev_orders.avg_shipping": 7.5,
+  "ev_items.count": 0,
+  "ev_items.total_price": 0,
+  "ev_items.shipping_sum_distinct": 0,
+  "ev_items.shipping_avg_distinct": null
+ }
+]
