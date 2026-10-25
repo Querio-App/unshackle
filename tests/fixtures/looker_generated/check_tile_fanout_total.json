@@ -1,9 +1,0 @@
-[
- {
-  "chk_tile_fanout_total.ev_orders_count": "5",
-  "chk_tile_fanout_total.ev_orders_total_shipping": "45.5",
-  "chk_tile_fanout_total.ev_orders_avg_shipping": "9.1",
-  "chk_tile_fanout_total.ev_items_count": "7",
-  "chk_tile_fanout_total.ev_items_total_price": "33.0"
- }
-]
