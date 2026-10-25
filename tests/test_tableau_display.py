@@ -332,3 +332,33 @@ def test_every_dialect_returns_the_same_order(con, tmp_path: Path, warehouse: st
         if warehouse != "redshift":  # DuckDB reads the Redshift form as written
             sql = sqlglot.transpile(sql, read=warehouse, write="duckdb")[0]
         assert [r[0] for r in con.sql(sql).fetchall()] == [r[0] for r in con.sql(base[name]).fetchall()], (warehouse, name)
+
+
+def test_relationship_tiles_label_and_sort_too(tmp_path: Path):
+    """A sheet over related tables (measures per table, joined on the dimensions) keeps the values until the last select:
+    two members with one label stay two marks, and the sort orders the joined marks."""
+    duckdb = pytest.importorskip("duckdb")
+    sheet = "Revenue and Shipping Cost by Payment Cycle"
+    aliases = "<aliases><alias key='&quot;WEEK&quot;' value='MONTH' /><alias key='&quot;&quot;' value='(no cycle)' /></aliases>"
+    sort = ("<computed-sort column='[federated.rel0demo].[none:payment_cycle:nk]' direction='DESC' "
+            "using='[federated.rel0demo].[sum:post_discount_revenue:qk]' />")
+
+    def edit(xml: str, _: str) -> str:
+        xml = xml.replace("<column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />",
+                          f"<column datatype='string' name='[payment_cycle]' role='dimension' type='nominal'>{aliases}</column>", 1)
+        i = xml.index(f'<worksheet name="{sheet}">')
+        j = xml.index("<aggregation value='true' />", i)
+        return xml[:j] + sort + xml[j:]
+
+    plain = next(t for d in _parse(tmp_path / "plain", "tableau_relationships").dashboards for t in d.tiles if t.title == sheet)
+    tile = next(t for d in _parse(tmp_path / "edited", "tableau_relationships", edit).dashboards for t in d.tiles if t.title == sheet)
+    assert tile.sql and not tile.todo, tile.todo
+    c = duckdb.connect()
+    c.execute("create schema public")
+    for t in ("orders", "accounts", "shippings"):
+        c.execute(f"create table public.{t} as select * from '{DATA / f'{t}.parquet'}'")
+    want = sorted(((({"WEEK": "MONTH", "": "(no cycle)"}.get(r[0], r[0])),) + tuple(r[1:]) for r in c.sql(plain.sql).fetchall()),
+                  key=lambda r: -(r[1] or 0))
+    got = c.sql(tile.sql).fetchall()
+    assert [r[0] for r in got].count("MONTH") == 2
+    assert got == want

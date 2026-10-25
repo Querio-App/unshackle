@@ -3249,6 +3249,7 @@ class _Parser:
                 sql = self._rel_tile_sql(tile_ds, columns, where, having, order, limit)
             except _NoSQL as exc:
                 todos.append(str(exc))
+            todos += self._sheet.notes  # type: ignore[union-attr]
         elif columns and models:
             model = next(iter(models.values()))
             from_sql, cte = (join_from, "") if join_from else model.from_sql
@@ -3482,7 +3483,8 @@ class _Parser:
                 raise _NoSQL(f"[{c[4]}] reads {'no table' if not tables else 'several related tables (' + ', '.join(sorted(tables)) + ')'}; write the tile SQL by hand ({SKILL})")
             return next(iter(tables))
 
-        dims = [c for c in columns if not c[3]]
+        labeled = {c[0].instance: c for c in columns if not c[3] and c[0].instance in ctx.labels}
+        dims = [(c[0], c[1], ctx.labels[c[0].instance], *c[3:]) if c[0].instance in labeled else c for c in columns if not c[3]]  # values until the end
         dim_home = {c[1]: home(c) for c in dims}
         groups: dict[str, list[tuple[str, str]]] = {}  # relation -> [(aggregate SQL, column)]
         picks: dict[str, str] = {}
@@ -3525,24 +3527,35 @@ class _Parser:
                 on = " and ".join(f"{_ident(rel)}.{_ident(k)} is not distinct from rel_dims.rel_key_{i}" for i, k in enumerate(keys, 1))
                 frm += f"\ninner join (\n{inner}\n) as rel_dims on {on}"
             ctes.append((cte(rel), f"select {', '.join(items)}\nfrom {frm}{group_by}"))
+        labels = {c[1]: alias_sql(f"marks.{c[1]}", c[0].field) or f"marks.{c[1]}" for c in labeled.values()}
+        exprs = {c[0].instance: picks.get(c[1]) or f"marks.{c[1]}" for c in columns}
+        for inst, (deriv, _) in list(ctx.sort_by.items()):
+            srt = ctx.sorts[inst]
+            if srt.using in exprs:  # the sorted-by measure is on the sheet: order the marks by its value
+                ctx.sort_by[inst] = (deriv, exprs[srt.using])
+            else:
+                del ctx.sort_by[inst]
+                ctx.notes.append(f"sort by {srt.using} ({srt.direction.lower()}) not applied: add it to the tile's order by")
+        order_by = self._sort_order(dims, lambda i, c: (str(i), labels.get(c[1], f"marks.{c[1]}"), f"marks.{c[1]}"), "marks")
         return self._join_aggregates(ctes, [n for n, _ in ctes], [cte(rel) for rel in groups], [c[1] for c in dims],
-                                     [picks[c[1]] for c in columns if c[3]], [c[1] for c in columns if c[3]])
+                                     [picks[c[1]] for c in columns if c[3]], [c[1] for c in columns if c[3]], labels, order_by)
 
     @staticmethod
     def _join_aggregates(ctes: list[tuple[str, str]], marks_from: list[str], measures: list[str], dims: list[str], values: list[str],
-                         aliases: list[str]) -> str:
+                         aliases: list[str], labels: dict[str, str] | None = None, order: list[str] | None = None) -> str:
         """Aggregates computed separately (one CTE each, with the sheet's dimension columns `dims` and its values), joined on
         the dimensions: the marks are the distinct dimension values of the CTEs in `marks_from`, each CTE in `measures`
         left joined to them (NULL matches NULL); `values` are SQL over the CTEs' columns, output as `aliases`. Without
-        dimensions each CTE is one row, cross joined. Used for relationships (one CTE per related table)."""
+        dimensions each CTE is one row, cross joined. `labels`: SQL showing a dimension (its aliases); `order`: ORDER BY
+        items (default: the dimensions). Used for relationships (one CTE per related table)."""
         ctes = list(ctes)
         if dims:
             ctes.append(("marks", "\nunion\n".join(f"select {', '.join(dims)} from {n}" for n in marks_from)))
             frm = "marks" + "".join(f"\nleft join {m} on " + " and ".join(f"marks.{a} is not distinct from {m}.{a}" for a in dims) for m in measures)
-            tail = "\norder by " + ", ".join(str(i) for i in range(1, len(dims) + 1))
+            tail = "\norder by " + ", ".join(order or [str(i) for i in range(1, len(dims) + 1)])
         else:
             frm, tail = "\ncross join ".join(measures), ""
-        items = [f"marks.{d}" for d in dims] + [f"{v} as {a}" for v, a in zip(values, aliases)]
+        items = [f"{(labels or {})[d]} as {d}" if d in (labels or {}) else f"marks.{d}" for d in dims] + [f"{v} as {a}" for v, a in zip(values, aliases)]
         body = "select\n" + ",\n".join(f"  {x}" for x in items) + f"\nfrom {frm}{tail}"
         return "with " + ",\n".join(f"{n} as (\n{b}\n)" for n, b in ctes) + "\n" + body
 
