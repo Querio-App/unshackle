@@ -62,6 +62,9 @@ class Dimension:
     source_expression: str = ""
     source_language: str = ""
     todo: str = ""
+    format: str = ""  # d3-format number format, when the source's has an exact one
+    source_format: str = ""  # the source tool's own format string
+    value_labels: list[dict[str, Any]] = field(default_factory=list)  # [{"value": v, "label": "..."}]: what the source shows for v
 
 
 @dataclass
@@ -75,6 +78,8 @@ class Measure:
     source_expression: str = ""
     source_language: str = ""
     todo: str = ""
+    format: str = ""
+    source_format: str = ""
 
 
 @dataclass
@@ -115,6 +120,8 @@ class Metric:
     source_language: str = ""
     source_ref: str = ""
     todo: str = ""
+    format: str = ""
+    source_format: str = ""
 
 
 @dataclass
@@ -124,7 +131,8 @@ class Encoding:
     aggregate: str = ""
     title: str = ""
     time_unit: str = ""
-    sort: str = ""
+    sort: str = ""  # Vega-Lite sort ("ascending", "-y", ...); "none" keeps the rows' order (the SQL's ORDER BY)
+    format: str = ""  # d3-format number format for axes, labels and tooltips (",.2f", "$,.0f", ".1%")
 
 
 @dataclass
