@@ -1,6 +1,12 @@
 <?xml version='1.0' encoding='utf-8' ?>
 <workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
   <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <column caption='Revenue Target' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='1000000.0'>
+        <calculation class='tableau' formula='1000000.0' />
+        <range granularity='100000.0' max='5000000.0' min='0.0' />
+      </column>
+    </datasource>
     <datasource caption='Dunder Mifflin Orders' inline='true' name='federated.dash0demo' version='18.1'>
       <connection class='federated'>
         <named-connections>
@@ -308,6 +314,9 @@
                     <worksheet name='Discount by Status'>
                       <rows>[federated.dash0demo].[none:payment_cycle:nk]</rows>
                     </worksheet>
+                    <datasource name='Parameters'>
+                      <column name='[Parameter 1]' value='2000000.0' />
+                    </datasource>
                   </capturedDeltas>
                 </story-point>
               </story-points>

@@ -199,6 +199,8 @@ def test_story_is_one_notebook_with_a_section_per_point(bundle, out, warehouse, 
     monthly = rows[rows.payment_cycle == "MONTH"].groupby("status").post_discount_revenue.sum()
     assert dict(zip(df.status, df.revenue)) == pytest.approx(monthly.to_dict(), rel=1e-9)
     assert "story point 3 (Discount by Status): captured rows changes on Discount by Status" in s.not_migrated
+    assert ("story point 3 (Discount by Status): sets parameter [Revenue Target] to 2000000.0; set :revenue_target in the parameters cell"
+            in s.not_migrated)
     # sheets in the story are not repeated in the notebook of sheets on no dashboard
     (stray,) = [d for d in bundle.dashboards if d.name.endswith(" sheets")]
     assert [t.title for t in stray.tiles] == ["Shipped Orders"]

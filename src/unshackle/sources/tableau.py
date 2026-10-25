@@ -4681,7 +4681,7 @@ class _Parser:
             else:
                 return None
             b = f"cast(:{name} as {typ})"
-            binds.append(DashboardFilter(name, name, default, kind, f"{note}; one value, None = all"))  # type: ignore[arg-type]
+            binds.append(DashboardFilter(name, name, default, kind, note=f"{note}; one value, None = all"))  # type: ignore[arg-type]
             sql = f"({b} is null or {x} = {b})"
         elif cls == "quantitative":
             inc = flt.get("included-values", "in-range")
@@ -4691,7 +4691,7 @@ class _Parser:
             for end, tag, op in (("from", "min", ">="), ("to", "max", "<=")):
                 b = f"cast(:{name}_{end} as {typ})"
                 default = _member_py((flt.findtext(tag) or "").strip() or None)
-                binds.append(DashboardFilter(f"{name}_{end}", name, default, kind, f"{note}; range {end}, inclusive, None = open"))  # type: ignore[arg-type]
+                binds.append(DashboardFilter(f"{name}_{end}", name, default, kind, note=f"{note}; range {end}, inclusive, None = open"))  # type: ignore[arg-type]
                 parts.append(f"({b} is null or {x} {op} {b})")
             if inc == "non-null":
                 parts.append(f"{x} is not null")
@@ -4733,7 +4733,7 @@ class _Parser:
             name = f"selected_{alias}" + (f"_on_{source}" if source else "")
             b = f"cast(:{name} as {typ})"
             parts.append(f"({b} is null or {_paren(sql)} = {b})")
-            binds.append(DashboardFilter(name, alias, None, kind, f"filter action: the {display} of the selected mark; None = no selection"))  # type: ignore[arg-type]
+            binds.append(DashboardFilter(name, alias, None, kind, note=f"filter action: the {display} of the selected mark; None = no selection"))  # type: ignore[arg-type]
         if not parts:
             return ("todo", f"filter action {g.label}: no fields")
         meta.setdefault("binds", []).extend(binds)
@@ -5020,7 +5020,10 @@ class _Parser:
                 if other:
                     gaps.append(f"story point {n} ({sheet}): captured {', '.join(other)} changes on {ws.get('name')}")
             for p in sp.findall("capturedDeltas/datasource/column"):
-                gaps.append(f"story point {n} ({sheet}): sets parameter {_unbracket(p.get('name'))} to {p.get('value', '')}; set it in the parameters cell")
+                wp = wb.params.get(_unbracket(p.get("name")))
+                where = f"set :{param_bind(wp).split(':', 1)[1].split()[0]} in the parameters cell" if wp is not None else "set it in the parameters cell"
+                label = wp.label if wp is not None else _unbracket(p.get("name"))
+                gaps.append(f"story point {n} ({sheet}): sets parameter [{label}] to {_param_unesc(p.get('value', ''))}; {where}")
             if sheet in boards:
                 d = self._dashboard(wb, boards[sheet], sheet, worksheets, tile_for, actions, set(boards), placed, deltas)
                 self.slugs.discard(d.slug)
