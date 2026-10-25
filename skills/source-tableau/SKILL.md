@@ -257,12 +257,18 @@ dimension filters, then measure filters (`having`).
   to date on a date and time field (Tableau stops at the current time), a top N or condition
   as a data source filter (every sheet and FIXED grain on that data source stays TODO), and
   a top N or condition in the context together with other top N filters, and a top N or
-  condition on a sheet over related tables. Context filters
-  are in the tile's `where` and before top N, but not yet inside FIXED grains (TODO).
+  condition on a sheet over related tables, and a top N or condition in the context of a
+  sheet with FIXED LODs (Tableau computes the FIXED values over its members).
+- Context filters are in the tile's `where`, before top N, and inside the FIXED grains: on a
+  sheet with context filters each FIXED grain is the tile's own CTE, grouped over the rows the
+  context leaves (`account_id_lod as (... where orders.status = 'COMPLETED' group by 1)`).
+  The shared grain and its semantic model stay over all rows, and its description says so.
+  The sheet's other dimension filters don't change a FIXED value. A FIXED grain nested in
+  another, or one a context filter itself reads, stays TODO.
 
 **LODs in tiles** follow Tableau's order of operations. A FIXED grain is a CTE computed
-over all of the datasource's rows (after its extract and data source filters, before the
-sheet's dimension filters):
+over all of the datasource's rows (after its extract, data source and context filters, before
+the sheet's dimension filters):
 
 | Sheet shows | Tile SQL |
 | --- | --- |
@@ -499,7 +505,11 @@ what each value picks (`'Sales' -> metric sales; 'Profit' -> ...`). A parameter 
 LOD, a table calculation or ATTR() stays TODO. Tableau snaps a range parameter to its step
 (a date range with a 1-month step from 2024-01-01 turns 2024-12-31 into 2024-12-01); the
 notebook takes any value, so keep to the comment's step for the same numbers. Parameters
-inside custom SQL (`<[Parameters].[Year]>`) -> `:year` binds (write them by hand for now).
+inside custom SQL (`<[Parameters].[Year]>`) -> `:year` binds in the tile's `custom_sql` CTE:
+Tableau writes the value there as a literal of its type (a string quoted, a date as `DATE
+'...'`), so the bind needs no quotes and dates are cast (`cast(:since as date)`). A parameter
+written inside quotes (`'<[Parameters].[Year]>'`) stays TODO; the semantic model on the custom
+SQL stays TODO too (pin the values or make it a SQL model with variables).
 
 **Sets, groups, bins that stay TODO**: bins whose size is fractional, comes from a
 parameter, or has a `peg`; Top N sets whose N is a parameter; sets on several dimensions,
@@ -509,10 +519,21 @@ sets" above, with parameters as binds.
 **ATTR([x])**: returns x when it has one value in the mark, else `*`. Group by x (it is
 usually constant), or `case when min(x) = max(x) then min(x) end`.
 
-**Blending** (a worksheet with two datasources, or `[other_ds].[field]` in a calc):
-Tableau aggregates each source and left-joins on the linking fields. Write that in
-SQL: aggregate each side by the linking dimensions, then left join; or model both
-tables with entities and let MetricFlow join.
+**Blending** (a worksheet with two datasources): the first data source on the sheet is the
+primary. Tableau queries each secondary on its own (its own data source filters, not the
+primary's sheet filters), aggregated at the linking fields, and left joins it to the
+primary's marks. The linking fields are the sheet's dimensions mapped in the workbook's
+`<datasource-relationship>` for the pair (column instances; it replaces name matching), else
+the secondary's fields with the same name. The tile SQL has one `blend_N` CTE per secondary
+grouped by the links, left joined to the primary's rows on them (`is not distinct from`: a
+NULL link matches NULL; one row per link, so nothing multiplies), and its measures per mark
+as `max(blend_1.blend_value_1)`: the same value on every mark of a link (a secondary count per
+manager repeats on each paper type). TODO: a dimension of the secondary on the sheet (Tableau
+shows `*` where a mark has several of its values), a filter on a secondary field, no active
+link, an LOD, set or alias of the secondary, totals, the same field instance from both
+sources, a primary with relationships, and a calc that reads another data source
+(`[other_ds].[field]`): aggregate each side by the linking dimensions, then left join; or
+model both tables with entities and let MetricFlow join.
 
 **Several measures, dual axis**: several measures on rows become stacked panels
 (`alt.vconcat`), on columns side-by-side panels (`alt.hconcat`), each with its pane's mark.
