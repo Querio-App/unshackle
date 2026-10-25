@@ -91,6 +91,7 @@ unshackle build tableau
 | `[Profit Ratio] * 100` | derived metric |
 | row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, string `+`, `NULL`, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#`, `#2024-01-01 10:00:00#`, `DATEPART`/`DATENAME` of week, weekday, quarter, year, and the functions under Calculation semantics (dates, strings, conversion, math, `IN`, regular expressions) | dimension `expr` (time dimension with that grain for `DATETRUNC`; weeks, quarters and years follow the Date Properties, see Dates below), or measure `expr` when the calc's role is measure (Tableau's NULL, division and ROUND rules: Calculation semantics below) |
 | custom SQL `<relation type='text'>` | `queries/<ds>-custom-sql.sql` (TODO: materialize) + semantic model named after the datasource |
+| relationships (`<object-graph>`, Tableau 2020.2+): logical tables and the relationships between them | one model per logical table; a relationship on one table's key is a foreign entity on the other (Ossie relationship with the Tableau relationship and its Performance Options, or Tableau's default many-to-many, in `custom_extensions`); both descriptions say Tableau aggregates each table on its own rows. Relationships on several columns or non-key columns get no entity (unshackle warns). A calc over fields of several related tables is a TODO in the semantic layer; a FIXED LOD on a related table other than the first is a TODO |
 | joins (`<relation type='join'>`) on a table's key | foreign entity on the other table's model (Ossie relationship with `join_type` in `custom_extensions`); the join's semantics go in both models' descriptions |
 | `{FIXED [a] : AGG([x])}` (one FIXED dimension) | semantic model `<a>_lod` defined by its query (`select a, agg(x) ... group by 1` over the datasource's rows, joins included): Ossie's dataset `source`, and in dbt projects `models/unshackle/<a>_lod.sql`. Primary entity `a`, foreign entity `a` on the table holding it. The value is a dimension (or a measure + metric when the field is a measure); all FIXED fields at the same grain share one model |
 | `AVG({FIXED [a] : SUM([x])})`, `AVG([a FIXED field])` | measure + metric on the `<a>_lod` model |
@@ -189,6 +190,26 @@ over all of the datasource's rows (before the sheet's dimension filters):
 
 Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions.
 Counting rows instead of these distinct combinations can be off by an order of magnitude.
+
+**Relationships in tiles.** A sheet over one logical table queries that table alone. A
+sheet over several is computed the way Tableau computes relationships, never over a join
+of the tables (which would repeat the "one" side's rows):
+
+- each measure is aggregated on its own table (`measures_<table>` CTE) at the sheet's
+  dimensions. Its rows are joined to the distinct (relationship columns, other tables'
+  dimensions) reached through left joins, so each row counts once per distinct combination
+  of dimensions it relates to (`SUM` and `AVG` of `accounts.business_size` by order status
+  count each account once per status), and rows with no match count under NULL;
+- the dimensions' own combinations (their tables inner joined, `dimensions` CTE) are marks
+  too: a dimension value no row relates to shows with an empty measure, and a sheet with
+  only dimensions shows the combinations that exist;
+- the per-table results are joined on the dimensions (`is not distinct from`);
+- an aggregate calc over several tables (`SUM([Revenue]) / SUM([Business Size])`) is split:
+  each aggregate on its own table, then the expression per mark.
+
+Sheets over related tables with filters, a top N, LODs, Number of Records, a row-level
+calc over several tables, a logical table that is itself a join, or a relationship that
+isn't column equalities stay TODO.
 
 In the semantic layer, a calc over one grain's FIXED values is a metric on that grain's
 model (`large_account_orders` on `account_id_lod`), and a nested FIXED is a `_lod` model
@@ -448,7 +469,8 @@ keys: [category, month of order date]
   consumers usually read a relationship as a left join, while a Tableau inner join drops
   unmatched rows and repeats one-side rows per match: the models' descriptions say so,
   and tiles keep the join. Joins on several columns or on non-key columns get no
-  relationship (unshackle warns); new object-model relationships are not read yet. Join
+  relationship (unshackle warns). Relationships (the logical layer) are not joins: see
+  "Relationships in tiles". Join
   columns with the same name get a table suffix in Tableau (`[account_id (accounts)]`).
 - Local names vs captions: formulas reference local names (`[Calculation_123]`,
   sometimes `[sales]` with caption `Sales`); unshackle resolves both.

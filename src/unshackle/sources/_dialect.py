@@ -150,6 +150,8 @@ class _Rewriter:
                 self.i += 1
             self.i += 1
             return "float64" if self.w == "bigquery" else "double"
+        if name == "union" and self.w == "bigquery" and self.peek().lower() not in ("all", "distinct"):
+            return "union distinct"  # BigQuery requires one of them
         if self.peek() != "(":
             return t
         if name in FUNCS and self.w in FUNCS[name]:

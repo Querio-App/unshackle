@@ -168,6 +168,12 @@ def test_render_per_dialect():
     assert "(mod(extract(dayofweek from x) + 5, 7) + 1) as iso" in bigquery and "extract(isoweek from x) as wk" in bigquery
 
 
+def test_union_is_distinct_on_bigquery():
+    sql = "select a from x\nunion\nselect a from y union all select a from z"
+    assert dialect.render(sql, "bigquery") == "select a from x\nunion distinct\nselect a from y union all select a from z"
+    assert dialect.render(sql, "postgres") == sql
+
+
 def test_render_leaves_custom_sql_alone():
     custom = 'SELECT "Region", avg(x) AS a FROM sales WHERE note = \'1.0 * 2\''
     sql = f"with custom_sql as (\n{custom}\n)\nselect \"Region\", avg(a) from custom_sql group by 1"
