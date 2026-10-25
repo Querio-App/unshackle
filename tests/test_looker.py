@@ -56,7 +56,7 @@ def test_parse_lookml_metrics(tmp_path: Path):
     m = _by_name(b.metrics)
     assert m["completed_revenue"].filter == "{{ Dimension('orders__status') }} = 'complete'"
     assert m["large_orders_outside_eu"].filter == (
-        "{{ Dimension('orders__is_large_order') }} = true AND {{ Dimension('customers__region') }} <> 'EU'"
+        "{{ Dimension('orders__is_large_order') }} = true AND ({{ Dimension('customers__region') }} <> 'EU' OR {{ Dimension('customers__region') }} IS NULL)"
     )
     aov = m["average_order_value"]
     assert (aov.type, aov.numerator, aov.denominator) == ("ratio", "total_revenue", "order_count")
@@ -144,12 +144,47 @@ def test_build_outputs(tmp_path: Path):
 def test_filter_expressions():
     r = "{{ Dimension('v__f') }}"
     assert looker_filter_sql(r, "a,b") == f"{r} IN ('a', 'b')"
-    assert looker_filter_sql(r, "-a") == f"{r} <> 'a'"
+    assert looker_filter_sql(r, "-a") == f"({r} <> 'a' OR {r} IS NULL)"
     assert looker_filter_sql(r, "%foo%") == f"{r} LIKE '%foo%'"
     assert looker_filter_sql(r, "NULL") == f"{r} IS NULL"
     assert looker_filter_sql(r, ">=10", "number") == f"{r} >= 10"
-    assert looker_filter_sql(r, "no", "yesno") == f"{r} = false"
+    assert looker_filter_sql(r, "no", "yesno") == f"NOT COALESCE({r}, false)"
     assert looker_filter_sql(r, "7 days", "time") is None
+
+
+def test_negated_filters_keep_nulls():
+    """Matches the SQL Looker generated (BigQuery) for these filters, and its counts on the same rows."""
+    import duckdb
+
+    r = "{{ Dimension('v__f') }}"
+    assert looker_filter_sql(r, "-a,-b") == f"({r} NOT IN ('a', 'b') OR {r} IS NULL)"
+    assert looker_filter_sql(r, "-%foo%") == f"({r} NOT LIKE '%foo%' OR {r} IS NULL)"
+    assert looker_filter_sql(r, "-a,b") == f"{r} = 'b' AND ({r} <> 'a' OR {r} IS NULL)"
+    assert looker_filter_sql(r, "<>5", "number") == f"{r} <> 5"
+    assert looker_filter_sql(r, "-NULL") == f"{r} IS NOT NULL"
+    assert looker_filter_sql(r, "-EMPTY") == f"({r} IS NOT NULL AND {r} <> '')"
+    assert looker_filter_sql(r, "--a") is None
+
+    con = duckdb.connect()
+    con.execute("create table t as select * from (values ('a', 1, true), ('b', 5, false), ('c', 7, null), (null, null, null)) v(s, n, y)")
+
+    def count(col: str, value: str, kind: str = "string") -> int:
+        return con.execute(f"select count(*) from t where {looker_filter_sql(col, value, kind)}").fetchone()[0]
+
+    # Looker's results on the same four rows
+    looker = {
+        ("s", "-a", "string"): 3,
+        ("s", "-a,-b", "string"): 2,
+        ("s", "-%b%", "string"): 3,
+        ("s", "-NULL", "string"): 3,
+        ("s", "-EMPTY", "string"): 3,
+        ("s", "-a,b", "string"): 1,
+        ("n", "<>5", "number"): 2,
+        ("n", "!=5", "number"): 2,
+        ("y", "no", "yesno"): 3,
+        ("y", "yes", "yesno"): 1,
+    }
+    assert {k: count(*k) for k in looker} == looker
 
 
 def test_parse_explore_json_fallback(tmp_path: Path):

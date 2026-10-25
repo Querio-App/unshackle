@@ -47,6 +47,7 @@ from unshackle.ir import (
 )
 from unshackle.raw import RawStore
 from unshackle.sources import _manual
+from unshackle.sources._semyaml import op_sql
 from unshackle.sources.base import Inventory, Source
 
 REF = re.compile(r"\$\{([^}]+)\}")
@@ -410,11 +411,17 @@ def _filter_pairs(measure: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
-    """Translate a Looker filter expression to SQL on `ref`. None when it needs a person."""
+    """Translate a Looker filter expression to SQL on `ref`. None when it needs a person.
+
+    Checked against Looker's generated SQL (BigQuery): string "is not" filters keep NULL rows
+    (`s <> 'a' OR s IS NULL`), number `<>5` does not, a yesno "no" is `NOT COALESCE(y, FALSE)`,
+    and a mixed list "-a,b" is `s = 'b' AND (s <> 'a' OR s IS NULL)`."""
     v = value.strip()
     if kind == "yesno":
-        if v.lower() in ("yes", "no"):
-            return f"{ref} = {'true' if v.lower() == 'yes' else 'false'}"
+        if v.lower() == "yes":
+            return f"{ref} = true"
+        if v.lower() == "no":
+            return f"NOT COALESCE({ref}, false)"
         return None
     if v.upper() == "NULL":
         return f"{ref} IS NULL"
@@ -431,19 +438,18 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
     # are literal in a string filter ("(5) Purchase")
     if kind in ("time", "number") or re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
         return None
-    neg = v.startswith("-")
     parts = [p.strip().replace("^,", ",") for p in re.split(r"(?<!\^),", v)]
-    parts = [p[1:] if p.startswith("-") else p for p in parts] if neg else parts
-    if any(p.startswith("-") for p in parts) or not all(parts):
+    if any(p in ("", "-") or p.startswith("--") for p in parts):
         return None
+    include = [p for p in parts if not p.startswith("-")]
+    exclude = [p[1:] for p in parts if p.startswith("-")]
     lit = lambda s: "'" + s.replace("'", "''") + "'"  # noqa: E731
     if any("%" in p for p in parts):
         if len(parts) > 1:
             return None
-        return f"{ref} {'NOT LIKE' if neg else 'LIKE'} {lit(parts[0])}"
-    if len(parts) == 1:
-        return f"{ref} {'<>' if neg else '='} {lit(parts[0])}"
-    return f"{ref} {'NOT IN' if neg else 'IN'} ({', '.join(lit(p) for p in parts)})"
+        return f"({ref} NOT LIKE {lit(exclude[0])} OR {ref} IS NULL)" if exclude else f"{ref} LIKE {lit(include[0])}"
+    eq, ne = op_sql(ref, "equals", include), op_sql(ref, "notEquals", exclude)
+    return " AND ".join(c for c in (eq, ne and f"({ne} OR {ref} IS NULL)") if c)
 
 
 # ==================================================================== parser
