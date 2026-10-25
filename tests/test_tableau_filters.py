@@ -18,6 +18,7 @@ computed here from Tableau's documented rules:
 """
 
 import datetime as dt
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -276,10 +277,10 @@ def test_range_bounds_on_a_members_value(con, rows, tiles):
     avg = {}
     for m, *_ in by(rows, [M], QTY):
         vals = [float(r["discount_percentage"]) for r in rows if r[M] == m and r["discount_percentage"] is not None]
-        avg[m] = sum(vals) / len(vals)
+        avg[m] = math.fsum(vals) / len(vals)  # correctly rounded (plain sum() rounds differently by Python version)
     lo, hi = 9.4287919463087277, 12.06140845070423
     on_lo, on_hi = sorted(avg, key=avg.get)[1], sorted(avg, key=avg.get)[-2]
-    assert 0 < lo - avg[on_lo] < 1e-14 * lo and 0 < hi - avg[on_hi] < 1e-14 * hi  # on the bound, just not bit for bit
+    assert 0 < abs(lo - avg[on_lo]) < 1e-14 * lo and 0 < abs(hi - avg[on_hi]) < 1e-14 * hi  # on the bound, just not bit for bit
     tol = 1.1e-14
     keep = {m for m, v in avg.items() if lo - abs(lo) * tol <= v <= hi + abs(hi) * tol}
     assert on_lo in keep and on_hi in keep and len(keep) == len(avg) - 2  # the lowest and the highest are out
