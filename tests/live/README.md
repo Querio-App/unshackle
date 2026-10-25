@@ -49,7 +49,9 @@ the next starts, so they share the host ports.
 | `UNSHACKLE_LIVE` | unset | `1` runs the live tests |
 | `UNSHACKLE_LIVE_DBT` | `dbt` on PATH | dbt with the postgres adapter |
 | `UNSHACKLE_LIVE_KEEP` | unset | `1` leaves the containers up after the test (pair with `--basetemp=/tmp/live` to keep the repo) |
-| `UNSHACKLE_LIVE_PG_PORT` | `55432` | host port of the warehouse |
+| `UNSHACKLE_LIVE_PG_PORT` | `55432` (a free port for runs with a run id) | host port of the warehouse |
+| `UNSHACKLE_LIVE_RUN` | generated (Tableau) | run id: in the names of everything a Tableau run creates, and in its Docker project |
+| `UNSHACKLE_LIVE_TABLEAU_STALE_HOURS` | `6` | the Tableau test deletes what runs older than this left behind |
 | `UNSHACKLE_LIVE_PG_PASSWORD`, `UNSHACKLE_LIVE_SECRET` | generated per run | warehouse password and the tools' secret keys |
 | `UNSHACKLE_LIVE_LIGHTDASH_PORT` | `58080` | host port of Lightdash |
 | `UNSHACKLE_LIVE_METABASE_PORT` | `3300` | host port of Metabase |
@@ -165,15 +167,32 @@ export TABLEAU_PAT_NAME=... TABLEAU_PAT_SECRET=...   # from your shell or a secr
 UNSHACKLE_LIVE=1 pytest tests/live/test_tableau_live.py -s
 ```
 
-- What it changes on the site: one project (`unshackle-live`, override with
-  `UNSHACKLE_LIVE_TABLEAU_PROJECT`) holding everything it publishes, and one group,
-  `unshackle-managers`. No site settings or users are touched. At the end, even when a
-  step fails, it deletes the project's workbooks and data sources, the project, the
-  group, and the database and tables Tableau Catalog recorded for the data source's
-  connection (`warehouse.example.com`), then lists them again to check they are gone. On a
-  site without external assets yet, Tableau creates an "External Assets Default Project"
-  the first time; that project is Tableau's and is left in place. `bootstrap.teardown()` does the
-  same by hand: `python -c "import sys; sys.path.insert(0, 'tests/live/tableau'); import bootstrap; print(bootstrap.teardown())"`.
+- What it changes on the site: per run, one project, `unshackle-live-<run id>` (prefix
+  overridable with `UNSHACKLE_LIVE_TABLEAU_PROJECT`), holding everything it publishes, and one
+  group, `unshackle-managers-<run id>`. No site settings or users are touched. At the end,
+  even when a step fails, it deletes the project's workbooks and data sources, the project,
+  the group, and the database and tables Tableau Catalog recorded for the data source's
+  connection (`warehouse-<run id>.example.com`), then lists them again to check they are
+  gone. On a site without external assets yet, Tableau creates an "External Assets Default
+  Project" the first time; that project is Tableau's and is left in place.
+- **Runs at the same time** (several agents on one site) are safe: the run id
+  (`UNSHACKLE_LIVE_RUN`, or `<UTC yyyymmddhhmm>-<4 hex>` generated per run) is in every name a
+  run creates, and teardown deletes only its own. The local warehouse is a Docker project of
+  its own (`unshackle-live-tableau-<run id>`) on a free port. At the start, a run also sweeps
+  what runs older than `UNSHACKLE_LIVE_TABLEAU_STALE_HOURS` (default 6) left behind, found
+  by the age in their run id, and the names from before run ids (`unshackle-live`,
+  `unshackle-managers`, `warehouse.example.com`); it never deletes a younger run's content.
+- **One PAT per run.** One PAT holds one session: a second sign-in with the same token
+  signs the first one out, and the first run fails with a 401 that says so. Give each agent
+  or terminal its own token (My Account Settings > Personal Access Tokens > Create), and
+  set `TABLEAU_PAT_NAME` / `TABLEAU_PAT_SECRET` per process.
+- By hand: `bootstrap.teardown(run="<run id>")` deletes one run, `bootstrap.sweep()` the stale
+  ones (`sweep(older_than=timedelta(0))` deletes every run, including running ones):
+  `UNSHACKLE_LIVE_RUN=x python -c "import sys; sys.path.insert(0, 'tests/live/tableau'); import bootstrap; print(bootstrap.sweep())"`.
+- `tests/live/tableau/tableau_site.py` is the shared client for live Tableau tests: sign-in,
+  paginated REST lists, publishing, view data with filters (`view_data`), VizQL Data Service
+  queries with fields, functions and ad-hoc calculations (`query`), and waiting for the
+  Metadata API.
 - Data: Tableau Cloud can't reach the local warehouse, so `tests/live/tableau/bootstrap.py`
   writes orders joined to accounts and products into a `.hyper` extract with Tableau's
   Hyper API (`tableauhyperapi`, Apache 2.0; used only to build the test file) and
@@ -191,7 +210,6 @@ UNSHACKLE_LIVE=1 pytest tests/live/test_tableau_live.py -s
   Service queries on the published data source for its calculated fields.
 - The Metadata API indexes new content with a delay (seconds to several minutes); the
   bootstrap waits for it before `extract`.
-- One PAT holds one session: don't run anything else with the same token during the test.
 - `tests/fixtures/tableau_live/` and `tests/fixtures/tableau_live_lod/` are raw extracts from
   runs, used by offline tests in `tests/test_tableau_live_fixture.py` and
   `tests/test_tableau_live_lod_fixture.py`.

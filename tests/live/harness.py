@@ -21,6 +21,7 @@ import importlib.util
 import os
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -64,12 +65,16 @@ def wait_http(url: str, timeout: float = 300) -> None:
 
 
 class Stack:
-    """docker-compose project `unshackle-live-<tool>`: the shared warehouse plus tests/live/<tool>/docker-compose.yml (if any)."""
+    """docker-compose project `unshackle-live-<tool>`: the shared warehouse plus tests/live/<tool>/docker-compose.yml (if any).
 
-    def __init__(self, tool: str, dataset: str = "dunder_mifflin"):
+    With a `run` id the project is `unshackle-live-<tool>-<run>` and the warehouse gets a free host port (unless
+    UNSHACKLE_LIVE_PG_PORT is set), so runs of the same test can go on at the same time on one machine."""
+
+    def __init__(self, tool: str, dataset: str = "dunder_mifflin", run: str = ""):
         self.tool, self.dataset = tool, dataset
-        self.project = f"unshackle-live-{tool}"
-        self.pg_port = int(os.environ.get("UNSHACKLE_LIVE_PG_PORT", "55432"))
+        self.project = f"unshackle-live-{tool}" + (f"-{run.lower()}" if run else "")
+        port = os.environ.get("UNSHACKLE_LIVE_PG_PORT")
+        self.pg_port = int(port) if port else (_free_port() if run else 55432)
         self.env = {
             **os.environ,
             "UNSHACKLE_LIVE_PG_PORT": str(self.pg_port),
@@ -156,6 +161,12 @@ KEYS: dict[str, dict[str, Any]] = {
         "foreign": [("orders", "account_id", "accounts"), ("orders", "product_id", "products"), ("reviews", "order_id", "orders")],
     },
 }
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 def _pg_type(duck: str) -> str:

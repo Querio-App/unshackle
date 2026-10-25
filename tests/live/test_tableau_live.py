@@ -10,8 +10,10 @@
    against the migrated notebook tiles and the generated Ossie expressions; `unshackle verify`
 5. the project and the group are deleted, even when a step fails, and the deletion is checked
 
-Needs Docker, docker-compose and a site: TABLEAU_SERVER_URL, TABLEAU_SITE, TABLEAU_PAT_NAME and
-TABLEAU_PAT_SECRET of a Site Administrator Creator. See tests/live/README.md.
+Each run has an id (UNSHACKLE_LIVE_RUN, or generated) in its site content's names and in its Docker project,
+so runs can go on at the same time; each needs its own PAT. Needs Docker, docker-compose and a site:
+TABLEAU_SERVER_URL, TABLEAU_SITE, TABLEAU_PAT_NAME and TABLEAU_PAT_SECRET of a Site Administrator Creator.
+See tests/live/README.md.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ pytestmark = [
 
 def test_tableau_end_to_end(tmp_path: Path):
     tableau = bootstrap_module("tableau")
-    with Stack("tableau") as stack:
+    with Stack("tableau", run=tableau.RUN) as stack:
         assert stack.load_data()
         try:
             ids = tableau.main()
@@ -60,8 +62,9 @@ def _assert_gone(tableau) -> None:
         site.close()
 
 
-def _ossie_sql(ossie: dict, select: dict[str, str], table: str) -> str:
-    """SELECT over the dataset's table with each Ossie field/metric expression, derived fields inlined."""
+def _ossie_sql(ossie: dict, select: dict[str, str], table: str, group: bool = True) -> str:
+    """SELECT over the dataset's table with each Ossie field/metric expression, derived fields inlined; grouped by the
+    first column unless `group` is false (a single aggregate)."""
     ds = ossie["datasets"][0]
     fields = {f["name"]: f["expression"]["dialects"][0]["expression"] for f in ds["fields"]}
     exprs = {**fields, **{m["name"]: m["expression"]["dialects"][0]["expression"] for m in ds["metrics"]}}
@@ -72,7 +75,7 @@ def _ossie_sql(ossie: dict, select: dict[str, str], table: str) -> str:
             if field != name and sql != field:
                 expr = re.sub(rf"\b{field}\b", f"({sql})", expr)
         out.append(f"{expr} AS {alias}")
-    return f"SELECT {', '.join(out)} FROM {table} GROUP BY 1"
+    return f"SELECT {', '.join(out)} FROM {table}" + (" GROUP BY 1" if group else "")
 
 
 def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> None:
@@ -98,15 +101,11 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
     site = tableau.Site()
     try:
         # The table sheet with its parameter set to 1000, as a viewer would with the slider.
-        r = site.api("GET", f"/views/{views['Large Orders by Account']}/data", params={"vf_Min Order Value": "1000", "maxAge": 1},
-                     headers={"Accept": "*/*"})
         data.mkdir(parents=True, exist_ok=True)
-        (data / "large-orders-1000.csv").write_text(r.text)
+        (data / "large-orders-1000.csv").write_text(site.view_data(views["Large Orders by Account"], **{"Min Order Value": "1000"}))
 
         def vds(slug: str, fields: list[dict]) -> str:
-            resp = site.call("POST", "/api/v1/vizql-data-service/query-datasource",
-                             json={"datasource": {"datasourceLuid": ids["datasource"]}, "query": {"fields": fields}})
-            rows = (resp if isinstance(resp, dict) else resp.json())["data"]  # not always sent as application/json
+            rows = site.query(ids["datasource"], fields)
             cols = list(rows[0])
             write_csv(data / f"{slug}.csv", cols, [[row[c] for c in cols] for row in rows])
             return f"migration/parity/data/{slug}.csv"

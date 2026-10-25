@@ -7,7 +7,8 @@ products, written to a `.hyper` file with Tableau's Hyper API (`tableauhyperapi`
 when a Desktop user extracts from a database and publishes; Tableau serves the extract
 and never connects to the warehouse.
 
-Everything goes into one project (`unshackle-live` by default):
+Everything goes into one project per run, `unshackle-live-<run id>` (see tableau_site.py; runs can
+go on at the same time):
 
 - published data source "Dunder Mifflin Orders" (.tdsx: XML + extract): orders inner
   join accounts and products, calculated fields (a ratio, an IF, DATETRUNC, a FIXED LOD,
@@ -16,37 +17,46 @@ Everything goes into one project (`unshackle-live` by default):
   a table filtered by a parameter-driven calc, and a dashboard with all four;
 - workbook "Dunder Mifflin LOD" on it: FIXED, INCLUDE and EXCLUDE LODs in 12 sheets and a dashboard
   (see LOD_SHEETS);
-- group `unshackle-managers` (empty) with View on the project and the workbook.
+- group `unshackle-managers-<run id>` (empty) with View on the project and the workbook.
 
-`teardown()` deletes the project (and so its content), the group, and the database and tables
-Tableau Catalog lists for the data source's connection (external assets, kept after the data
-source is gone). Tableau may also create an "External Assets Default Project" for those the
+`teardown()` deletes this run's project (and so its content), its group, and the database and tables
+Tableau Catalog lists for its data source's connection (external assets, kept after the data source is
+gone; the connection's host has the run id in it). `sweep()` does the same for runs older than
+UNSHACKLE_LIVE_TABLEAU_STALE_HOURS (default 6), left over by interrupted runs; it never touches a run
+that may still be going. Tableau may also create an "External Assets Default Project" for those the
 first time; it is Tableau's, so it is left alone.
 """
 
 from __future__ import annotations
 
-import io
-import re
 import os
+import re
+import sys
 import tempfile
-import time
 import uuid
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import quoteattr
 
 import httpx
 
+sys.path.insert(0, str(Path(__file__).parent))
+from tableau_site import PREFIX, Site, run_age, run_id  # noqa: E402
+
 DATA = Path(__file__).parent.parent / "data" / "dunder_mifflin"
-PROJECT = os.environ.get("UNSHACKLE_LIVE_TABLEAU_PROJECT", "unshackle-live")
-GROUP = "unshackle-managers"
+RUN = run_id()
+PROJECT = f"{PREFIX}-{RUN}"
+GROUP_PREFIX = "unshackle-managers"
+GROUP = f"{GROUP_PREFIX}-{RUN}"
 DATASOURCE = "Dunder Mifflin Orders"
 WORKBOOK = "Dunder Mifflin Sales"
 SHEETS = ("Revenue by Paper Type", "Monthly Revenue", "Average Order Value", "Large Orders by Account")
 DASHBOARD = "Sales Overview"
-WAREHOUSE_HOST = "warehouse.example.com"  # what the data source says it connects to; Tableau never reaches it
+# What the data source says it connects to (Tableau never reaches it); Tableau Catalog lists it, so it carries the run id.
+WAREHOUSE_HOST = f"warehouse-{RUN}.example.com"
+STALE = timedelta(hours=float(os.environ.get("UNSHACKLE_LIVE_TABLEAU_STALE_HOURS", "6")))
 
 # (local name, table, remote name, Tableau type). Duplicate column names in a join get " (table)", as in Desktop.
 COLUMNS = [
@@ -510,82 +520,16 @@ def lod_workbook_twb(server: str, site: str, ds_content_url: str) -> str:
 # ------------------------------------------------------------------ REST
 
 
-class Site:
-    """A signed-in REST session (PAT from TABLEAU_PAT_NAME / TABLEAU_PAT_SECRET)."""
-
-    def __init__(self):
-        self.server = os.environ["TABLEAU_SERVER_URL"].rstrip("/")
-        self.content_url = os.environ.get("TABLEAU_SITE", "")
-        self.version = os.environ.get("TABLEAU_API_VERSION") or "3.24"
-        self.http = httpx.Client(base_url=self.server, timeout=300, headers={"Accept": "application/json"})
-        creds = self.call("POST", f"/api/{self.version}/auth/signin", json={"credentials": {
-            "personalAccessTokenName": os.environ["TABLEAU_PAT_NAME"],
-            "personalAccessTokenSecret": os.environ["TABLEAU_PAT_SECRET"],
-            "site": {"contentUrl": self.content_url},
-        }})["credentials"]
-        self.http.headers["X-Tableau-Auth"] = creds["token"]
-        self.site_id = creds["site"]["id"]
-        self.user_id = creds["user"]["id"]
-
-    def call(self, method: str, path: str, **kw: Any) -> Any:
-        r = self.http.request(method, path, **kw)
-        if r.status_code >= 400:
-            raise RuntimeError(f"{method} {path.split('?')[0]} -> {r.status_code}: {r.text[:600]}")
-        return r.json() if r.headers.get("content-type", "").startswith("application/json") and r.content else r
-
-    def api(self, method: str, path: str, **kw: Any) -> Any:
-        return self.call(method, f"/api/{self.version}/sites/{self.site_id}{path}", **kw)
-
-    def items(self, path: str, key: str, item: str, **params: Any) -> list[dict[str, Any]]:
-        data = self.api("GET", path, params={"pageSize": 1000, **params})
-        found = (data.get(key) or {}).get(item) or []
-        return [found] if isinstance(found, dict) else found
-
-    def close(self) -> None:
-        try:
-            self.call("POST", f"/api/{self.version}/auth/signout")
-        finally:
-            self.http.close()
-
-    def publish(self, kind: str, name: str, project_id: str, filename: str, content: bytes) -> dict[str, Any]:
-        """POST .../{workbooks|datasources}?overwrite=true as multipart/mixed (request_payload + file)."""
-        tag = kind[:-1]
-        payload = f"<tsRequest><{tag} name={quoteattr(name)}><project id='{project_id}' /></{tag}></tsRequest>"
-        boundary = uuid.uuid4().hex
-        body = io.BytesIO()
-        body.write(f"--{boundary}\r\nContent-Disposition: name=\"request_payload\"\r\nContent-Type: text/xml\r\n\r\n{payload}\r\n".encode())
-        body.write(f"--{boundary}\r\nContent-Disposition: name=\"tableau_{tag}\"; filename=\"{filename}\"\r\n"
-                   f"Content-Type: application/octet-stream\r\n\r\n".encode())
-        body.write(content)
-        body.write(f"\r\n--{boundary}--\r\n".encode())
-        extra = "&skipConnectionCheck=true" if kind == "workbooks" else ""
-        return self.api("POST", f"/{kind}?overwrite=true{extra}", content=body.getvalue(),
-                        headers={"Content-Type": f"multipart/mixed; boundary={boundary}"})[tag]
-
-
 def _permission_body(group_id: str, caps: dict[str, str]) -> dict[str, Any]:
     return {"permissions": {"granteeCapabilities": [{"group": {"id": group_id}, "capabilities": {"capability": [
         {"name": n, "mode": m} for n, m in caps.items()]}}]}}
-
-
-def wait_for_metadata(site: Site, workbook: str, timeout: float = 600) -> None:
-    """The Metadata API indexes new content with a delay; wait until it knows the workbook."""
-    query = "query($l: [String]) { workbooksConnection(filter: {luidWithin: $l}) { nodes { luid } } }"
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        data = site.call("POST", "/api/metadata/graphql", json={"query": query, "variables": {"l": [workbook]}})
-        nodes = ((data.get("data") or {}).get("workbooksConnection") or {}).get("nodes") or []
-        if nodes:
-            return
-        time.sleep(10)
-    raise TimeoutError(f"the Metadata API did not index workbook {workbook} within {timeout:.0f}s")
 
 
 def main() -> dict[str, Any]:
     """Create the project, data source, workbook, group and permissions. Returns their ids."""
     site = Site()
     try:
-        teardown(site)  # start clean after an interrupted run
+        sweep(site)  # leftovers of interrupted runs, never a run that may still be going
         project = site.api("POST", "/projects", json={"project": {"name": PROJECT, "description": "unshackle live test (temporary)"}})["project"]
         group = site.api("POST", "/groups", json={"group": {"name": GROUP}})["group"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -600,34 +544,61 @@ def main() -> dict[str, Any]:
                  json=_permission_body(group["id"], {"Read": "Allow", "ExportData": "Allow", "Write": "Deny"}))
         views = {v["name"]: v["id"] for w in (wb, lod) for v in site.items(f"/workbooks/{w['id']}/views", "views", "view")}
         for w in (wb, lod):
-            wait_for_metadata(site, w["id"])
+            site.wait_for_metadata(w["id"])
         return {"project": project["id"], "group": group["id"], "datasource": ds["id"], "workbook": wb["id"], "lod_workbook": lod["id"],
                 "views": views}
     finally:
         site.close()
 
 
-def teardown(site: Site | None = None) -> list[str]:
-    """Delete the project (its data sources and workbooks go with it) and the group. Returns what was deleted."""
+def teardown(site: Site | None = None, run: str | None = None) -> list[str]:
+    """Delete one run's project (its data sources and workbooks go with it), group and Catalog database: this run's by
+    default. Returns what was deleted."""
+    run = run or RUN
+    return _delete(site, lambda name: name == f"{PREFIX}-{run}", lambda name: name == f"{GROUP_PREFIX}-{run}",
+                   lambda host: host == f"warehouse-{run}.example.com")
+
+
+def sweep(site: Site | None = None, older_than: timedelta | None = None) -> list[str]:
+    """Delete what live runs older than `older_than` (default UNSHACKLE_LIVE_TABLEAU_STALE_HOURS) left behind, found by
+    name prefix and the age in the run id. Names from before run ids (no id in them) count as stale."""
+    limit = STALE if older_than is None else older_than
+
+    def stale(name: str, prefix: str) -> bool:
+        if name == prefix:
+            return True
+        if not name.startswith(f"{prefix}-"):
+            return False
+        age = run_age(name)
+        return age is not None and age > limit
+
+    return _delete(site, lambda n: stale(n, PREFIX), lambda n: stale(n, GROUP_PREFIX),
+                   lambda h: h.endswith(".example.com") and stale(h.removesuffix(".example.com"), "warehouse"))
+
+
+def _delete(site: Site | None, project, group, host) -> list[str]:
     own = site is None
     site = site or Site()
     gone: list[str] = []
     try:
-        for p in site.items("/projects", "projects", "project", filter=f"name:eq:{PROJECT}"):
+        for p in site.items("/projects", "projects", "project"):
+            if not project(p["name"]):
+                continue
             for kind, item in (("workbooks", "workbook"), ("datasources", "datasource")):
-                for c in site.items(f"/{kind}", kind, item, filter=f"projectName:eq:{PROJECT}"):
+                for c in site.items(f"/{kind}", kind, item, filter=f"projectName:eq:{p['name']}"):
                     site.api("DELETE", f"/{kind}/{c['id']}")
-                    gone.append(f"{item} {c['name']}")
+                    gone.append(f"{item} {c['name']} ({p['name']})")
             site.api("DELETE", f"/projects/{p['id']}")
             gone.append(f"project {p['name']}")
-        for g in site.items("/groups", "groups", "group", filter=f"name:eq:{GROUP}"):
-            site.api("DELETE", f"/groups/{g['id']}")
-            gone.append(f"group {g['name']}")
+        for g in site.items("/groups", "groups", "group"):
+            if group(g["name"]):
+                site.api("DELETE", f"/groups/{g['id']}")
+                gone.append(f"group {g['name']}")
         # Tableau Catalog adds the data source's database and tables as external assets; they outlive the data source.
         for db in site.items("/databases", "databases", "database"):
-            if db.get("hostName") == WAREHOUSE_HOST and not db.get("isEmbedded"):
+            if host(db.get("hostName") or "") and not db.get("isEmbedded"):
                 site.api("DELETE", f"/databases/{db['id']}")
-                gone.append(f"database {db['name']} (external asset, with its tables)")
+                gone.append(f"database {db['name']} on {db.get('hostName')} (external asset, with its tables)")
     finally:
         if own:
             site.close()
