@@ -134,3 +134,58 @@ def test_timeframe_sql_parses_in_each_dialect(dialect):
             sql = _timeframe(tf, "t.created_at", dialect, week_start)
             assert sql, (dialect, tf)
             sqlglot.parse_one(f"SELECT {sql} FROM t", read=dialect)
+
+
+# ---------------------------------------------------------------- round 2: dimension types and statistics
+
+
+def _parse_evidence2(repo: Path, warehouse: str) -> Bundle:
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / "unshackle.toml").write_text(f'[datasources.warehouse]\ntype = "{warehouse}"\n')
+    store = RawStore(repo, "looker")
+    store.put_text("lookml/unshackle_evidence2.view.lkml", (FIX / "evidence2.view.lkml").read_text())
+    store.put_text("lookml/m.model.lkml", 'connection: "bq"\ninclude: "/unshackle_evidence2.view"\n' + (FIX / "evidence2.explores.lkml").read_text())
+    return get_source("looker").parse(store)
+
+
+@pytest.fixture(scope="module")
+def bundle2(tmp_path_factory) -> Bundle:
+    return _parse_evidence2(tmp_path_factory.mktemp("bq"), "bigquery")
+
+
+@pytest.fixture(scope="module")
+def db2() -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect()
+    view = lkml.load((FIX / "evidence2.view.lkml").read_text())["views"][0]
+    con.execute(f"create table ev_f as {view['derived_table']['sql'].replace('FLOAT64', 'DOUBLE')}")
+    return con
+
+
+def test_tier_and_case_dimensions_return_lookers_labels(bundle2, db2):
+    dims = _by_name(_by_name(bundle2.semantic_models)["ev_f"].dimensions)
+    for name in ("n_tier", "n_tier_classic", "s_case"):
+        assert not dims[name].todo, name
+        ours = dict(db2.execute(f"select id, {dims[name].expr} from ev_f").fetchall())
+        assert ours == {r["ev_f.id"]: r[f"ev_f.{name}"] for r in looker("dimension_types")}, name
+
+
+def test_percentiles_follow_lookers_bigquery_formula(bundle2, db2, tmp_path):
+    metrics = _by_name(bundle2.metrics)
+    for name in ("n_p25", "n_p90"):
+        assert "on BigQuery" in metrics[name].todo, name
+    # the median is the continuous median in Looker's formula too
+    median = _by_name(_by_name(bundle2.semantic_models)["ev_f"].measures)["n_median"]
+    assert median.agg == "median"
+    by_big = dict(db2.execute("select case when n > 3 then 'Yes' else 'No' end, quantile_cont(n, 0.5) from ev_f group by 1").fetchall())
+    assert by_big == {r["ev_f.n_big"]: r["ev_f.n_median"] for r in looker("stats_by_big")}
+    assert db2.execute("select quantile_cont(n, 0.5) from ev_f").fetchone()[0] == looker("stats_total")[0]["ev_f.n_median"]
+    # and what a translation would get wrong: PERCENTILE_CONT is not Looker's p25 / p90
+    assert db2.execute("select quantile_cont(n, 0.25), quantile_cont(n, 0.9) from ev_f").fetchone() != (1, 10)
+    # on another warehouse the percentile stays translated
+    other = _by_name(_by_name(_parse_evidence2(tmp_path, "snowflake").semantic_models)["ev_f"].measures)
+    assert other["n_p25"].agg_params == {"percentile": 0.25, "use_discrete_percentile": False}
+
+
+def test_sums_show_zero_for_an_empty_group(bundle2):
+    assert _by_name(bundle2.metrics)["n_sum_big"].fill_nulls_with == 0
+    assert {r["ev_f.n_big"]: r["ev_f.n_sum_big"] for r in looker("stats_by_big")}["No"] == 0

@@ -229,7 +229,8 @@ class _Resolver:
         self.stack.append(m.name)
         try:
             if m.type == "simple":
-                return self.measure(m.measure, m.semantic_model, filters)
+                agg = self.measure(m.measure, m.semantic_model, filters)
+                return agg if m.fill_nulls_with is None else f"COALESCE({agg}, {m.fill_nulls_with})"
             if m.type == "ratio":
                 if not m.numerator or not m.denominator:
                     raise _Skip("ratio needs a numerator and a denominator")

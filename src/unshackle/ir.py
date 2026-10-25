@@ -108,6 +108,7 @@ class Metric:
     filter: str = ""
     window: str = ""
     grain_to_date: str = ""
+    fill_nulls_with: int | None = None  # what the source shows for a group with nothing to aggregate
     semantic_model: str = ""
     source_expression: str = ""
     source_language: str = ""

@@ -45,7 +45,8 @@ def test_parse_lookml_semantics(tmp_path: Path):
     assert (meas["total_revenue"].agg, meas["total_revenue"].expr) == ("sum", "amount_usd")
     assert (meas["order_count"].agg, meas["order_count"].expr) == ("count", "order_id")  # count -> primary key
     assert meas["customer_count"].agg == "count_distinct"
-    assert meas["p90_order_value"].agg_params["percentile"] == 0.9
+    # Looker's percentile on BigQuery is neither PERCENTILE_CONT nor _DISC; the warehouse is unknown here
+    assert "p90_order_value" not in meas and "percentile 90 on BigQuery" in _by_name(b.metrics)["p90_order_value"].todo
     assert _by_name(models["customers"].dimensions)["signed_up"].time_granularity == "day"
     assert any(e.name == "customer_lifetime" for e in models["customers"].entities)
     assert "customers_count" in _by_name(models["customers"].measures)  # bare `count` is qualified

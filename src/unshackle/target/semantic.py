@@ -317,6 +317,8 @@ def _metric_body(metric: Metric, names: _Names, name: str) -> dict[str, Any]:
     params: dict[str, Any] = {}
     if metric.type in ("simple", "cumulative"):
         params["measure"] = _measure_name(metric, names) or None
+        if params["measure"] and metric.fill_nulls_with is not None:
+            params["measure"] = {"name": params["measure"], "fill_nulls_with": metric.fill_nulls_with}
     if metric.type == "cumulative":
         cum = _clean({"window": metric.window, "grain_to_date": metric.grain_to_date})
         if cum:
