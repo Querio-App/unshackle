@@ -1,0 +1,6 @@
+{
+  "server": "https://example.online.tableau.com",
+  "site_id": "00000000-0000-4000-8000-000000000006",
+  "content_url": "example",
+  "api_version": "3.24"
+}

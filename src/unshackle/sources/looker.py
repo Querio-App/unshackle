@@ -122,9 +122,8 @@ TIMEFRAME_SQL = {
     + " ".join(f"WHEN {i} THEN '{m}'" for i, m in enumerate(calendar.month_name) if i)
     + " END",
 }
-# The rest are strings or week-based numbers that Looker formats (checked against its SQL on
-# BigQuery, tests/fixtures/looker_generated/): month '2026-12', quarter '2026-10' (its first
-# month), week '2026-12-28' (the day it starts), day_of_week 'Thursday', day_of_week_index
+# The rest are strings or week-based numbers that Looker formats: month '2026-12', quarter
+# '2026-10' (its first month), week '2026-12-28' (the day it starts), day_of_week 'Thursday', day_of_week_index
 # (0 = week_start_day), week_of_year (ISO, whatever the week start), quarter_of_year 'Q4'.
 # Per warehouse: the type for strings, 'YYYY-MM-DD' / 'YYYY-MM' of a date, the day of the week
 # with Monday = 0, a date minus n days, the quarter's first day, the ISO week, the day of the year.
@@ -530,7 +529,7 @@ NUM = r"-?\d+(?:\.\d+)?"
 
 
 def _number_filter(ref: str, v: str) -> str | None:
-    """Looker's number filter expressions, as its SQL writes them (tests/fixtures/looker_generated/filters.*)."""
+    """Looker's number filter expressions: lists, NOT (which drops NULLs), [a,b] / (a,b) ranges, `a to b`, AND / OR."""
     if re.fullmatch(rf"NOT\s+{NUM}(\s*,\s*{NUM})*", v, re.I):  # NOT keeps no NULLs: NOT (n = 5)
         vals = re.findall(NUM, v[3:])
         return f"NOT ({ref} = {vals[0]})" if len(vals) == 1 else f"NOT ({ref} IN ({', '.join(vals)}))"
@@ -570,7 +569,7 @@ def _date_bounds(text: str) -> tuple[datetime, datetime | None] | None:
 
 
 def relative_bounds(v: str, datatype: str, dialect: str) -> tuple[str, str | None] | None:
-    """(start, end) SQL of a relative date filter as Looker writes it on BigQuery (filters.sql, date_start_relative):
+    """(start, end) SQL of a relative date filter as Looker writes it on BigQuery:
     `N days` (today and the N-1 days before), `before N days ago` (end only: start None), `this month`,
     `last month` (dates only). None for other forms, columns and warehouses."""
     if dialect != "bigquery" or datatype not in ("date", "timestamp"):
@@ -637,7 +636,7 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str 
                       relative: bool = True) -> str | None:
     """Translate a Looker filter expression to SQL on `ref`. None when it needs a person.
 
-    Checked against Looker's generated SQL (BigQuery): string "is not" filters keep NULL rows
+    As Looker writes them (BigQuery): string "is not" filters keep NULL rows
     (`s <> 'a' OR s IS NULL`), number `<>5` does not, a yesno "no" is `NOT COALESCE(y, FALSE)`,
     and a mixed list "-a,b" is `s = 'b' AND (s <> 'a' OR s IS NULL)`."""
     v = value.strip()
@@ -707,8 +706,7 @@ DIALECT_NAME = {"bigquery": "bigquery_standard_sql"}  # _dialect._name, as Looke
 
 
 class Liquid:
-    """Looker's Liquid in SQL, rendered for one query, as Looker's own SQL showed it
-    (tests/fixtures/looker_generated/liquid_*, dialect, date_start_*, filter_field_sql):
+    """Looker's Liquid in SQL, rendered for one query as Looker renders it:
     - `{% parameter p %}` / `{{ p._parameter_value }}`: an unquoted or number parameter as written, a string
       parameter as a quoted literal; `{% if %}` / `elsif` / `else` on `p._parameter_value == '...'`, on
       `_dialect._name` and on `f._is_filtered` / `_in_query` / `_is_selected`, joined by `or` or by `and`;

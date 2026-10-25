@@ -1,0 +1,261 @@
+{
+  "qProperty": {
+    "qInfo": {
+      "qId": "sheet02",
+      "qType": "sheet"
+    },
+    "qMetaDef": {
+      "title": "Orders detail",
+      "description": ""
+    },
+    "rank": 1,
+    "columns": 24,
+    "rows": 12,
+    "qChildListDef": {
+      "qData": {
+        "title": "/title"
+      }
+    },
+    "cells": [
+      {
+        "name": "table01",
+        "type": "table",
+        "col": 0,
+        "row": 0,
+        "colspan": 24,
+        "rowspan": 5
+      },
+      {
+        "name": "pie01",
+        "type": "piechart",
+        "col": 0,
+        "row": 5,
+        "colspan": 12,
+        "rowspan": 7
+      },
+      {
+        "name": "bar02",
+        "type": "barchart",
+        "col": 12,
+        "row": 5,
+        "colspan": 12,
+        "rowspan": 7
+      }
+    ]
+  },
+  "qChildren": [
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "table01",
+          "qType": "table"
+        },
+        "visualization": "table",
+        "title": "Orders by status and paper type",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "qHyperCubeDef": {
+          "qDimensions": [
+            {
+              "qDef": {
+                "cId": "d03",
+                "qGrouping": "N",
+                "qFieldDefs": [
+                  "status"
+                ],
+                "qFieldLabels": [
+                  ""
+                ],
+                "autoSort": true,
+                "othersLabel": "Others"
+              },
+              "qOtherTotalSpec": {
+                "qOtherMode": "OTHER_OFF",
+                "qTotalMode": "TOTAL_OFF"
+              }
+            },
+            {
+              "qDef": {
+                "cId": "d04",
+                "qGrouping": "N",
+                "qFieldDefs": [],
+                "qFieldLabels": [],
+                "autoSort": true,
+                "othersLabel": "Others"
+              },
+              "qOtherTotalSpec": {
+                "qOtherMode": "OTHER_OFF",
+                "qTotalMode": "TOTAL_OFF"
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000013"
+            }
+          ],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m06",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000021"
+            },
+            {
+              "qDef": {
+                "cId": "m07",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000020"
+            },
+            {
+              "qDef": {
+                "cId": "m08",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000025"
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    },
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "pie01",
+          "qType": "piechart"
+        },
+        "visualization": "piechart",
+        "title": "Revenue by shipping region",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "donut": {
+          "showAsDonut": false
+        },
+        "qHyperCubeDef": {
+          "qDimensions": [
+            {
+              "qDef": {
+                "cId": "d05",
+                "qGrouping": "N",
+                "qFieldDefs": [],
+                "qFieldLabels": [],
+                "autoSort": true,
+                "othersLabel": "Others"
+              },
+              "qOtherTotalSpec": {
+                "qOtherMode": "OTHER_OFF",
+                "qTotalMode": "TOTAL_OFF"
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000014"
+            }
+          ],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m09",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true,
+                "qDef": "Sum(post_discount_revenue)",
+                "qLabel": "Revenue",
+                "qNumFormat": {
+                  "qType": "U",
+                  "qnDec": 10,
+                  "qUseThou": 0
+                }
+              }
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0,
+            1
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    },
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "bar02",
+          "qType": "barchart"
+        },
+        "visualization": "barchart",
+        "title": "Average revenue per account by region",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "orientation": "horizontal",
+        "barGrouping": {
+          "grouping": "grouped"
+        },
+        "qHyperCubeDef": {
+          "qDimensions": [
+            {
+              "qDef": {
+                "cId": "d06",
+                "qGrouping": "N",
+                "qFieldDefs": [],
+                "qFieldLabels": [],
+                "autoSort": true,
+                "othersLabel": "Others"
+              },
+              "qOtherTotalSpec": {
+                "qOtherMode": "OTHER_OFF",
+                "qTotalMode": "TOTAL_OFF"
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000014"
+            }
+          ],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m10",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000027"
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0,
+            1
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    }
+  ]
+}

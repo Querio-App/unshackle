@@ -1,0 +1,1086 @@
+{
+  "resourceType": "analysis",
+  "analysisId": "paper-sales-analysis",
+  "name": "Paper sales analysis",
+  "definition": {
+    "dataSetIdentifierDeclarations": [
+      {
+        "identifier": "order_lines",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:111122223333:dataset/order-lines"
+      },
+      {
+        "identifier": "shipments",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:111122223333:dataset/shipments"
+      }
+    ],
+    "sheets": [
+      {
+        "sheetId": "summary",
+        "name": "Summary",
+        "title": "Paper sales",
+        "contentType": "INTERACTIVE",
+        "parameterControls": [
+          {
+            "dropdown": {
+              "parameterControlId": "c-order-status",
+              "title": "Order status",
+              "sourceParameterName": "OrderStatus",
+              "type": "SINGLE_SELECT",
+              "selectableValues": {
+                "linkToDataSetColumn": {
+                  "dataSetIdentifier": "order_lines",
+                  "columnName": "status"
+                }
+              }
+            }
+          }
+        ],
+        "filterControls": [
+          {
+            "dropdown": {
+              "filterControlId": "c-shipping-mode",
+              "title": "Shipping mode",
+              "sourceFilterId": "f-shipping-mode",
+              "type": "SINGLE_SELECT"
+            }
+          }
+        ],
+        "textBoxes": [
+          {
+            "sheetTextBoxId": "notes",
+            "content": "<text-box>\n  Revenue is \n  <b>after discounts</b>\n  . Returned orders still count.\n</text-box>"
+          }
+        ],
+        "visuals": [
+          {
+            "kpivisual": {
+              "visualId": "v-revenue-kpi",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Total revenue"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "kpi-revenue",
+                        "column": {
+                          "dataSetIdentifier": "order_lines",
+                          "columnName": "post_discount_revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "lineChartVisual": {
+              "visualId": "v-revenue-line",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Revenue per month"
+                }
+              },
+              "chartConfiguration": {
+                "type": "LINE",
+                "fieldWells": {
+                  "lineChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "line-month",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "purchased_at"
+                          },
+                          "dateGranularity": "MONTH"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "line-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "post_discount_revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "barChartVisual": {
+              "visualId": "v-region-bar",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Revenue by region"
+                }
+              },
+              "chartConfiguration": {
+                "orientation": "VERTICAL",
+                "barsArrangement": "CLUSTERED",
+                "fieldWells": {
+                  "barChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "bar-region",
+                          "column": {
+                            "dataSetIdentifier": "shipments",
+                            "columnName": "shipping_region"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "bar-revenue",
+                          "column": {
+                            "dataSetIdentifier": "shipments",
+                            "columnName": "post_discount_revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "colors": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "bar-mode",
+                          "column": {
+                            "dataSetIdentifier": "shipments",
+                            "columnName": "shipping_mode"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "pieChartVisual": {
+              "visualId": "v-status-pie",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Orders by status"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "pieChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "pie-status",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "status"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "categoricalMeasureField": {
+                          "fieldId": "pie-orders",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "order_id"
+                          },
+                          "aggregationFunction": "COUNT"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "tableVisual": {
+              "visualId": "v-account-table",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Accounts"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "tableAggregatedFieldWells": {
+                    "groupBy": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "tbl-account",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "account_name"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "tbl-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "Revenue"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "tbl-aov",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "Average order value"
+                          }
+                        }
+                      },
+                      {
+                        "categoricalMeasureField": {
+                          "fieldId": "tbl-orders",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "order_id"
+                          },
+                          "aggregationFunction": "DISTINCT_COUNT"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "comboChartVisual": {
+              "visualId": "v-revenue-orders-combo",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Revenue and orders per month"
+                }
+              },
+              "chartConfiguration": {
+                "barsArrangement": "CLUSTERED",
+                "fieldWells": {
+                  "comboChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "combo-month",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "purchased_at"
+                          },
+                          "dateGranularity": "MONTH"
+                        }
+                      }
+                    ],
+                    "barValues": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "combo-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "post_discount_revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "lineValues": [
+                      {
+                        "categoricalMeasureField": {
+                          "fieldId": "combo-orders",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "order_id"
+                          },
+                          "aggregationFunction": "COUNT"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "sankeyDiagramVisual": {
+              "visualId": "v-cycle-sankey",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Payment cycle to status"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "sankeyDiagramAggregatedFieldWells": {
+                    "source": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "sk-cycle",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "payment_cycle"
+                          }
+                        }
+                      }
+                    ],
+                    "destination": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "sk-status",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "status"
+                          }
+                        }
+                      }
+                    ],
+                    "weight": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "sk-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "post_discount_revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "layouts": [
+          {
+            "configuration": {
+              "gridLayout": {
+                "elements": [
+                  {
+                    "elementId": "c-order-status",
+                    "elementType": "PARAMETER_CONTROL",
+                    "columnIndex": 0,
+                    "columnSpan": 8,
+                    "rowIndex": 0,
+                    "rowSpan": 2
+                  },
+                  {
+                    "elementId": "c-shipping-mode",
+                    "elementType": "FILTER_CONTROL",
+                    "columnIndex": 8,
+                    "columnSpan": 8,
+                    "rowIndex": 0,
+                    "rowSpan": 2
+                  },
+                  {
+                    "elementId": "notes",
+                    "elementType": "TEXT_BOX",
+                    "columnIndex": 16,
+                    "columnSpan": 20,
+                    "rowIndex": 0,
+                    "rowSpan": 2
+                  },
+                  {
+                    "elementId": "v-revenue-kpi",
+                    "elementType": "VISUAL",
+                    "columnIndex": 0,
+                    "columnSpan": 10,
+                    "rowIndex": 2,
+                    "rowSpan": 6
+                  },
+                  {
+                    "elementId": "v-revenue-line",
+                    "elementType": "VISUAL",
+                    "columnIndex": 10,
+                    "columnSpan": 26,
+                    "rowIndex": 2,
+                    "rowSpan": 6
+                  },
+                  {
+                    "elementId": "v-region-bar",
+                    "elementType": "VISUAL",
+                    "columnIndex": 0,
+                    "columnSpan": 18,
+                    "rowIndex": 8,
+                    "rowSpan": 8
+                  },
+                  {
+                    "elementId": "v-status-pie",
+                    "elementType": "VISUAL",
+                    "columnIndex": 18,
+                    "columnSpan": 18,
+                    "rowIndex": 8,
+                    "rowSpan": 8
+                  },
+                  {
+                    "elementId": "v-account-table",
+                    "elementType": "VISUAL",
+                    "columnIndex": 0,
+                    "columnSpan": 18,
+                    "rowIndex": 16,
+                    "rowSpan": 10
+                  },
+                  {
+                    "elementId": "v-revenue-orders-combo",
+                    "elementType": "VISUAL",
+                    "columnIndex": 18,
+                    "columnSpan": 18,
+                    "rowIndex": 16,
+                    "rowSpan": 10
+                  },
+                  {
+                    "elementId": "v-cycle-sankey",
+                    "elementType": "VISUAL",
+                    "columnIndex": 0,
+                    "columnSpan": 36,
+                    "rowIndex": 26,
+                    "rowSpan": 8
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "sheetId": "deep-dive",
+        "name": "Deep dive",
+        "contentType": "INTERACTIVE",
+        "visuals": [
+          {
+            "heatMapVisual": {
+              "visualId": "v-status-cycle-heat",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Revenue by status and payment cycle"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "heatMapAggregatedFieldWells": {
+                    "rows": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "hm-status",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "status"
+                          }
+                        }
+                      }
+                    ],
+                    "columns": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "hm-cycle",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "payment_cycle"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "hm-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "post_discount_revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "scatterPlotVisual": {
+              "visualId": "v-account-scatter",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Units and revenue per account"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "scatterPlotCategoricallyAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "sc-account",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "account_name"
+                          }
+                        }
+                      }
+                    ],
+                    "xAxis": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "sc-quantity",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "quantity"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "yAxis": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "sc-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "post_discount_revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "tableVisual": {
+              "visualId": "v-running-table",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Cumulative revenue"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "tableAggregatedFieldWells": {
+                    "groupBy": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "run-month",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "purchased_at"
+                          },
+                          "dateGranularity": "MONTH"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "run-revenue",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "Running revenue"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "pivotTableVisual": {
+              "visualId": "v-size-year-pivot",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Orders by size and year"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "pivotTableAggregatedFieldWells": {
+                    "rows": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "pv-size",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "order_size"
+                          }
+                        }
+                      }
+                    ],
+                    "columns": [
+                      {
+                        "numericalDimensionField": {
+                          "fieldId": "pv-year",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "Purchase year"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "categoricalMeasureField": {
+                          "fieldId": "pv-orders",
+                          "column": {
+                            "dataSetIdentifier": "order_lines",
+                            "columnName": "order_id"
+                          },
+                          "aggregationFunction": "COUNT"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "geospatialMapVisual": {
+              "visualId": "v-account-map",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Where accounts are"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "geospatialMapAggregatedFieldWells": {
+                    "geospatial": [],
+                    "values": [],
+                    "colors": []
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "layouts": [
+          {
+            "configuration": {
+              "freeFormLayout": {
+                "elements": [
+                  {
+                    "elementId": "v-status-cycle-heat",
+                    "elementType": "VISUAL",
+                    "xaxisLocation": "0px",
+                    "yaxisLocation": "0px",
+                    "width": "640px",
+                    "height": "380px"
+                  },
+                  {
+                    "elementId": "v-account-scatter",
+                    "elementType": "VISUAL",
+                    "xaxisLocation": "660px",
+                    "yaxisLocation": "0px",
+                    "width": "640px",
+                    "height": "380px"
+                  },
+                  {
+                    "elementId": "v-running-table",
+                    "elementType": "VISUAL",
+                    "xaxisLocation": "0px",
+                    "yaxisLocation": "400px",
+                    "width": "640px",
+                    "height": "380px"
+                  },
+                  {
+                    "elementId": "v-size-year-pivot",
+                    "elementType": "VISUAL",
+                    "xaxisLocation": "660px",
+                    "yaxisLocation": "400px",
+                    "width": "640px",
+                    "height": "380px"
+                  },
+                  {
+                    "elementId": "v-account-map",
+                    "elementType": "VISUAL",
+                    "xaxisLocation": "0px",
+                    "yaxisLocation": "800px",
+                    "width": "1300px",
+                    "height": "380px"
+                  }
+                ],
+                "canvasSizeOptions": {
+                  "screenCanvasSizeOptions": {
+                    "optimizedViewPortWidth": "1600px"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "calculatedFields": [
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Account revenue",
+        "expression": "sum({post_discount_revenue}, [{account_id}])"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Account revenue window",
+        "expression": "sumOver({post_discount_revenue}, [{account_id}], PRE_AGG)"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Average order value",
+        "expression": "sum({post_discount_revenue}) / count({order_id})"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Bulk order flag",
+        "expression": "ifelse(quantity >= 150 AND status = 'COMPLETED', 'Bulk completed', isNull({cancelled_at}), 'Open', 'Other')"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Completed orders",
+        "expression": "countIf({order_id}, status = 'COMPLETED')"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Completed revenue",
+        "expression": "sumIf({post_discount_revenue}, status = 'COMPLETED')"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Days to cancel",
+        "expression": "dateDiff({purchased_at}, {cancelled_at}, 'DD')"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Discount rate",
+        "expression": "1 - sum({post_discount_revenue}) / sum({pre_discount_revenue})"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Matches status parameter",
+        "expression": "ifelse(status = ${OrderStatus}, 1, 0)"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Order count",
+        "expression": "count({order_id})"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Orders before filters",
+        "expression": "countOver({order_id}, [status], PRE_FILTER)"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Purchase year",
+        "expression": "extract('YYYY', {purchased_at})"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Revenue",
+        "expression": "sum({post_discount_revenue})"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Revenue MoM",
+        "expression": "periodOverPeriodPercentDifference(sum({post_discount_revenue}), {purchased_at}, MONTH, 1)"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Revenue rank",
+        "expression": "rank([sum({post_discount_revenue}) DESC])"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Running revenue",
+        "expression": "runningSum(sum({post_discount_revenue}), [truncDate('MM', {purchased_at}) ASC])"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Share of revenue",
+        "expression": "percentOfTotal(sum({post_discount_revenue}))"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Unique accounts",
+        "expression": "distinct_count({account_id})"
+      },
+      {
+        "dataSetIdentifier": "order_lines",
+        "name": "Visual share",
+        "expression": "sum({post_discount_revenue}) / max(sum({post_discount_revenue}, [${visualDimensions}]))"
+      }
+    ],
+    "parameterDeclarations": [
+      {
+        "stringParameterDeclaration": {
+          "parameterValueType": "SINGLE_VALUED",
+          "name": "OrderStatus",
+          "defaultValues": {
+            "staticValues": []
+          },
+          "valueWhenUnset": {
+            "valueWhenUnsetOption": "NULL"
+          }
+        }
+      }
+    ],
+    "filterGroups": [
+      {
+        "filterGroupId": "fg-order-status",
+        "filters": [
+          {
+            "categoryFilter": {
+              "filterId": "f-order-status",
+              "column": {
+                "dataSetIdentifier": "order_lines",
+                "columnName": "status"
+              },
+              "configuration": {
+                "customFilterConfiguration": {
+                  "matchOperator": "EQUALS",
+                  "parameterName": "OrderStatus",
+                  "nullOption": "NON_NULLS_ONLY"
+                }
+              }
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "sheetId": "summary",
+                "scope": "ALL_VISUALS"
+              }
+            ]
+          }
+        },
+        "status": "ENABLED",
+        "crossDataset": "SINGLE_DATASET"
+      },
+      {
+        "filterGroupId": "fg-shipping-mode",
+        "filters": [
+          {
+            "categoryFilter": {
+              "filterId": "f-shipping-mode",
+              "column": {
+                "dataSetIdentifier": "shipments",
+                "columnName": "shipping_mode"
+              },
+              "configuration": {
+                "filterListConfiguration": {
+                  "matchOperator": "CONTAINS",
+                  "selectAllOptions": "FILTER_ALL_VALUES",
+                  "nullOption": "NON_NULLS_ONLY"
+                }
+              }
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "sheetId": "summary",
+                "scope": "SELECTED_VISUALS",
+                "visualIds": [
+                  "v-region-bar"
+                ]
+              }
+            ]
+          }
+        },
+        "status": "ENABLED",
+        "crossDataset": "SINGLE_DATASET"
+      },
+      {
+        "filterGroupId": "fg-min-quantity",
+        "filters": [
+          {
+            "numericRangeFilter": {
+              "filterId": "f-min-quantity",
+              "column": {
+                "dataSetIdentifier": "order_lines",
+                "columnName": "quantity"
+              },
+              "includeMinimum": true,
+              "rangeMinimum": {
+                "staticValue": 10
+              },
+              "nullOption": "NON_NULLS_ONLY"
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "sheetId": "summary",
+                "scope": "SELECTED_VISUALS",
+                "visualIds": [
+                  "v-account-table"
+                ]
+              }
+            ]
+          }
+        },
+        "status": "ENABLED",
+        "crossDataset": "SINGLE_DATASET"
+      },
+      {
+        "filterGroupId": "fg-last-three-years",
+        "filters": [
+          {
+            "relativeDatesFilter": {
+              "filterId": "f-last-three-years",
+              "column": {
+                "dataSetIdentifier": "order_lines",
+                "columnName": "purchased_at"
+              },
+              "anchorDateConfiguration": {
+                "anchorOption": "NOW"
+              },
+              "minimumGranularity": "DAY",
+              "timeGranularity": "YEAR",
+              "relativeDateType": "LAST",
+              "relativeDateValue": 3,
+              "nullOption": "NON_NULLS_ONLY"
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "sheetId": "summary",
+                "scope": "SELECTED_VISUALS",
+                "visualIds": [
+                  "v-status-pie"
+                ]
+              }
+            ]
+          }
+        },
+        "status": "ENABLED",
+        "crossDataset": "SINGLE_DATASET"
+      },
+      {
+        "filterGroupId": "fg-since-july-2025",
+        "filters": [
+          {
+            "timeRangeFilter": {
+              "filterId": "f-since-july-2025",
+              "column": {
+                "dataSetIdentifier": "order_lines",
+                "columnName": "purchased_at"
+              },
+              "includeMinimum": true,
+              "rangeMinimumValue": {
+                "staticValue": 1751328000000
+              },
+              "nullOption": "NON_NULLS_ONLY",
+              "timeGranularity": "DAY"
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "sheetId": "deep-dive",
+                "scope": "SELECTED_VISUALS",
+                "visualIds": [
+                  "v-status-cycle-heat"
+                ]
+              }
+            ]
+          }
+        },
+        "status": "ENABLED",
+        "crossDataset": "SINGLE_DATASET"
+      }
+    ],
+    "columnConfigurations": [
+      {
+        "column": {
+          "dataSetIdentifier": "order_lines",
+          "columnName": "post_discount_revenue"
+        },
+        "role": "MEASURE"
+      }
+    ]
+  },
+  "validationStrategy": {
+    "mode": "LENIENT"
+  },
+  "tags": [
+    {
+      "key": "team",
+      "value": "analytics"
+    }
+  ],
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/pbeesly",
+      "actions": [
+        "quicksight:DescribeAnalysis",
+        "quicksight:DescribeAnalysisPermissions",
+        "quicksight:QueryAnalysis",
+        "quicksight:UpdateAnalysis",
+        "quicksight:DeleteAnalysis",
+        "quicksight:RestoreAnalysis",
+        "quicksight:UpdateAnalysisPermissions"
+      ]
+    }
+  ]
+}

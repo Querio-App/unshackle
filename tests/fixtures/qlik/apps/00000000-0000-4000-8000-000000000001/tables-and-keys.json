@@ -1,4 +1,840 @@
 {
+  "qtr": [
+    {
+      "qName": "accounts",
+      "qNoOfRows": 181,
+      "qTableTags": [],
+      "qFields": [
+        {
+          "qName": "account_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "PERFECT_KEY",
+          "qnRows": 181,
+          "qnNonNulls": 181,
+          "qnPresentDistinctValues": 181,
+          "qnTotalDistinctValues": 181,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "account_name",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 181,
+          "qnNonNulls": 181,
+          "qnPresentDistinctValues": 181,
+          "qnTotalDistinctValues": 181,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "business_size",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 181,
+          "qnNonNulls": 181,
+          "qnPresentDistinctValues": 170,
+          "qnTotalDistinctValues": 170,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$integer"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "payment_cycle",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 181,
+          "qnNonNulls": 181,
+          "qnPresentDistinctValues": 5,
+          "qnTotalDistinctValues": 5,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "account_manager",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 181,
+          "qnNonNulls": 181,
+          "qnPresentDistinctValues": 14,
+          "qnTotalDistinctValues": 14,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        }
+      ]
+    },
+    {
+      "qName": "products",
+      "qNoOfRows": 15,
+      "qTableTags": [],
+      "qFields": [
+        {
+          "qName": "product_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "PERFECT_KEY",
+          "qnRows": 15,
+          "qnNonNulls": 15,
+          "qnPresentDistinctValues": 15,
+          "qnTotalDistinctValues": 15,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "product_name",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 15,
+          "qnNonNulls": 15,
+          "qnPresentDistinctValues": 15,
+          "qnTotalDistinctValues": 15,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "paper_type",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 15,
+          "qnNonNulls": 15,
+          "qnPresentDistinctValues": 5,
+          "qnTotalDistinctValues": 5,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "price",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 15,
+          "qnNonNulls": 15,
+          "qnPresentDistinctValues": 15,
+          "qnTotalDistinctValues": 15,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "PAPER_TYPE",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 15,
+          "qnNonNulls": 15,
+          "qnPresentDistinctValues": 5,
+          "qnTotalDistinctValues": 5,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        }
+      ]
+    },
+    {
+      "qName": "orders",
+      "qNoOfRows": 3503,
+      "qTableTags": [],
+      "qFields": [
+        {
+          "qName": "order_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "PERFECT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 3503,
+          "qnTotalDistinctValues": 3503,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "status",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 3,
+          "qnTotalDistinctValues": 3,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "purchased_at",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 997,
+          "qnTotalDistinctValues": 997,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$integer",
+            "$timestamp",
+            "$date"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "cancelled_at",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 332,
+          "qnPresentDistinctValues": 290,
+          "qnTotalDistinctValues": 290,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.09477590636597202,
+          "qTags": [
+            "$numeric",
+            "$integer",
+            "$timestamp",
+            "$date"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "returned_at",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 212,
+          "qnPresentDistinctValues": 192,
+          "qnTotalDistinctValues": 192,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.06051955466742792,
+          "qTags": [
+            "$numeric",
+            "$integer",
+            "$timestamp",
+            "$date"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "product_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "ANY_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 15,
+          "qnTotalDistinctValues": 15,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "quantity",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 206,
+          "qnTotalDistinctValues": 206,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$integer"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "pre_discount_revenue",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 2054,
+          "qnTotalDistinctValues": 2054,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "discount_percentage",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 2279,
+          "qnPresentDistinctValues": 1195,
+          "qnTotalDistinctValues": 1195,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.6505852126748501,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "post_discount_revenue",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 2970,
+          "qnTotalDistinctValues": 2970,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "days_to_close",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 164,
+          "qnTotalDistinctValues": 164,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$integer"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "order_contact_name",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 1193,
+          "qnTotalDistinctValues": 1193,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "order_contact_email",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 2779,
+          "qnTotalDistinctValues": 2779,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "account_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "ANY_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 181,
+          "qnTotalDistinctValues": 181,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "PERFECT_KEY",
+          "qnRows": 3503,
+          "qnNonNulls": 3503,
+          "qnPresentDistinctValues": 3503,
+          "qnTotalDistinctValues": 3503,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        }
+      ]
+    },
+    {
+      "qName": "shippings",
+      "qNoOfRows": 2812,
+      "qTableTags": [],
+      "qFields": [
+        {
+          "qName": "shipping_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "PRIMARY_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 2812,
+          "qnTotalDistinctValues": 3503,
+          "qSubsetRatio": 0.8027405081358835,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "shipping_address",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 2811,
+          "qnTotalDistinctValues": 2811,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_city",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 1094,
+          "qnTotalDistinctValues": 1094,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_state",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 38,
+          "qnTotalDistinctValues": 38,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_zip",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 2776,
+          "qnTotalDistinctValues": 2776,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_region",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 4,
+          "qnTotalDistinctValues": 4,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_latitude",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2806,
+          "qnPresentDistinctValues": 2637,
+          "qnTotalDistinctValues": 2637,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.9978662873399715,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_longitude",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2806,
+          "qnPresentDistinctValues": 2643,
+          "qnTotalDistinctValues": 2643,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.9978662873399715,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_mode",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2812,
+          "qnPresentDistinctValues": 3,
+          "qnTotalDistinctValues": 3,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "shipping_cost",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2271,
+          "qnPresentDistinctValues": 1527,
+          "qnTotalDistinctValues": 1527,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.8076102418207681,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "days_to_ship",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 2812,
+          "qnNonNulls": 2719,
+          "qnPresentDistinctValues": 11,
+          "qnTotalDistinctValues": 11,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 0.966927453769559,
+          "qTags": [
+            "$numeric",
+            "$integer"
+          ],
+          "qDerivedFields": [],
+          "qHasNull": true,
+          "qHasDuplicates": true
+        }
+      ]
+    },
+    {
+      "qName": "reviews",
+      "qNoOfRows": 1655,
+      "qTableTags": [],
+      "qFields": [
+        {
+          "qName": "review_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 1655,
+          "qnNonNulls": 1655,
+          "qnPresentDistinctValues": 1655,
+          "qnTotalDistinctValues": 1655,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "order_id",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "PRIMARY_KEY",
+          "qnRows": 1655,
+          "qnNonNulls": 1655,
+          "qnPresentDistinctValues": 1655,
+          "qnTotalDistinctValues": 3503,
+          "qSubsetRatio": 0.47245218384242077,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$key",
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "review",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 1655,
+          "qnNonNulls": 1655,
+          "qnPresentDistinctValues": 112,
+          "qnTotalDistinctValues": 112,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "reviewed_at",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 1655,
+          "qnNonNulls": 1655,
+          "qnPresentDistinctValues": 1228,
+          "qnTotalDistinctValues": 1228,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$timestamp"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "rating",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 1655,
+          "qnNonNulls": 1655,
+          "qnPresentDistinctValues": 5,
+          "qnTotalDistinctValues": 5,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$integer"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        },
+        {
+          "qName": "sentiment",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 1655,
+          "qnNonNulls": 1655,
+          "qnPresentDistinctValues": 2,
+          "qnTotalDistinctValues": 2,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$ascii",
+            "$text"
+          ],
+          "qDerivedFields": [],
+          "qHasDuplicates": true
+        }
+      ]
+    },
+    {
+      "qName": "monthly_targets",
+      "qNoOfRows": 34,
+      "qTableTags": [],
+      "qFields": [
+        {
+          "qName": "target_month",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 34,
+          "qnNonNulls": 34,
+          "qnPresentDistinctValues": 34,
+          "qnTotalDistinctValues": 34,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric",
+            "$integer",
+            "$timestamp",
+            "$date"
+          ],
+          "qDerivedFields": []
+        },
+        {
+          "qName": "revenue_target",
+          "qOriginalFields": [],
+          "qPresent": true,
+          "qKeyType": "NOT_KEY",
+          "qnRows": 34,
+          "qnNonNulls": 34,
+          "qnPresentDistinctValues": 34,
+          "qnTotalDistinctValues": 34,
+          "qSubsetRatio": 1.0,
+          "qInformationDensity": 1.0,
+          "qTags": [
+            "$numeric"
+          ],
+          "qDerivedFields": []
+        }
+      ]
+    }
+  ],
   "qk": [
     {
       "qKeyFields": [
@@ -35,842 +871,6 @@
         "orders",
         "shippings"
       ]
-    }
-  ],
-  "qtr": [
-    {
-      "qFields": [
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "PERFECT_KEY",
-          "qName": "account_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 181,
-          "qnPresentDistinctValues": 181,
-          "qnRows": 181,
-          "qnTotalDistinctValues": 181
-        },
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "account_name",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 181,
-          "qnPresentDistinctValues": 181,
-          "qnRows": 181,
-          "qnTotalDistinctValues": 181
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "business_size",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer"
-          ],
-          "qnNonNulls": 181,
-          "qnPresentDistinctValues": 170,
-          "qnRows": 181,
-          "qnTotalDistinctValues": 170
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "payment_cycle",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 181,
-          "qnPresentDistinctValues": 5,
-          "qnRows": 181,
-          "qnTotalDistinctValues": 5
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "account_manager",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 181,
-          "qnPresentDistinctValues": 14,
-          "qnRows": 181,
-          "qnTotalDistinctValues": 14
-        }
-      ],
-      "qName": "accounts",
-      "qNoOfRows": 181,
-      "qTableTags": []
-    },
-    {
-      "qFields": [
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "PERFECT_KEY",
-          "qName": "product_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 15,
-          "qnPresentDistinctValues": 15,
-          "qnRows": 15,
-          "qnTotalDistinctValues": 15
-        },
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "product_name",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 15,
-          "qnPresentDistinctValues": 15,
-          "qnRows": 15,
-          "qnTotalDistinctValues": 15
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "paper_type",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 15,
-          "qnPresentDistinctValues": 5,
-          "qnRows": 15,
-          "qnTotalDistinctValues": 5
-        },
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "price",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 15,
-          "qnPresentDistinctValues": 15,
-          "qnRows": 15,
-          "qnTotalDistinctValues": 15
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "PAPER_TYPE",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 15,
-          "qnPresentDistinctValues": 5,
-          "qnRows": 15,
-          "qnTotalDistinctValues": 5
-        }
-      ],
-      "qName": "products",
-      "qNoOfRows": 15,
-      "qTableTags": []
-    },
-    {
-      "qFields": [
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "PERFECT_KEY",
-          "qName": "order_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 3503,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 3503
-        },
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "PERFECT_KEY",
-          "qName": "shipping_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 3503,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 3503
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "ANY_KEY",
-          "qName": "account_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 181,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 181
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "ANY_KEY",
-          "qName": "product_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 15,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 15
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "status",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 3,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 3
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "purchased_at",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer",
-            "$timestamp",
-            "$date"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 997,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 997
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.09477590636597202,
-          "qKeyType": "NOT_KEY",
-          "qName": "cancelled_at",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer",
-            "$timestamp",
-            "$date"
-          ],
-          "qnNonNulls": 332,
-          "qnPresentDistinctValues": 290,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 290
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.06051955466742792,
-          "qKeyType": "NOT_KEY",
-          "qName": "returned_at",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer",
-            "$timestamp",
-            "$date"
-          ],
-          "qnNonNulls": 212,
-          "qnPresentDistinctValues": 192,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 192
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "quantity",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 206,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 206
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "pre_discount_revenue",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 2054,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 2054
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.6505852126748501,
-          "qKeyType": "NOT_KEY",
-          "qName": "discount_percentage",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 2279,
-          "qnPresentDistinctValues": 1195,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 1195
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "post_discount_revenue",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 2970,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 2970
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "days_to_close",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 164,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 164
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "order_contact_name",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 1193,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 1193
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "order_contact_email",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$text"
-          ],
-          "qnNonNulls": 3503,
-          "qnPresentDistinctValues": 2779,
-          "qnRows": 3503,
-          "qnTotalDistinctValues": 2779
-        }
-      ],
-      "qName": "orders",
-      "qNoOfRows": 3503,
-      "qTableTags": []
-    },
-    {
-      "qFields": [
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "PRIMARY_KEY",
-          "qName": "shipping_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 0.8027405081358835,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 2812,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 3503
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_address",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 2811,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 2811
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_city",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 1094,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 1094
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_state",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 38,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 38
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_zip",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 2776,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 2776
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_region",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 4,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 4
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.9978662873399715,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_latitude",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 2806,
-          "qnPresentDistinctValues": 2637,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 2637
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.9978662873399715,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_longitude",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 2806,
-          "qnPresentDistinctValues": 2643,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 2643
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_mode",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 2812,
-          "qnPresentDistinctValues": 3,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 3
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.8076102418207681,
-          "qKeyType": "NOT_KEY",
-          "qName": "shipping_cost",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 2271,
-          "qnPresentDistinctValues": 1527,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 1527
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qHasNull": true,
-          "qInformationDensity": 0.966927453769559,
-          "qKeyType": "NOT_KEY",
-          "qName": "days_to_ship",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer"
-          ],
-          "qnNonNulls": 2719,
-          "qnPresentDistinctValues": 11,
-          "qnRows": 2812,
-          "qnTotalDistinctValues": 11
-        }
-      ],
-      "qName": "shippings",
-      "qNoOfRows": 2812,
-      "qTableTags": []
-    },
-    {
-      "qFields": [
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "PRIMARY_KEY",
-          "qName": "order_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 0.47245218384242077,
-          "qTags": [
-            "$key",
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 1655,
-          "qnPresentDistinctValues": 1655,
-          "qnRows": 1655,
-          "qnTotalDistinctValues": 3503
-        },
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "review_id",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 1655,
-          "qnPresentDistinctValues": 1655,
-          "qnRows": 1655,
-          "qnTotalDistinctValues": 1655
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "review",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 1655,
-          "qnPresentDistinctValues": 112,
-          "qnRows": 1655,
-          "qnTotalDistinctValues": 112
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "reviewed_at",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$timestamp"
-          ],
-          "qnNonNulls": 1655,
-          "qnPresentDistinctValues": 1228,
-          "qnRows": 1655,
-          "qnTotalDistinctValues": 1228
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "rating",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer"
-          ],
-          "qnNonNulls": 1655,
-          "qnPresentDistinctValues": 5,
-          "qnRows": 1655,
-          "qnTotalDistinctValues": 5
-        },
-        {
-          "qDerivedFields": [],
-          "qHasDuplicates": true,
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "sentiment",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$ascii",
-            "$text"
-          ],
-          "qnNonNulls": 1655,
-          "qnPresentDistinctValues": 2,
-          "qnRows": 1655,
-          "qnTotalDistinctValues": 2
-        }
-      ],
-      "qName": "reviews",
-      "qNoOfRows": 1655,
-      "qTableTags": []
-    },
-    {
-      "qFields": [
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "target_month",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric",
-            "$integer",
-            "$timestamp",
-            "$date"
-          ],
-          "qnNonNulls": 34,
-          "qnPresentDistinctValues": 34,
-          "qnRows": 34,
-          "qnTotalDistinctValues": 34
-        },
-        {
-          "qDerivedFields": [],
-          "qInformationDensity": 1,
-          "qKeyType": "NOT_KEY",
-          "qName": "revenue_target",
-          "qOriginalFields": [],
-          "qPresent": true,
-          "qSubsetRatio": 1,
-          "qTags": [
-            "$numeric"
-          ],
-          "qnNonNulls": 34,
-          "qnPresentDistinctValues": 34,
-          "qnRows": 34,
-          "qnTotalDistinctValues": 34
-        }
-      ],
-      "qName": "monthly_targets",
-      "qNoOfRows": 34,
-      "qTableTags": []
     }
   ]
 }
