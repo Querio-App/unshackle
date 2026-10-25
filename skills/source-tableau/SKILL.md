@@ -315,6 +315,22 @@ semantic model's description says so (also: LTRIM/RTRIM trim tabs, `.` in an ext
 expression matches line breaks). Check string calcs on an extract against a
 warehouse whose collation is not binary (`en_US` Postgres, SQL Server `_CI_` collations).
 
+### Groups, bins and sets
+
+| Tableau | Becomes |
+| --- | --- |
+| group (`categorical-bin`) | `case when (region = 'East' or region = 'West') then 'Coasts' ... else region end`: members in no group keep their value; with Include Other (`default='"Other"'`) they take that name, NULL too unless a group holds `%null%` (`... is null`). Groups on calcs work the same |
+| bin (`class='bin'`, whole-number `size`) | `floor(1.0 * x / nullif(size, 0)) * size`: each value goes in the bin named after its lower edge (`-30` in size 7 -> `-35`); NULL stays NULL. Bins of calcs work the same |
+| fixed set (members, or all but some) | boolean dimension: `case when (m = 'a' or m = 'b') then true else false end` (`then false else true` for an exclude set); NULL can be a member |
+| set by condition (`SUM([x]) > 1000`, or a formula of aggregates) | each aggregate as `{FIXED [m] : ...}`, so a boolean dimension on the `<m>_lod` grain, computed over all of the datasource's rows; a NULL condition is out |
+| Top / Bottom N set | a column of the `<m>_lod` grain: `row_number() over (order by sum(x) desc nulls last, m) <= N`. Tableau keeps exactly N: `direction` sorts the members and `end` takes the first or last N of that order (`ASC` with `top` gives the smallest), NULL ranks below every value, and ties go to the first members in ascending order |
+
+On shelves, `[io:Set:nk]` is In / Out (`case when ... then 'In' else 'Out' end`); the
+set itself (`[ds].[Set]`) shows its members: the set's dimension, on the rows of the
+members in the set. A filter on `[io:Set:nk]` keeps `member='true'` (In) or `'false'`
+(Out). Groups are referenced directly (`[ds].[Region (group)]`), bins as
+`[none:Sales (bin):ok]`.
+
 ## Finishing TODOs
 
 **FIXED LODs that stay TODO**: several FIXED dimensions in the semantic layer (tiles
@@ -370,11 +386,10 @@ LOD, a table calculation or ATTR() stays TODO. Tableau snaps a range parameter t
 notebook takes any value, so keep to the comment's step for the same numbers. Parameters
 inside custom SQL (`<[Parameters].[Year]>`) -> `:year` binds (write them by hand for now).
 
-**Sets, groups, bins**: groups -> `case when region in ('East','West') then 'Coasts'
-else region end` (unshackle writes the CASE in the TODO); bins -> `floor(sales / 100) *
-100`; a fixed set -> `customer_name in (...)`; a Top N set -> `customer_name in
-(select customer_name from ... group by 1 order by sum(sales) desc limit 20)`, as a
-boolean dimension or in the tile SQL.
+**Sets, groups, bins that stay TODO**: bins whose size is fractional, comes from a
+parameter, or has a `peg`; Top N sets whose N is a parameter; sets on several dimensions,
+combined sets and dashboard action sets. Write them from the rules in "Groups, bins and
+sets" above, with parameters as binds.
 
 **ATTR([x])**: returns x when it has one value in the mark, else `*`. Group by x (it is
 usually constant), or `case when min(x) = max(x) then min(x) end`.

@@ -81,7 +81,10 @@ def test_parse_metrics_and_todos(tmp_path: Path):
     assert "customer_first_order" not in dims
     # {FIXED [Customer Name] : MIN([Order Date])}: a SQL model at that grain, related to orders on customer_name
     lod = _by_name(b.semantic_models)["customer_name_lod"]
-    assert lod.sql == "select customer_name, min(order_date) as customer_first_order\nfrom analytics.orders\ngroup by 1"
+    # the top 20 customers set ranks the same grain (see test_tableau_groups.py)
+    assert lod.sql == ("select customer_name, min(order_date) as customer_first_order, sum(sales) as top_customers_set_by, "
+                       "row_number() over (order by sum(sales) desc nulls last, customer_name) <= 20 as top_customers_set\n"
+                       "from analytics.orders\ngroup by 1")
     assert [(e.name, e.type) for e in lod.entities] == [("customer_name", "primary")]
     first = _by_name(lod.dimensions)["customer_first_order"]
     assert (first.type, first.time_granularity, first.todo) == ("time", "day", "")
@@ -89,9 +92,9 @@ def test_parse_metrics_and_todos(tmp_path: Path):
     assert "[Target Margin]" in m["above_target"].todo and ":target_margin" in m["above_target"].todo
     assert m["above_target"].source_expression == "[Profit Ratio] > [Parameters].[Target Margin]"
     assert "ATTR()" in dims["category_label"].todo
-    assert "floor(sales / 100) * 100" in dims["sales_bin"].todo
-    assert "case when region in ('East', 'West') then 'Coasts' else region end" in dims["region_group"].todo
-    assert "set" in dims["top_customers_set"].todo
+    assert (dims["sales_bin"].expr, dims["sales_bin"].todo) == ("floor(cast(1.0 as double precision) * sales / nullif(100, 0)) * 100", "")
+    assert (dims["region_group"].expr, dims["region_group"].todo) == ("case when (region = 'East' or region = 'West') then 'Coasts' else region end", "")
+    assert _by_name(lod.dimensions)["top_customers_set"].todo == ""
     assert not any("FIXED" in q.name for q in b.queries)
 
 

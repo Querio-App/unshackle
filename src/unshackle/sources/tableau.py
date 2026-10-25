@@ -787,6 +787,59 @@ def _sql_str(v: str) -> str:
     return "'" + v.replace("'", "''") + "'"
 
 
+def _member_formula(v: str | None) -> str | None:
+    """Tableau member literal ("West", 2024, #2024-01-01#, true, %null%) as a formula literal; None for null."""
+    if v is None or v == "%null%":
+        return None
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in '"#':
+        return v
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+        return v
+    if v.lower() in ("true", "false"):
+        return v.upper()
+    raise ax.FormulaError(f"member {v} not read")
+
+
+def _kind(datatype: str) -> str:
+    return "number" if datatype in NUMERIC else "date" if datatype in TIME_TYPES else datatype
+
+
+def _literal_kind(lit: str) -> str:
+    return {'"': "string", "#": "date"}.get(lit[0], "boolean" if lit in ("TRUE", "FALSE") else "number")
+
+
+def _fref(local: str) -> str:
+    return "[" + local.replace("]", "]]") + "]"
+
+
+def _fixed_aggs(expression: str, level: str) -> str:
+    """A set's condition with each aggregate wrapped in {FIXED level : ...}: Tableau evaluates it once per member of the
+    set's dimension, over the datasource's rows (after data source and context filters, before the sheet's filters)."""
+    clean, code, bare, _ = scan_formula(expression)
+    bare, code = bare.ljust(len(clean)), code.ljust(len(clean))
+    if "{" in bare or TABLE_CALC.search(bare):
+        raise ax.FormulaError("an LOD expression or table calculation in the condition")
+    names = "|".join(sorted(set(TABLEAU_AGGS) | OTHER_AGGS, key=len, reverse=True))
+    out, last = [], 0
+    for m in re.finditer(rf"\b({names})\s*\(", bare, re.I):
+        if m.start() < last:
+            continue
+        depth = 0
+        for j in range(m.end() - 1, len(bare)):
+            depth += {"(": 1, ")": -1}.get(bare[j], 0)
+            if depth == 0:
+                break
+        else:
+            raise ax.FormulaError("unbalanced parentheses")
+        if BRACKETED.search(code[last:m.start()]):
+            raise ax.FormulaError("a field or parameter outside an aggregate in the condition")
+        out += [clean[last:m.start()], f"{{FIXED {level} : {clean[m.start():j + 1]}}}"]
+        last = j + 1
+    if not out or BRACKETED.search(code[last:]):
+        raise ax.FormulaError("a field or parameter outside an aggregate in the condition")
+    return "".join(out) + clean[last:]
+
+
 def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     """-> (formula without // comments, code with strings blanked, code with strings and [fields] blanked, comments)."""
     clean: list[str] = []
@@ -1379,6 +1432,7 @@ class _SheetCtx:
     sort_by: dict[str, tuple[str, str]] = field(default_factory=dict)  # dimension shelf instance -> its computed sort's (derivation, aggregate SQL)
     labels: dict[str, str] = field(default_factory=dict)  # aliased dimension shelf instance -> its value SQL (grouped on)
     notes: list[str] = field(default_factory=list)
+    member_sets: list[str] = field(default_factory=list)  # sets shown as their members: the sheet keeps their rows
 
 
 @dataclass
@@ -1473,12 +1527,12 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
             if f.calc_class == "tableau":
                 f.formula = calc.get("formula", "")
             elif f.calc_class == "bin":
-                f.extra = {"of": _unbracket(calc.get("formula")), "size": calc.get("size", ""), "peg": calc.get("peg", "0")}
+                f.extra = {"of": _unbracket(calc.get("formula")), "size": calc.get("size", ""), "peg": calc.get("peg", "0"), "attrs": sorted(calc.attrib)}
             elif f.calc_class == "categorical-bin":
                 bins = []
                 for b in calc.findall("bin"):
                     bins.append((b.get("value", ""), [v.text or "" for v in b.findall("value")]))
-                f.extra = {"of": _unbracket(calc.get("column")), "bins": bins}
+                f.extra = {"of": _unbracket(calc.get("column")), "bins": bins, "default": calc.get("default")}
         if col.get("param-domain-type") or el.get("name") == "Parameters":
             f.param = True
             # the value attribute escapes % as \%; with no value attribute the current value is the calculation's literal
@@ -1490,8 +1544,9 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
     for grp in el.findall("group"):
         local = _unbracket(grp.get("name"))
         if local and local not in ds.fields:
+            levels = {_unbracket(g.get("level")) for g in grp.iter("groupfilter") if g.get("level")}
             ds.fields[local] = TField(local, caption=grp.get("caption") or local, datatype="boolean", role="dimension", calc_class="set",
-                                      extra={"xml": ET.tostring(grp, encoding="unicode")[:400]})
+                                      extra={"xml": ET.tostring(grp, encoding="unicode"), **({"of": levels.pop()} if len(levels) == 1 else {})})
     for f in ds.fields.values():
         if not f.role:
             f.role = "measure" if f.datatype in NUMERIC and not f.formula else "dimension"
@@ -2294,7 +2349,7 @@ class _Parser:
 
     def _todo(self, ds: TDatasource, f: TField, model: _Model | None, msg: str, aggregate: bool | None = None) -> _Calc:
         src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
-        expr = readable(" ".join(scan_formula(f.formula)[0].split()), ds.fields, self.params_for(ds)) if f.formula is not None else f"{f.calc_class}: {f.extra}"
+        expr = readable(" ".join(scan_formula(f.formula)[0].split()), ds.fields, self.params_for(ds)) if f.formula is not None else (f.extra.get("xml") or f"{f.calc_class}: {f.extra}")
         is_measure = aggregate if aggregate is not None else (f.role == "measure")
         if is_measure or model is None:
             name = self._namer(model, f.label) if model else _name(f.label)
@@ -2313,23 +2368,14 @@ class _Parser:
 
     def _translate(self, ds: TDatasource, f: TField, stack: tuple) -> _Calc:
         model = self._field_model(ds, f)
-        if f.calc_class == "bin":
-            of, size = f.extra.get("of", ""), f.extra.get("size", "")
-            col = ds.fields.get(of)
-            hint = f"floor({_ident(col.remote)} / {size}) * {size}" if col is not None and col.remote and size else "floor(<col> / <size>) * <size>"
-            return self._todo(ds, f, model, f"Tableau bin of [{of}] (size {size}): make a dimension with expr `{hint}`; see {SKILL}", False)
-        if f.calc_class == "categorical-bin":
-            of = f.extra.get("of", "")
-            col = ds.fields.get(of)
-            ref = _ident(col.remote) if col is not None and col.remote else f"[{of}]"
-            whens = " ".join(
-                f"when {ref} in ({', '.join(filter(None, (_member_sql(v) for v in values)))}) then {_member_sql(label) or 'null'}"
-                for label, values in f.extra.get("bins", [])
-            )
-            return self._todo(ds, f, model, f"Tableau group on [{of}]: make a dimension with expr `case {whens} else {ref} end`; see {SKILL}", False)
-        if f.calc_class == "set":
-            return self._todo(ds, f, model, f"Tableau set: a boolean dimension (`<col> in (...)` or a top-N subquery); see {SKILL}", False)
-        clean, code, bare, _ = scan_formula(f.formula or "")
+        text = f.formula or ""
+        if f.calc_class in ("bin", "categorical-bin", "set"):
+            try:
+                text = self._grouping(ds, f, stack)
+            except ax.FormulaError as exc:
+                return self._todo(ds, f, model, f"{exc}; see {SKILL}", False)
+            self.prepped[(ds.uid, f.local)] = text
+        clean, code, bare, _ = scan_formula(text)
         if USER_FN.search(bare):
             self._row_filter(ds, f, model, clean)
             return _Calc("security", todo="user filter")
@@ -2546,6 +2592,113 @@ class _Parser:
         what, kind = ("measure", "metric") if measure else ("dimension", "dimension")
         return (f"{what} switch on [{p.label}]: a {kind} can't change with a parameter, so make one {kind} per value and choose it in "
                 f"the notebook ({listed}); notebook tiles compute it as a case on :{_name(p.label)}; see {SKILL}")
+
+    # ------------------------------------------------------------ groups, bins and sets
+
+    def _grouping(self, ds: TDatasource, f: TField, stack: tuple) -> str:
+        """A bin, group or set as a Tableau formula that gives the same value (computed sets through FIXED LODs at the
+        set's dimension). Raises FormulaError saying what to write instead."""
+        x = f.extra
+        of = x.get("of", "")
+        g = ds.fields.get(of)
+        if f.calc_class == "set":
+            return self._set_formula(ds, f, g, stack)
+        what = "bin" if f.calc_class == "bin" else "group"
+        if g is None or g.param:
+            raise ax.FormulaError(f"Tableau {what} of [{of}], which is not a field of the datasource")
+        ref = _fref(of)
+        if f.calc_class == "bin":
+            size, peg = x.get("size", ""), x.get("peg", "0")
+            extra = [a for a in x.get("attrs", []) if a not in ("class", "decimals", "formula", "peg", "size")]
+            hint = f"`floor(x / size) * size` over [{g.label}]"
+            if extra:
+                raise ax.FormulaError(f"Tableau bin of [{g.label}] with {', '.join(extra)}: write {hint}")
+            if PARAM_REF.search(size) or size.startswith("["):
+                raise ax.FormulaError(f"Tableau bin of [{g.label}] whose size is {readable(size, ds.fields, self.params_for(ds))}: "
+                                      f"write `floor(x / :size) * :size` over [{g.label}] with the parameter as a bind")
+            if not re.fullmatch(r"[1-9]\d*", size):
+                raise ax.FormulaError(f"Tableau bin of [{g.label}] with size {size or '?'}: bins of fractional size are not translated "
+                                      f"(in floating point, a value on a bin's edge can land in the bin below); write {hint}")
+            if peg.strip() not in ("", "0"):
+                raise ax.FormulaError(f"Tableau bin of [{g.label}] with peg {peg}: bins with a peg are not translated; write {hint}")
+            # Each value goes in the bin whose lower edge is floor(value / size) * size (negative values too); the bin
+            # is named after that edge; NULL stays NULL.
+            return f"FLOOR({ref} / {size}) * {size}"
+        branches = []
+        for label, values in x.get("bins", []):
+            lits = [_member_formula(v) for v in values]
+            conds = [f"ISNULL({ref})" if lit is None else f"{ref} = {lit}" for lit in lits]
+            if conds:
+                branches.append((" OR ".join(conds), _member_formula(label) or "NULL", [lit for lit in lits if lit is not None]))
+        default = x.get("default")
+        other = (_member_formula(default) or "NULL") if default is not None else ref
+        kind = _kind(g.datatype)
+        names = [b[1] for b in branches if b[1] != "NULL"] + ([other] if default is not None and other != "NULL" else [])
+        if any(_literal_kind(v) != kind for b in branches for v in b[2]) or (default is None and any(_literal_kind(v) != kind for v in names)):
+            raise ax.FormulaError(f"Tableau group on [{g.label}] ({g.datatype}) whose groups are named with values of another type: "
+                                  f"write `case when x in (...) then '<group>' ... end` with the group names as Tableau shows them")
+        if not branches:
+            return other
+        # Members in no group keep their value, or with "Include Other" take the Other name (NULL too, unless a group holds it).
+        return "IF " + " ELSEIF ".join(f"{c} THEN {v}" for c, v, _ in branches) + f" ELSE {other} END"
+
+    def _set_formula(self, ds: TDatasource, f: TField, g: TField | None, stack: tuple) -> str:
+        """A set as a boolean formula: fixed members as comparisons, a condition through FIXED LODs, top N as a ranked FIXED grain."""
+        el = ET.fromstring(f.extra.get("xml") or "<group />")
+        gf = el.find("groupfilter")
+        if el.get("{http://www.tableausoftware.com/xml/user}auto-column") == "sheet_link":
+            raise ax.FormulaError("dashboard action set: interactions are not migrated")
+        if gf is None or g is None or g.param:
+            raise ax.FormulaError("Tableau set on several dimensions, combined from other sets, or of an unknown field: write it as a boolean "
+                                  "dimension (`<col> in (...)`, or membership in a grouped subquery for conditions and top N)")
+        level = _fref(g.local)
+        fn, kids = gf.get("function", ""), gf.findall("groupfilter")
+
+        def members(node: ET.Element) -> str | None:
+            items = [node] if node.get("function") == "member" else list(node) if node.get("function") == "union" else []
+            if not items or any(c.get("function") != "member" for c in items):
+                return None
+            lits = [_member_formula(c.get("member")) for c in items]
+            return " OR ".join(f"ISNULL({level})" if lit is None else f"{level} = {lit}" for lit in lits)
+
+        cond = members(gf)
+        if cond is not None:
+            return f"IF {cond} THEN TRUE ELSE FALSE END"
+        if fn == "except" and len(kids) == 2 and kids[0].get("function") == "level-members" and (cond := members(kids[1])) is not None:
+            return f"IF {cond} THEN FALSE ELSE TRUE END"
+        only_level = lambda node: [c.get("function") for c in node] == ["level-members"]  # noqa: E731
+        if fn == "filter" and gf.get("expression") and only_level(gf):
+            if PARAM_REF.search(gf.get("expression", "")):
+                raise ax.FormulaError(f"Tableau set by condition {gf.get('expression')} uses a parameter: add it as a bind in the condition")
+            # A member is in the set when the condition is true; false or NULL leaves it out.
+            return f"IF {_fixed_aggs(gf.get('expression', ''), level)} THEN TRUE ELSE FALSE END"
+        if fn == "end" and len(kids) == 1 and kids[0].get("function") == "order" and kids[0].get("expression") and only_level(kids[0]):
+            return self._top_set(ds, f, gf, kids[0], g, stack)
+        raise ax.FormulaError(f"Tableau set ({fn or 'empty'}) not translated: write it as a boolean dimension")
+
+    def _top_set(self, ds: TDatasource, f: TField, end: ET.Element, order: ET.Element, g: TField, stack: tuple) -> str:
+        """Top or bottom N members of the set's dimension by an aggregate over the datasource's rows: a ranked column on its FIXED
+        grain. Tableau keeps exactly N: ties go to the first members in ascending order, and NULL ranks below every value."""
+        count, expression = end.get("count", ""), order.get("expression", "")
+        if not count.isdigit() or end.get("units", "records") != "records":
+            raise ax.FormulaError(f"Tableau top N set whose N is {readable(count, ds.fields, self.params_for(ds))}: rank the members of "
+                                  f"[{g.label}] by {expression} in a subquery and keep the first N (N as a bind)")
+        try:
+            lod, col = self._fixed(ds, f"{{FIXED {_fref(g.local)} : {expression}}}", _name(f.label)[:30] + "_by", stack)
+        except ax.FormulaError as exc:
+            raise ax.FormulaError(f"Tableau top N set by {expression} ({exc}): rank the members of [{g.label}] in a subquery") from None
+        # direction is the sort; end takes the first (top) or last (bottom) N of it
+        desc = (order.get("direction", "DESC").upper() == "DESC") == (end.get("end", "top") != "bottom")
+        rank = f"row_number() over (order by {lod.cols[col]} {'desc nulls last' if desc else 'asc nulls first'}, {lod.keys[0][0]}) <= {count}"
+        alias = next((a for a, s in lod.cols.items() if s == rank), "")
+        if not alias:
+            alias, n = _name(f.label), 2
+            while alias in lod.cols or alias in {a for _, a in lod.keys}:
+                alias, n = f"{_name(f.label)}_{n}", n + 1
+            lod.cols[alias] = rank
+        ref = f"{LOD_REF}{len(self.inline)}"
+        self.inline[ref] = (lod, alias)
+        return f"[{ref}]"
 
     # ------------------------------------------------------------ level of detail expressions
 
@@ -3010,6 +3163,17 @@ class _Parser:
                 return _name(display), "", True, display, "quantitative", ""
         if calc is not None and calc.kind in ("todo", "security"):
             raise _NoSQL(f"[{label}] is not translated yet: {calc.todo}")
+        if f.calc_class == "set" and d in ("io", "none", ""):
+            inside = self._set_sql(r)
+            if d == "io":  # In / Out of the set
+                display = f"In / Out of {label}"
+                return _name(display), f"case when {inside} then 'In' else 'Out' end", False, display, "nominal", ""
+            # the set itself on a shelf shows its members: its dimension, on the rows of the members in the set
+            level = ds.fields.get(f.extra.get("of", ""))
+            if level is None or self._sheet is None:
+                raise _NoSQL(f"set [{label}] shown as its members: put its dimension on the shelf and keep the rows where [{label}] is true")
+            self._sheet.member_sets.append(inside)
+            return self._column(_Ref(ds, r.dsname, level.local, "none", level, "nk"))
         try:
             if calc is not None and calc.kind == "lod":
                 if d in DERIV_AGG or d == "usr":
@@ -3062,6 +3226,18 @@ class _Parser:
                 etype = "nominal"
             return _name(label), base, False, label, etype, ""
         raise _NoSQL(f"derivation {d!r} on [{label}] not supported")
+
+    def _set_sql(self, r: _Ref) -> str:
+        """A set's membership as a boolean over the sheet's rows (false for members out of it, NULL included)."""
+        f, ds = r.field, r.ds
+        assert f is not None and ds is not None
+        calc = self._calc(ds, f)
+        if calc.kind != "row":
+            raise _NoSQL(f"[{f.label}] is not translated yet: {calc.todo}")
+        try:
+            return _paren(self._row_sql(ds, f) if self._sheet is not None and (calc.lod or self._is_joined(ds)) else calc.sql)
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
 
     def _special(self, ds: TDatasource, f: TField, calc: _Calc, d: str) -> _Special | None:
         """How a sheet computes an aggregated LOD (None: an ordinary column)."""
@@ -3387,7 +3563,7 @@ class _Parser:
                     continue
                 columns.append((r, alias, sql, is_agg, display, etype, unit))
             notes += self._aliases(columns) + self._sort_aggregates(wb, columns, deps)
-            where, having, order, limit = [], [], [], ""
+            where, having, order, limit = list(self._sheet.member_sets), [], [], ""
             for flt in view.findall("filter"):
                 res = self._filter(wb, flt, deps, meta)
                 if res is None:
@@ -4239,6 +4415,8 @@ class _Parser:
             return ("todo", f"dashboard action filter {label}: interactions are not migrated")
         try:
             _, expr, is_agg, *_ = self._column(r)
+            if r.deriv == "io" and r.field is not None and r.field.calc_class == "set":
+                expr = self._set_sql(r)  # In / Out of a set: its members are true (In) and false (Out)
         except _NoSQL as exc:
             return ("todo", f"filter on [{label}] not applied: {exc}")
         if self._sheet is not None and r.instance in self._sheet.specials:
