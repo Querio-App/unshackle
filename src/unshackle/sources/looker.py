@@ -2336,9 +2336,10 @@ def symmetric_sql(agg: str, x: str, key: str, dialect: str) -> str | None:
     """Looker's symmetric sum / average of `x` counted once per `key`; None for an unknown warehouse."""
     if dialect not in SYM_HASH:
         return None
-    h, fl = f"CAST({SYM_HASH[dialect].format(key)} AS DECIMAL(38,9))", FLOAT.get(dialect, "DOUBLE")
+    dec = "NUMERIC" if dialect == "bigquery" else "DECIMAL(38,9)"  # BigQuery: NUMERIC is (38, 9), and CAST takes no parameters
+    h, fl = f"CAST({SYM_HASH[dialect].format(key)} AS {dec})", FLOAT.get(dialect, "DOUBLE")
     # rounded as a decimal (Postgres has no ROUND(double precision, int)), to 6 places as Looker does
-    total = (f"CAST(ROUND(COALESCE(SUM(DISTINCT CAST(COALESCE({x}, 0) AS DECIMAL(38,9)) + {h}) - SUM(DISTINCT {h}), 0), 6)"
+    total = (f"CAST(ROUND(COALESCE(SUM(DISTINCT CAST(COALESCE({x}, 0) AS {dec}) + {h}) - SUM(DISTINCT {h}), 0), 6)"
              f" AS {fl})")
     if agg == "sum":
         return total

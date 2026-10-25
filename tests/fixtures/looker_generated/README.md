@@ -20,5 +20,11 @@ DuckDB and checks unshackle's translation against these numbers.
 | `time_new_york` | `ev_time` | `query_timezone`: no conversion, the lab connection has user time zones off |
 | `time_week_sunday` | `ev_time` | `week_start_day: sunday` in the model (captured with that line added) |
 
+Round 3 (`evidence3.*`, not captured yet) covers the Liquid real projects use (`_dialect._name`,
+`date_start` / `date_end`, `_is_filtered`), string and number parameters, `filter:` fields with `sql:`,
+quoted filter values and the hour timeframes. `evidence3_checks.*` (written by
+`tests/live/looker/bigquery_checks.py`) runs unshackle's own BigQuery SQL for the tiles, timeframes and
+filters on the lab's BigQuery; `check_*.json` are its results, which the tests compare with Looker's.
+
 To capture again (another dialect, a new case): see `tests/live/looker/evidence_links.py`.
 Only BigQuery has been captured.

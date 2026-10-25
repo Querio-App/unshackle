@@ -1,0 +1,14 @@
+[
+ {
+  "chk_tile_liquid_set.ev_liquid_customer": null,
+  "chk_tile_liquid_set.ev_liquid_count": "1",
+  "chk_tile_liquid_set.ev_liquid_chosen_total": "3.0",
+  "chk_tile_liquid_set.ev_liquid_chosen_label": "shipping"
+ },
+ {
+  "chk_tile_liquid_set.ev_liquid_customer": "bolt",
+  "chk_tile_liquid_set.ev_liquid_count": "1",
+  "chk_tile_liquid_set.ev_liquid_chosen_total": "5.0",
+  "chk_tile_liquid_set.ev_liquid_chosen_label": "shipping"
+ }
+]

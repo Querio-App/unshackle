@@ -1,0 +1,50 @@
+[
+ {
+  "ev_l.id": 1,
+  "ev_l.s": "apple",
+  "ev_l.range_start": "2026-12-01 00:00:00+00",
+  "ev_l.range_end": "2027-01-01 00:00:00+00",
+  "ev_l.flag_filtered": "yes",
+  "ev_l.flag_in_query": "yes",
+  "ev_l.flag_selected": "yes",
+  "ev_l.p_str_param": "O'Brien",
+  "ev_l.p_str_branch": "neither",
+  "ev_l.p_num_param": 5
+ },
+ {
+  "ev_l.id": 2,
+  "ev_l.s": "Levi's",
+  "ev_l.range_start": "2026-12-01 00:00:00+00",
+  "ev_l.range_end": "2027-01-01 00:00:00+00",
+  "ev_l.flag_filtered": "yes",
+  "ev_l.flag_in_query": "yes",
+  "ev_l.flag_selected": "yes",
+  "ev_l.p_str_param": "O'Brien",
+  "ev_l.p_str_branch": "neither",
+  "ev_l.p_num_param": 5
+ },
+ {
+  "ev_l.id": 3,
+  "ev_l.s": "O'Brien",
+  "ev_l.range_start": "2026-12-01 00:00:00+00",
+  "ev_l.range_end": "2027-01-01 00:00:00+00",
+  "ev_l.flag_filtered": "yes",
+  "ev_l.flag_in_query": "yes",
+  "ev_l.flag_selected": "yes",
+  "ev_l.p_str_param": "O'Brien",
+  "ev_l.p_str_branch": "neither",
+  "ev_l.p_num_param": 5
+ },
+ {
+  "ev_l.id": 4,
+  "ev_l.s": null,
+  "ev_l.range_start": "2026-12-01 00:00:00+00",
+  "ev_l.range_end": "2027-01-01 00:00:00+00",
+  "ev_l.flag_filtered": "yes",
+  "ev_l.flag_in_query": "yes",
+  "ev_l.flag_selected": "yes",
+  "ev_l.p_str_param": "O'Brien",
+  "ev_l.p_str_branch": "neither",
+  "ev_l.p_num_param": 5
+ }
+]

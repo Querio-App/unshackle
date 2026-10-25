@@ -6,15 +6,19 @@ model, then:
 
     python tests/live/looker/evidence_links.py https://<looker host> [case ...]   # one link per file
     python tests/live/looker/evidence_links.py --console [case ...] | pbcopy      # or all at once
+    python tests/live/looker/evidence_links.py --save looker-evidence.json         # then save them
 
 Open each link while logged in (Development Mode on) and save the page as the name shown into
 tests/fixtures/looker_generated/, or paste the --console snippet into the browser console on the
-Looker tab: it downloads every case as one looker-evidence.json. Explore URLs ending in .json return the result rows and .sql
+Looker tab: it downloads every case as one looker-evidence.json, which `--save <file>` splits into
+the fixtures. Explore URLs ending in .json return the result rows and .sql
 the SQL Looker generates. Never commit the host.
 """
 
 import json
+import re
 import sys
+from pathlib import Path
 from urllib.parse import urlencode
 
 TIME = ["raw", "time", "date", "week", "month", "quarter", "year", "day_of_week", "day_of_week_index", "month_num",
@@ -107,7 +111,38 @@ CASES: dict[str, dict] = {
 }
 
 
+# round 3: evidence3.*.lkml. Each case on its own, so one field Looker rejects doesn't hide the others.
+L_FLAGS = ["ev_l.range_start", "ev_l.range_end", "ev_l.flag_filtered", "ev_l.flag_in_query", "ev_l.flag_selected",
+           "ev_l.p_str_param", "ev_l.p_str_branch", "ev_l.p_num_param"]
+CASES.update({
+    "dialect": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.dialect_name", "ev_l.dialect_branch"], "sorts": ["ev_l.id"]},
+    "liquid_none": {"view": "ev_l", "fields": ["ev_l.id", *L_FLAGS], "sorts": ["ev_l.id"]},
+    "liquid_values": {
+        "view": "ev_l", "fields": ["ev_l.id", "ev_l.s", *L_FLAGS], "sorts": ["ev_l.id"],
+        "filters": {"ev_l.s": "-zzz", "ev_l.date_f": "2026-12-01 to 2027-01-01", "ev_l.p_str": "O'Brien", "ev_l.p_num": "5"},
+    },
+    "date_start_month": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.range_start", "ev_l.range_end"], "sorts": ["ev_l.id"],
+                         "filters": {"ev_l.date_f": "2026-12"}},
+    "date_start_relative": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.range_start", "ev_l.range_end"], "sorts": ["ev_l.id"],
+                            "filters": {"ev_l.date_f": "7 days"}},
+    "parameter_value_string": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.p_str_value"], "sorts": ["ev_l.id"]},
+    "filter_field_sql": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.f_sql": "-apple"}},
+    "filter_quoted": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.s": '"Levi\'s"'}},
+    "filter_apostrophe": {"view": "ev_l", "fields": ["ev_l.count"], "filters": {"ev_l.s": "Levi's,O'Brien"}},
+    "hour_timeframes": {"view": "ev_l", "fields": ["ev_l.id", "ev_l.at_time", "ev_l.at_hour", "ev_l.at_minute", "ev_l.at_time_of_day",
+                                                   "ev_l.at_hour_of_day", "ev_l.in_range"], "sorts": ["ev_l.id"]},
+})
+
+
+# unshackle's own BigQuery SQL, written as views by bigquery_checks.py: `checks` selects them all
+CHECKS_FILE = Path(__file__).resolve().parents[2] / "fixtures" / "looker_generated" / "evidence3_checks.cases.json"
+CHECKS = json.loads(CHECKS_FILE.read_text()) if CHECKS_FILE.exists() else {}
+CASES.update({f"check_{k}": v for k, v in CHECKS.items()})
+
+
 def links(model: str, only: list[str]) -> dict[str, str]:
+    if "checks" in only:
+        only = [o for o in only if o != "checks"] + [f"check_{k}" for k in CHECKS]
     out = {}
     for name, case in CASES.items():
         if only and name not in only:
@@ -132,8 +167,22 @@ def console(model: str, only: list[str]) -> str:
     )
 
 
+def save(path: str) -> None:
+    """Split a downloaded looker-evidence.json into <case>.json / <case>.sql fixtures; refuse instance details."""
+    out = Path(__file__).resolve().parents[2] / "fixtures" / "looker_generated"
+    for name, text in json.loads(Path(path).read_text()).items():
+        if re.search(r"qwiklabs|@[\w-]+\.\w", text):
+            sys.exit(f"{name} names the instance or a user; scrub it first")
+        if name.endswith(".json"):
+            text = json.dumps(json.loads(text), indent=1)
+        (out / name).write_text(text.strip() + "\n")
+        print(name)
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "--console":
+    if sys.argv[1] == "--save":
+        save(sys.argv[2])
+    elif sys.argv[1] == "--console":
         print(console("training_ecommerce", sys.argv[2:]))
     else:
         for name, url in links("training_ecommerce", sys.argv[2:]).items():

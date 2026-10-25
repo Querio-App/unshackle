@@ -1,0 +1,20 @@
+[
+ {
+  "chk_tile_liquid_default.ev_liquid_customer": null,
+  "chk_tile_liquid_default.ev_liquid_count": "1",
+  "chk_tile_liquid_default.ev_liquid_chosen_total": "30.0",
+  "chk_tile_liquid_default.ev_liquid_chosen_label": "amount"
+ },
+ {
+  "chk_tile_liquid_default.ev_liquid_customer": "acme",
+  "chk_tile_liquid_default.ev_liquid_count": "2",
+  "chk_tile_liquid_default.ev_liquid_chosen_total": "150.0",
+  "chk_tile_liquid_default.ev_liquid_chosen_label": "amount"
+ },
+ {
+  "chk_tile_liquid_default.ev_liquid_customer": "bolt",
+  "chk_tile_liquid_default.ev_liquid_count": "1",
+  "chk_tile_liquid_default.ev_liquid_chosen_total": "70.0",
+  "chk_tile_liquid_default.ev_liquid_chosen_label": "amount"
+ }
+]

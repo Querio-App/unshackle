@@ -1,0 +1,42 @@
+[
+ {
+  "chk_tile_fanout_by_customer.ev_orders_customer": null,
+  "chk_tile_fanout_by_customer.ev_orders_count": "1",
+  "chk_tile_fanout_by_customer.ev_orders_total_shipping": "3.0",
+  "chk_tile_fanout_by_customer.ev_orders_avg_shipping": "3.0",
+  "chk_tile_fanout_by_customer.ev_items_count": "1",
+  "chk_tile_fanout_by_customer.ev_items_total_price": "8.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_sum_distinct": "3.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_avg_distinct": "3.0"
+ },
+ {
+  "chk_tile_fanout_by_customer.ev_orders_customer": "acme",
+  "chk_tile_fanout_by_customer.ev_orders_count": "2",
+  "chk_tile_fanout_by_customer.ev_orders_total_shipping": "30.0",
+  "chk_tile_fanout_by_customer.ev_orders_avg_shipping": "15.0",
+  "chk_tile_fanout_by_customer.ev_items_count": "4",
+  "chk_tile_fanout_by_customer.ev_items_total_price": "20.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_sum_distinct": "30.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_avg_distinct": "15.0"
+ },
+ {
+  "chk_tile_fanout_by_customer.ev_orders_customer": "bolt",
+  "chk_tile_fanout_by_customer.ev_orders_count": "1",
+  "chk_tile_fanout_by_customer.ev_orders_total_shipping": "5.0",
+  "chk_tile_fanout_by_customer.ev_orders_avg_shipping": "5.0",
+  "chk_tile_fanout_by_customer.ev_items_count": "2",
+  "chk_tile_fanout_by_customer.ev_items_total_price": "5.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_sum_distinct": "5.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_avg_distinct": "5.0"
+ },
+ {
+  "chk_tile_fanout_by_customer.ev_orders_customer": "core",
+  "chk_tile_fanout_by_customer.ev_orders_count": "1",
+  "chk_tile_fanout_by_customer.ev_orders_total_shipping": "7.5",
+  "chk_tile_fanout_by_customer.ev_orders_avg_shipping": "7.5",
+  "chk_tile_fanout_by_customer.ev_items_count": "0",
+  "chk_tile_fanout_by_customer.ev_items_total_price": "0.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_sum_distinct": "0.0",
+  "chk_tile_fanout_by_customer.ev_items_shipping_avg_distinct": null
+ }
+]
