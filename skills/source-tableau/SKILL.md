@@ -264,7 +264,8 @@ dimension filters, then measure filters (`having`).
   context leaves (`account_id_lod as (... where orders.status = 'COMPLETED' group by 1)`).
   The shared grain and its semantic model stay over all rows, and its description says so.
   The sheet's other dimension filters don't change a FIXED value. A FIXED grain nested in
-  another, or one a context filter itself reads, stays TODO.
+  another takes the context's predicates at both levels (the inner grain and the outer
+  grain's distinct keys). A FIXED grain a context filter itself reads stays TODO.
 
 **LODs in tiles** follow Tableau's order of operations. A FIXED grain is a CTE computed
 over all of the datasource's rows (after its extract, data source and context filters, before
@@ -280,6 +281,8 @@ the sheet's dimension filters):
 | an aggregate of a calc over FIXED values (`SUM(IF [Account Revenue] >= 1000000 THEN 1 ELSE 0 END)`) | as a FIXED value aggregated: the calc once per distinct (sheet dimensions, FIXED dimensions), not per row |
 | a FIXED aggregate inside an expression (`SUM([x]) / SUM([Account Revenue])`) | each aggregate at its own level (`SUM([x])` over the rows, `SUM([Account Revenue])` as above), then the expression per mark |
 | a FIXED nested in a FIXED (`{FIXED [cycle] : AVG({FIXED [account] : SUM([x])})}`) | a grain of its own: the inner value once per distinct (cycle, account) of the datasource's rows, aggregated per cycle |
+| an INCLUDE or EXCLUDE nested in a FIXED (`{FIXED [cycle] : AVG({INCLUDE [account] : SUM([x])})}`, `{FIXED [account], [paper] : SUM({EXCLUDE [paper] : SUM([x])})}`) | the nested LOD takes its dimensions from the FIXED around it, not the view: `{FIXED [cycle], [account] : ...}` and `{FIXED [account] : ...}`, then as a FIXED nested in a FIXED. Excluding a dimension the FIXED doesn't have changes nothing |
+| a nested LOD inside a larger expression (`... / 1000`, `IF ... THEN`, `SUM([x]) / SUM({FIXED ... {INCLUDE ...}})`) | the nested grain is computed as above and used like any FIXED value |
 
 Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions.
 Counting rows instead of these distinct combinations can be off by an order of magnitude.
@@ -424,16 +427,26 @@ Filter actions saved with marks selected stay TODO.
 ## Finishing TODOs
 
 **FIXED LODs that stay TODO**: several FIXED dimensions in the semantic layer (tiles
-work; the TODO holds the grain's SQL: save it as a SQL model with a composite key and
-relate it by hand); a FIXED aggregate inside an expression as a metric (it combines two
-models: tiles compute it, above); other nestings than FIXED in FIXED (INCLUDE or EXCLUDE
-inside, or a nested LOD inside a larger expression: build the inner one first). Tableau
+work). This is by design: entities are single-column, MetricFlow has no composite entities,
+and a concatenated surrogate key isn't faithful (NULLs, separators inside values). The TODO
+holds the grain's SQL: save it as a SQL model with a key on those columns and relate it by
+hand. A FIXED aggregate inside an expression as a metric (it combines two models: tiles
+compute it, above). Nestings tiles don't compute: an LOD inside an INCLUDE or EXCLUDE, two
+levels of nesting, an expression around the inner LOD inside the FIXED, and an EXCLUDE of
+every dimension of the FIXED around it (one value over all rows, repeated for each FIXED
+key: a one-row subquery cross joined to the FIXED's distinct keys). The TODO names the
+shape: compute the inner level grouped by its dimensions (an INCLUDE or EXCLUDE takes the
+dimensions of the LOD around it, or the view's at the top), join it to the distinct outer
+and inner dimension values, then aggregate at the outer level. Tableau
 takes each FIXED value once per distinct combination of the view's dimensions and the
 FIXED dimensions, not once per row; keep that when writing them by hand. In dbt projects
 MetricFlow also needs a time dimension on the `_lod` model before its measures load.
 
-**INCLUDE / EXCLUDE LOD** depend on the view's dimensions, so they are never metrics;
-tiles that show them compute them (above). Elsewhere: `{INCLUDE [Order ID] : SUM([Sales])}`
+**INCLUDE / EXCLUDE LOD** depend on the view's dimensions, so they are never metrics. This is
+a permanent limitation: a metric has no view to take dimensions from. The TODO names the
+tile SQL shape, and tiles that show them compute them (above). Inside a FIXED they take the
+FIXED's dimensions instead, so there they become FIXED grains (and semantic models when the
+FIXED has one dimension). Elsewhere: `{INCLUDE [Order ID] : SUM([Sales])}`
 averaged per region -> aggregate a subquery by `region, order_id`, then `avg()` per region.
 `{EXCLUDE [Month] : SUM([Sales])}` -> `sum(sum(sales)) over (partition by <other dims>)`.
 `{ SUM([Sales]) }` (no keyword) -> `sum(sum(sales)) over ()`.
