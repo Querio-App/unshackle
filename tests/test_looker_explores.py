@@ -318,7 +318,9 @@ ORDER BY orders_created_month"""
     assert "COUNT(DISTINCT users.id) AS users_count" in t["by_state"].sql and t["by_state"].sql.endswith("LIMIT 10")
     # a sum across a one_to_many join: no SQL rather than an inflated number
     fan = t["qty_by_status"]
-    assert not fan.sql and "orders.revenue (sum) counts repeated rows because the query joins items one_to_many" in fan.todo
+    # orders.revenue repeats once per item: Looker's symmetric aggregate on the orders key (numbers in the parity test)
+    assert "SUM(DISTINCT CAST(COALESCE(orders.amount, 0) AS DECIMAL(38,9))" in fan.sql and "MD5(CAST(orders.id AS VARCHAR))" in fan.sql
+    assert "repeated rows" not in fan.todo
     assert t["state_map"].mark == "unknown" and "looker_map" in t["state_map"].todo and t["state_map"].sql
 
 
@@ -335,6 +337,11 @@ def test_lookml_dashboard_tiles_match_hand_written_sql(tmp_path: Path):
                               "LEFT JOIN shop.users u ON u.id = o.user_id WHERE o.status IN ('complete', 'shipped')", None),
         "orders_by_state": ("SELECT u.state AS users_state, count(DISTINCT o.id) AS orders_count, count(DISTINCT u.id) AS users_count "
                             "FROM shop.orders o LEFT JOIN shop.users u ON u.id = o.user_id GROUP BY 1", ["users_state"]),
+        # revenue counted once per order although the items join repeats orders
+        "revenue_and_quantity": ("WITH r AS (SELECT status, sum(amount) AS rev FROM shop.orders GROUP BY 1), "
+                          "q AS (SELECT o.status, coalesce(sum(i.qty), 0) AS qty FROM shop.orders o LEFT JOIN shop.items i ON i.order_id = o.id GROUP BY 1) "
+                          "SELECT r.status AS orders_status, r.rev AS orders_revenue, q.qty AS items_total_qty FROM r JOIN q USING (status)",
+                          ["orders_status"]),
     }
     (tmp_path / "migration/parity").mkdir(parents=True)
     for tile, (sql, keys) in cases.items():
