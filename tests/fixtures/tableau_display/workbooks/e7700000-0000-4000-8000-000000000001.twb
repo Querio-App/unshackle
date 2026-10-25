@@ -311,6 +311,17 @@
         <cols>[federated.display0demo].[sum:post_discount_revenue:qk]</cols>
       </table>
     </worksheet>
+    <worksheet name="Mixed Case">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Display' name='federated.display0demo' /></datasources>
+        </view>
+        <style></style>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.display0demo].[none:Calculation_203:nk]</rows>
+        <cols>[federated.display0demo].[sum:post_discount_revenue:qk]</cols>
+      </table>
+    </worksheet>
     <worksheet name="Discounted">
       <table>
         <view>

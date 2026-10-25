@@ -6,8 +6,8 @@ order are computed here from Tableau's rules:
 
 - aliases are labels: Tableau shows them instead of the members' values, NULL included when it has one; members without
   one keep their value, and two members with the same label stay two marks;
-- natural order (no sort, the data source's order) follows the labels, NULL first (also when it has an alias);
-  descending reverses it;
+- natural order (no sort, the data source's order) follows the labels ignoring case (Tableau sorts them itself, also
+  on a live connection), NULL first (also when it has an alias); descending reverses it;
 - an alphabetic sort compares the labels as text by character code (uppercase before lowercase), NULL read as "Null";
 - a manual sort puts the listed members first, in order, whatever its direction, and the rest after them in natural order;
 - a computed sort orders the members by an aggregate (shown on the sheet or not); with other dimensions on the sheet,
@@ -90,7 +90,7 @@ def _marks(rows: pd.DataFrame, by: str | list[str], label=None, agg: str = "sum"
 
 def _natural(labels: list, desc: bool = False) -> list:
     """Tableau's natural order of labels: NULL first, then the labels; descending reverses it."""
-    out = [x for x in labels if x is None] + sorted(x for x in labels if x is not None)
+    out = [x for x in labels if x is None] + sorted((x for x in labels if x is not None), key=lambda x: (x.lower(), x))
     return out[::-1] if desc else out
 
 
@@ -191,6 +191,8 @@ def test_alphabetic_sort_compares_labels_by_character_code(con, rows, tiles):
     # NULL sorts as "Null": between CANCELLED and RETURNED
     assert [r[0] for r in _run(con, tiles["Null Raw Desc"])] == ["RETURNED", None, "CANCELLED"]
     mixed = list(rows.status.replace({"CANCELLED": "cancelled"}).unique())
+    # natural order ignores case; alphabetic doesn't
+    assert [r[0] for r in _run(con, tiles["Mixed Case"])] == _natural(mixed) == ["cancelled", "COMPLETED", "RETURNED"]
     assert [r[0] for r in _run(con, tiles["Mixed Case Desc"])] == _alphabetic(mixed, desc=True) == ["cancelled", "RETURNED", "COMPLETED"]
 
 

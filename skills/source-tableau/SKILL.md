@@ -192,8 +192,8 @@ a datasource's Default Properties > Sort (`<default-sorts>`) applies where the s
 
 | Tableau sort | `order by` |
 | --- | --- |
-| none, or Data source order (`<natural-sort>`) | the labels (with the warehouse's collation), NULL first (`1 nulls first`); descending reverses it |
-| Alphabetic (`<alphabetic-sort>`) | `coalesce(label, 'Null')`: by character code, uppercase before lowercase, NULL read as `Null` (Postgres: `collate "C"`); on numbers and dates it changes nothing |
+| none, or Data source order (`<natural-sort>`) | the labels ignoring case, NULL first (`lower(label) nulls first, 1`); descending reverses it. Tableau sorts members itself, also on a live connection, so the warehouse's collation doesn't matter. `lower()` matches it for unaccented text; check accented members |
+| Alphabetic (`<alphabetic-sort>`) | `coalesce(label, 'Null')`: Tableau compares by character code, uppercase before lowercase, NULL read as `Null`. Postgres gets `collate "C"`; elsewhere the order follows the warehouse's collation (by character code by default on Snowflake, BigQuery, Databricks, Redshift and DuckDB; check accounts or columns set case-insensitive) |
 | Manual (`<manual-sort>`) | `case when x = <first> then 1 ... else n end`, then natural order: listed members first, whatever the direction |
 | Field (`<computed-sort using=...>`) | the aggregate (`sum(revenue) desc`), shown on the sheet or not; with other dimensions, per member over the whole view (`sum(sum(x)) over (partition by d)`), the same order in every pane |
 

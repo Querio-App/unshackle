@@ -139,7 +139,7 @@ def test_parse_dashboards_and_tiles(tmp_path: Path):
     assert (line.encodings["y"].field, line.encodings["color"].field) == ("sales", "category")
     assert line.sql == (
         "select\n  date_trunc('month', order_date) as month_of_order_date,\n  category,\n  sum(sales) as sales\n"
-        "from analytics.orders\nwhere region in ('East', 'West')\ngroup by 1, 2\norder by 1, 2 nulls first"
+        "from analytics.orders\nwhere region in ('East', 'West')\ngroup by 1, 2\norder by 1, lower(category) nulls first, 2"
     )
     assert ":region" in line.todo
     cfg = line.source_config
@@ -295,7 +295,7 @@ def test_published_datasource_link(tmp_path: Path):
     assert [sm.name for sm in b.semantic_models] == ["sales_targets"]  # one model for the .tds and the workbook proxy
     (d,) = b.dashboards
     (tile,) = d.tiles
-    assert tile.sql == "select\n  region,\n  sum(target_usd) as target\nfrom finance.sales_targets\ngroup by 1\norder by 1 nulls first"
+    assert tile.sql == "select\n  region,\n  sum(target_usd) as target\nfrom finance.sales_targets\ngroup by 1\norder by lower(region) nulls first, 1"
     assert "aggregate not translated" in _by_name(b.metrics)["target_k"].todo
 
 

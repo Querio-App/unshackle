@@ -3793,17 +3793,17 @@ class _Parser:
     def _dim_order(self, srt: SheetSort | None, key: str, label: str, raw: str, string: bool, using: str = "",
                    null_label: bool = False) -> list[str]:
         """ORDER BY items for one dimension's members in Tableau's order (also usable in a window's ORDER BY, with `key`
-        the label SQL). Natural order (no sort, or data source order) follows the labels, NULL first (also when it has an
-        alias: `null_label`); an alphabetic sort compares the labels as text by character code (uppercase first), NULL as
+        the label SQL). Natural order (no sort, or data source order) follows the labels ignoring case (Tableau sorts them
+        itself, whatever the warehouse's collation), NULL first (also when it has an alias: `null_label`); an alphabetic sort compares the labels as text by character code (uppercase first), NULL as
         'Null'; a manual sort lists members in order (its direction is ignored), the rest after them in natural order; a
         computed sort orders by `using`, ties in natural order."""
         if srt is not None and srt.kind == "alphabetic" and not string:
             srt = None  # Tableau sorts only text alphabetically; on numbers and dates it changes nothing
         desc = srt is not None and srt.direction == "DESC" and srt.kind != "manual"
         nulls = [f"case when {raw} is null then 0 else 1 end"] if null_label else []
-        natural = nulls + [f"{key}{' nulls first' if string else ''}"]
+        natural = nulls + ([f"lower({label}) nulls first", key] if string else [key])
         if srt is None or srt.kind == "natural":
-            return [f"{x} desc" for x in nulls] + [f"{key} desc{' nulls last' if string else ''}"] if desc else natural
+            return [f"{x} desc" for x in nulls] + ([f"lower({label}) desc nulls last", f"{key} desc"] if string else [f"{key} desc"]) if desc else natural
         if srt.kind == "alphabetic":
             binary = ' collate "C"' if self.dialect == "postgres" else ""  # Postgres compares text in the database's collation
             return [f"coalesce({label}, 'Null'){binary}{' desc' if desc else ''}"]
