@@ -5149,25 +5149,26 @@ class _Parser:
         dims = [c for c in columns if not c[3]]
         on_shelf = lambda shelf: [c for r in shelf for c in dims if c[0].instance == r.instance]  # noqa: E731
         row_d, col_d = on_shelf(rows), on_shelf(cols)
-        # padded only when a calculation moves along some dimension (Cell leaves the marks as they are)
-        dense = any(c[0].suffix != "qk" for c in row_d) and any(c[0].suffix != "qk" for c in col_d) and \
-            any(self._tc_addressed(c[0], dims, rows, cols) for c in columns if c[0].instance in ctx.table_calcs)
-        if not dense:
+        calcs = [c[0] for c in columns if c[0].instance in ctx.table_calcs]
+        # padded only when a calculation partitions by a header and moves along another (Cell, Table (across then down) and
+        # Specific Dimensions over every header leave the marks as they are)
+        crosstab = any(c[0].suffix != "qk" for c in row_d) and any(c[0].suffix != "qk" for c in col_d)
+        padding = [a for a in (self._tc_addressed(r, dims, rows, cols) for r in calcs)
+                   if any(c in a for c in row_d + col_d) and any(c not in a for c in row_d + col_d)] if crosstab else []
+        sorted_by = {c[0].instance for c in dims if len(dims) > 1 and ctx.sorts.get(c[0].instance) and ctx.sorts[c[0].instance].kind == "computed"}
+        if not padding and not sorted_by:
             def refer(c: tuple) -> tuple[str, str]:
                 return c[2], (_qualify(ctx.labels[c[0].instance], from_sql) if c[0].instance in ctx.labels else c[2])
 
-            sqls = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer, False), _paren)
+            sqls = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer), _paren)
             out = [(*c[:2], sqls[c[0].instance], *c[3:]) if c[0].instance in sqls else c for c in columns]
             if ctx.row_lods:
                 raise _NoSQL(f"table calculations over FIXED LOD values: add them as window columns over the tile's marks ({SKILL})")
             return self._tile_sql(out, from_sql, cte, where, having, [], "", members=members)
-        others = [c for c in dims if c not in row_d + col_d]
-        if others or any(c[0].suffix == "qk" for c in row_d + col_d):
-            raise _NoSQL(f"table calculations in a crosstab with dimensions off Rows and Columns ({', '.join(c[4] for c in others) or 'a continuous axis'}): "
-                         f"Tableau pads the crosstab's marks before computing them; write the padding and the window columns ({SKILL})")
-        if any(c[0].instance in ctx.labels or (ctx.sorts.get(c[0].instance) and ctx.sorts[c[0].instance].kind == "computed") for c in dims):
-            raise _NoSQL(f"table calculations in a crosstab with aliased or computed-sorted dimensions: Tableau pads the crosstab's marks "
-                         f"before computing them; write the padding and the window columns ({SKILL})")
+        if padding and any(c[0].suffix == "qk" for c in dims):
+            raise _NoSQL(f"table calculations in a crosstab with a continuous axis or Marks card field: Tableau pads the crosstab's "
+                         f"marks before computing them; write the padding and the window columns ({SKILL})")
+        sides = self._tc_padded_sides(padding, dims, row_d, col_d) if padding else None
         hidden: list[tuple] = []
 
         def val(sql: str) -> str:  # an aggregate over the sheet's rows: a column of the marks CTE
@@ -5178,24 +5179,70 @@ class _Parser:
             hidden.append((_Ref(None, "", "\x00" + alias), alias, sql, True, alias, "quantitative", ""))
             return f"m.{alias}"
 
-        refer_d = lambda c: (f"d.{_ident(c[1])}", f"d.{_ident(c[1])}")  # noqa: E731
-        windows = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer_d, True), val)
+        # a computed sort orders each member by its aggregate over the whole view: a column of the marks, carried by the domain
+        keys: dict[str, str] = {}
+        for c in dims:
+            deriv, agg = ctx.sort_by.get(c[0].instance, ("", ""))
+            outer = {"sum": "sum", "cnt": "sum", "min": "min", "max": "max"}.get(deriv)
+            if c[0].instance in sorted_by and agg and outer:
+                raw = _qualify(ctx.labels[c[0].instance], from_sql) if c[0].instance in ctx.labels else c[2]
+                key = keys[c[0].instance] = f"tc_sort_{len(keys) + 1}"
+                hidden.append((_Ref(None, "", "\x00" + key), key, f"{outer}({agg}) over (partition by {raw})", True, key, "quantitative", ""))
+
+        def refer_d(c: tuple) -> tuple[str, str]:  # an aliased dimension: its label over its values, which the marks keep
+            raw = f"d.{_ident(c[1])}"
+            return (alias_sql(raw, c[0].field) or raw) if c[0].instance in ctx.labels else raw, raw
+
+        sort_keys = {inst: f"d.{k}" for inst, k in keys.items()}
+        windows = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer_d, sort_keys), val)
         if ctx.row_lods:
             raise _NoSQL(f"table calculations over FIXED LOD values: add them as window columns over the tile's marks ({SKILL})")
         plain = [c for c in columns if c[3] and c[0].instance not in ctx.table_calcs]
-        marks = self._tile_sql(dims + plain + hidden, from_sql, cte, where, having, [], "", members=members)
+        values = [(c[0], c[1], ctx.labels[c[0].instance], *c[3:]) if c[0].instance in ctx.labels else c for c in dims]
+        marks = self._tile_sql(values + plain + hidden, from_sql, cte, where, having, [], "", members=members)
         head, _, last = marks.rpartition("\n")
         if last.startswith("order by "):
             marks = head
         ctes, body = ta.split_with(marks)
-        domain = (f"select r.*, c.*\nfrom (select distinct {', '.join(_ident(c[1]) for c in row_d)} from marks) as r\n"
-                  f"cross join (select distinct {', '.join(_ident(c[1]) for c in col_d)} from marks) as c")
-        items = [f"  d.{_ident(c[1])}" if not c[3] else f"  {windows[c[0].instance]} as {_ident(c[1])}" if c[0].instance in windows else f"  m.{_ident(c[1])}"
+        key_of = {c[1]: keys[c[0].instance] for c in dims if c[0].instance in keys}
+
+        def distinct(side: list) -> str:
+            return "select distinct " + ", ".join(_ident(x) for c in side for x in [c[1]] + ([key_of[c[1]]] if c[1] in key_of else []))
+
+        if sides is None:
+            domain = f"{distinct(dims)}\nfrom marks"
+        else:
+            r_side, c_side = sides
+            shared = [c for c in r_side if c in c_side]
+            only_c = [x for c in c_side if c not in shared for x in [c[1]] + ([key_of[c[1]]] if c[1] in key_of else [])]
+            on = " and ".join(f"r.{_ident(c[1])} is not distinct from c.{_ident(c[1])}" for c in shared)
+            domain = (f"select r.*, {', '.join(f'c.{_ident(x)}' for x in only_c)}\nfrom ({distinct(r_side)} from marks) as r\n"
+                      + (f"join ({distinct(c_side)} from marks) as c on {on}" if shared else f"cross join ({distinct(c_side)} from marks) as c"))
+        items = [f"  {refer_d(c)[0]} as {_ident(c[1])}" if not c[3] else f"  {windows[c[0].instance]} as {_ident(c[1])}" if c[0].instance in windows else f"  m.{_ident(c[1])}"
                  for c in columns]
         on = " and ".join(f"d.{_ident(c[1])} is not distinct from m.{_ident(c[1])}" for c in dims)
-        order_by = self._sort_order(dims, lambda i, c: (str(i), f"d.{_ident(c[1])}", f"d.{_ident(c[1])}"))
+        order_by = [x for c in dims for x in self._tc_order(c, refer_d, len(dims), sort_keys, window=False)]
         return "\n".join(["with " + ",\n".join(([ctes] if ctes else []) + [f"marks as (\n{body}\n)", f"domain as (\n{domain}\n)"]),
                           "select", ",\n".join(items), "from domain as d", f"left join marks as m on {on}", "order by " + ", ".join(order_by)])
+
+    def _tc_padded_sides(self, padding: list[list], dims: list, row_d: list, col_d: list) -> tuple[list, list]:
+        """The padded marks of a crosstab are its row headers with its column headers, each with the Marks card dimensions
+        (colour, detail, size, ...) they occur with: (dimensions of the row side, of the column side). A Marks card dimension
+        that partitions the calculations is on both sides (the padding is per member); one they move along is on the side of the
+        headers they move along. `padding`: the addressed dimensions of each calculation that pads."""
+        marks_d = [c for c in dims if c not in row_d + col_d]
+        side: dict[str, str] = {}
+        for addressed in padding:
+            shelves = {"r" if c in row_d else "c" for c in addressed if c in row_d + col_d}
+            along = shelves.pop() if len(shelves) == 1 else ""
+            for c in marks_d:
+                s = along if c in addressed else "both"
+                if not s or side.setdefault(c[0].instance, s) != s:
+                    raise _NoSQL(f"table calculations in a crosstab that move along {c[4]} on the Marks card with headers of both shelves, "
+                                 f"or partition by it in one and move along it in another: Tableau pads the crosstab's marks with it; write "
+                                 f"the padding and the window columns ({SKILL})")
+        return ([*row_d, *(c for c in marks_d if side[c[0].instance] in ("both", "r"))],
+                [*col_d, *(c for c in marks_d if side[c[0].instance] in ("both", "c"))])
 
     def _table_calc_sqls(self, columns: list, window: Any, val: Any) -> dict[str, str]:
         """Window SQL of every table calculation of the sheet, by shelf instance; all their problems in one TODO."""
@@ -5211,11 +5258,11 @@ class _Parser:
             raise _NoSQL("; ".join(problems))
         return out
 
-    def _tc_window(self, r: _Ref, dims: list, rows: list[_Ref], cols: list[_Ref], refer: Any, dense: bool) -> tcalc.Window:
+    def _tc_window(self, r: _Ref, dims: list, rows: list[_Ref], cols: list[_Ref], refer: Any, keys: dict[str, str] | None = None) -> tcalc.Window:
         """Partition and order of one table calculation from its addressing (sources/_tableau_tablecalc.py)."""
         addressed = self._tc_addressed(r, dims, rows, cols)
         partition = [refer(c)[1] for c in dims if c not in addressed]
-        order = [x for c in addressed for x in self._tc_order(c, refer, len(dims), dense)]
+        order = [x for c in addressed for x in self._tc_order(c, refer, len(dims), keys)]
         return tcalc.Window(partition, order or partition[:1])
 
     def _tc_addressed(self, r: _Ref, dims: list, rows: list[_Ref], cols: list[_Ref]) -> list:
@@ -5257,8 +5304,10 @@ class _Parser:
                 addressed = inner(rows)
         return addressed
 
-    def _tc_order(self, c: tuple, refer: Any, n_dims: int, dense: bool) -> list[str]:
-        """ORDER BY items of one addressed dimension: the order of its members on the sheet (its sort, else natural order)."""
+    def _tc_order(self, c: tuple, refer: Any, n_dims: int, keys: dict[str, str] | None = None, window: bool = True) -> list[str]:
+        """ORDER BY items of one dimension: the order of its members on the sheet (its sort, else natural order). `keys`: the
+        column of each computed sort's aggregate over the whole view, when the marks are a CTE. `window`: for a window's
+        ORDER BY, where a sort that can't be applied is a TODO (in the tile's ORDER BY, a note)."""
         ctx = self._sheet
         assert ctx is not None
         inst = c[0].instance
@@ -5266,10 +5315,18 @@ class _Parser:
         label, raw = refer(c)
         if srt is not None and srt.kind == "computed":
             agg = ctx.sort_by.get(inst, ("", ""))[1]
-            if not agg or n_dims > 1 or " over (" in agg or dense:
+            if keys and inst in keys:
+                using = keys[inst]
+            elif agg and n_dims == 1 and " over (" not in agg and keys is None:
+                using = agg
+            elif window:
                 raise _NoSQL(f"a table calculation along {c[4]}, which is sorted by {srt.using}: order the window by that aggregate over "
                              f"the whole view ({SKILL})")
-            using = agg
+            else:
+                if agg:
+                    ctx.notes.append(f"sort of {c[4]} by {srt.using} ({srt.direction.lower()}) with other dimensions on the sheet not applied: "
+                                     "order the members by the aggregate over the whole view")
+                srt = None
         string = inst in ctx.labels or (c[0].field is not None and c[0].field.datatype == "string" and c[0].deriv in ("none", ""))
         null_label = inst in ctx.labels and any(k == "%null%" for k, _ in c[0].field.aliases)
         return self._dim_order(srt, label, label, raw, string, using, null_label)

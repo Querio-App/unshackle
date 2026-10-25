@@ -33,6 +33,7 @@
       <map key='[business_size]' value='[accounts].[business_size]' />
       <map key='[product_id (products)]' value='[products].[product_id]' />
       <map key='[paper_type]' value='[products].[paper_type]' />
+      <map key='[product_name]' value='[products].[product_name]' />
         </cols>
         <metadata-records>
       <metadata-record class='column'><remote-name>order_id</remote-name><local-name>[order_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
@@ -50,6 +51,7 @@
       <metadata-record class='column'><remote-name>business_size</remote-name><local-name>[business_size]</local-name><parent-name>[accounts]</parent-name><local-type>integer</local-type></metadata-record>
       <metadata-record class='column'><remote-name>product_id</remote-name><local-name>[product_id (products)]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
       <metadata-record class='column'><remote-name>paper_type</remote-name><local-name>[paper_type]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>product_name</remote-name><local-name>[product_name]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
         </metadata-records>
       </connection>
     <column datatype='string' name='[order_id]' role='dimension' type='nominal' />
@@ -67,6 +69,7 @@
     <column datatype='integer' name='[business_size]' role='measure' type='quantitative' />
     <column datatype='string' name='[product_id (products)]' role='dimension' type='nominal' />
     <column datatype='string' name='[paper_type]' role='dimension' type='nominal' />
+    <column datatype='string' name='[product_name]' role='dimension' type='nominal'><aliases><alias key='"Ledger 24lb Paper, 11 x 17 Tabloid, Bright White Wove, 500 Sheets/Ream"' value="alpha ledger" /><alias key='"Premium 24lb Paper, 8.5 x 11, Ivory Wove, 100 Sheets/Pack"' value="Beta Premium" /><alias key='"Copy Paper, 20 lbs., 92 Brightness, 500 Sheets/Ream, 40 Cases/Pallet"' value="Zeta Copy" /><alias key='"Bulk Copy Paper, 92 Brightness, 20lb, 8-1/2 X 11, White, 200,000 Sheets/CT"' value="Copy Bulk" /></aliases></column>
     <column caption="Completed Revenue" datatype='real' name='[Calculation_7201]' role='measure' type='quantitative'><calculation class='tableau' formula='IF [status] = "COMPLETED" THEN [post_discount_revenue] END'></calculation></column>
     <column caption="Discount Amount" datatype='real' name='[Calculation_7202]' role='measure' type='quantitative'><calculation class='tableau' formula="[post_discount_revenue] - [pre_discount_revenue]"></calculation></column>
     <column caption="Running Revenue" datatype='real' name='[Calculation_7211]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]))"></calculation></column>
@@ -105,6 +108,7 @@
     <column caption="Running of Running" datatype='real' name='[Calculation_7240]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM([Calculation_7211])"></calculation></column>
     <column caption="Previous Value" datatype='real' name='[Calculation_7241]' role='measure' type='quantitative'><calculation class='tableau' formula="PREVIOUS_VALUE(0) + SUM([post_discount_revenue])"></calculation></column>
     <column caption="Script Value" datatype='real' name='[Calculation_7242]' role='measure' type='quantitative'><calculation class='tableau' formula="SCRIPT_REAL('return _arg1', SUM([post_discount_revenue]))"></calculation></column>
+    <column caption="Open Status" datatype='string' name='[Calculation_7250]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [status] &lt;&gt; "COMPLETED" THEN [status] END'></calculation></column>
     </datasource>
   </datasources>
   <worksheets>
@@ -1136,6 +1140,594 @@
         <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
       </table>
       <simple-id uuid='{4CADB001-D1E9-5F4B-95A4-01F4B56AD67D}' />
+    </worksheet>
+    <worksheet name="Color Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{7E056157-1C7D-515F-8A53-7294E6EA00E8}' />
+    </worksheet>
+    <worksheet name="Color Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{114BED10-66FD-5C31-86E0-46A4DCEEDCF9}' />
+    </worksheet>
+    <worksheet name="Color Table">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{753200A1-AFC2-542A-8F6C-E12A5A23DE87}' />
+    </worksheet>
+    <worksheet name="Color Pane Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:4]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="ColumnInPane" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:4]' pivot='key' type='quantitative'><table-calc ordering-type="ColumnInPane" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:4]' pivot='key' type='quantitative'><table-calc ordering-type="ColumnInPane" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:4]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:4]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:4]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{16AFEADB-4D45-5E95-8E02-83622B8BD5C5}' />
+    </worksheet>
+    <worksheet name="Color Cell">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:13]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="CellInPane" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:5]' pivot='key' type='quantitative'><table-calc ordering-type="CellInPane" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:5]' pivot='key' type='quantitative'><table-calc ordering-type="CellInPane" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:13]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:5]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:5]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{02326824-8FBB-5755-8B2F-83AC0AD918B3}' />
+    </worksheet>
+    <worksheet name="Color Specific Cycle Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:16]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:6]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:6]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:16]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:6]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:6]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{F6648E6B-DFE2-5597-B4D8-364BA11DB1E1}' />
+    </worksheet>
+    <worksheet name="Color Specific Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:17]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:7]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:7]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:17]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:7]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:7]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{1E250533-8EFC-5C26-AAC9-2BCE2B1836CD}' />
+    </worksheet>
+    <worksheet name="Color Specific All">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:18]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:8]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:8]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:18]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:8]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:8]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{5F15F529-0140-5AEE-9640-A7D23BDF44C5}' />
+    </worksheet>
+    <worksheet name="Color Specific Status Restart">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:19]' pivot='key' type='quantitative'><table-calc aggregation="Sum" level-break="[federated.tablecalc0].[none:status:nk]" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:9]' pivot='key' type='quantitative'><table-calc level-break="[federated.tablecalc0].[none:status:nk]" ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:9]' pivot='key' type='quantitative'><table-calc level-break="[federated.tablecalc0].[none:status:nk]" ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:19]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:9]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:9]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{EAD590E8-2AD3-540B-9CCC-B0F406DC9AD5}' />
+    </worksheet>
+    <worksheet name="Color Null Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Open Status" datatype='string' name='[Calculation_7250]' role='dimension' type='nominal'><calculation class='tableau' formula='IF [status] &lt;&gt; "COMPLETED" THEN [status] END'></calculation></column><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_7250]' derivation='None' name='[none:Calculation_7250:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:Calculation_7250:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{13EA1A0B-5DDB-5F8B-AD8F-CB2D87E99B67}' />
+    </worksheet>
+    <worksheet name="Detail Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><lod column="[federated.tablecalc0].[none:paper_type:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{CE6887E3-92A2-5C4D-831B-64AA3F582D2E}' />
+    </worksheet>
+    <worksheet name="Color Detail Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><lod column="[federated.tablecalc0].[none:paper_type:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{352A5CD2-97BD-5064-95EB-C959B6543D64}' />
+    </worksheet>
+    <worksheet name="Color Detail Specific">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:20]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:10]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:10]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><lod column="[federated.tablecalc0].[none:paper_type:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:20]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:10]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:10]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{AECFDC3F-EB83-501C-AA76-22AD6B03254B}' />
+    </worksheet>
+    <worksheet name="Size Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><size column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{6B828FF3-CD65-5195-AA94-D629E69758E2}' />
+    </worksheet>
+    <worksheet name="Color No Crosstab">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:21]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:11]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:11]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:21]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:11]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:11]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols></cols>
+      </table>
+      <simple-id uuid='{0A1F5E96-F921-5825-B966-C63DA0391E0D}' />
+    </worksheet>
+    <worksheet name="Aliased Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[product_name]' role='dimension' type='nominal'><aliases><alias key='"Ledger 24lb Paper, 11 x 17 Tabloid, Bright White Wove, 500 Sheets/Ream"' value="alpha ledger" /><alias key='"Premium 24lb Paper, 8.5 x 11, Ivory Wove, 100 Sheets/Pack"' value="Beta Premium" /><alias key='"Copy Paper, 20 lbs., 92 Brightness, 500 Sheets/Ream, 40 Cases/Pallet"' value="Zeta Copy" /><alias key='"Bulk Copy Paper, 92 Brightness, 20lb, 8-1/2 X 11, White, 200,000 Sheets/CT"' value="Copy Bulk" /></aliases></column><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[product_name]' derivation='None' name='[none:product_name:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:product_name:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{5F50ED95-E79B-5809-8168-FFB798EBB41F}' />
+    </worksheet>
+    <worksheet name="Aliased Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[product_name]' role='dimension' type='nominal'><aliases><alias key='"Ledger 24lb Paper, 11 x 17 Tabloid, Bright White Wove, 500 Sheets/Ream"' value="alpha ledger" /><alias key='"Premium 24lb Paper, 8.5 x 11, Ivory Wove, 100 Sheets/Pack"' value="Beta Premium" /><alias key='"Copy Paper, 20 lbs., 92 Brightness, 500 Sheets/Ream, 40 Cases/Pallet"' value="Zeta Copy" /><alias key='"Bulk Copy Paper, 92 Brightness, 20lb, 8-1/2 X 11, White, 200,000 Sheets/CT"' value="Copy Bulk" /></aliases></column><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[product_name]' derivation='None' name='[none:product_name:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:product_name:nk]</cols>
+      </table>
+      <simple-id uuid='{2FA404F3-D6A7-5AFA-87DF-E942BA934C3F}' />
+    </worksheet>
+    <worksheet name="Aliased Color">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[product_name]' role='dimension' type='nominal'><aliases><alias key='"Ledger 24lb Paper, 11 x 17 Tabloid, Bright White Wove, 500 Sheets/Ream"' value="alpha ledger" /><alias key='"Premium 24lb Paper, 8.5 x 11, Ivory Wove, 100 Sheets/Pack"' value="Beta Premium" /><alias key='"Copy Paper, 20 lbs., 92 Brightness, 500 Sheets/Ream, 40 Cases/Pallet"' value="Zeta Copy" /><alias key='"Bulk Copy Paper, 92 Brightness, 20lb, 8-1/2 X 11, White, 200,000 Sheets/CT"' value="Copy Bulk" /></aliases></column><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[product_name]' derivation='None' name='[none:product_name:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:22]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:product_name:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:12]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:product_name:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:12]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:product_name:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:product_name:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:22]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:12]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:12]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{BA288346-4C26-55E4-85E3-EA3EA23D32AF}' />
+    </worksheet>
+    <worksheet name="Sorted Grid Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <computed-sort column="[federated.tablecalc0].[none:account_manager:nk]" direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{000801E8-6468-5AA1-8207-901C6C4E3AAF}' />
+    </worksheet>
+    <worksheet name="Sorted Both Table">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[quantity]' derivation='Sum' name='[sum:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <computed-sort column="[federated.tablecalc0].[none:account_manager:nk]" direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /><computed-sort column="[federated.tablecalc0].[none:payment_cycle:nk]" direction='ASC' using="[federated.tablecalc0].[sum:quantity:qk]" />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{32958DEE-25F4-51E8-AA46-12A79C275471}' />
+    </worksheet>
+    <worksheet name="Sorted Grid Color">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <computed-sort column="[federated.tablecalc0].[none:account_manager:nk]" direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{8A928706-BC45-55C4-8EDD-F58F6281AD94}' />
+    </worksheet>
+    <worksheet name="Nested Sorted Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <computed-sort column="[federated.tablecalc0].[none:status:nk]" direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /><computed-sort column="[federated.tablecalc0].[none:paper_type:nk]" direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols></cols>
+      </table>
+      <simple-id uuid='{886B6B20-9E6B-5CBD-BB95-EA7D9EEFF224}' />
+    </worksheet>
+    <worksheet name="Sparse Nested Pane Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:4]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="ColumnInPane" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:4]' pivot='key' type='quantitative'><table-calc ordering-type="ColumnInPane" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:4]' pivot='key' type='quantitative'><table-calc ordering-type="ColumnInPane" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:4]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:4]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:4]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:account_manager:nk] / [federated.tablecalc0].[none:payment_cycle:nk])</rows>
+        <cols>[federated.tablecalc0].[none:status:nk]</cols>
+      </table>
+      <simple-id uuid='{BDF261EE-26DC-5264-9F2B-D70C1256D303}' />
+    </worksheet>
+    <worksheet name="Sparse Grid Table">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{942050B4-2776-5981-8731-2A7A6BDE499F}' />
+    </worksheet>
+    <worksheet name="Mixed Addressing">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{81C01410-09B5-5CD2-B13F-21204AA4D059}' />
+    </worksheet>
+    <worksheet name="Detail Addressed Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:23]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:13]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:13]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:account_manager:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><lod column="[federated.tablecalc0].[none:paper_type:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:23]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:13]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:13]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{DF8DA2B3-B966-5D1E-B8C7-A0E7230CDD08}' />
+    </worksheet>
+    <worksheet name="Color Detail Specific Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:16]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:6]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:6]' pivot='key' type='quantitative'><table-calc ordering-type="Field"><order field="[federated.tablecalc0].[none:payment_cycle:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Square' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /><lod column="[federated.tablecalc0].[none:paper_type:nk]" /><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:16]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:6]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:6]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{31C4DE68-1759-5274-B26E-AB10F1F8DDD9}' />
+    </worksheet>
+    <worksheet name="Sorted Nested Grid">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk:3]' pivot='key' type='quantitative'><table-calc ordering-type="Table" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <computed-sort column="[federated.tablecalc0].[none:paper_type:nk]" direction='ASC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:3]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{7B1AF9C4-302D-5A11-8889-C3D7C3383D58}' />
     </worksheet>
   </worksheets>
 </workbook>
