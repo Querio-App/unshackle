@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- Tableau hardening: generated SQL follows Tableau's semantics, and anything that can't be translated exactly stays a
+  `TODO(unshackle)` instead of a wrong number.
+  - Warehouse SQL: tile and model SQL follow the warehouse type in `unshackle.toml` (else the export's): BigQuery and
+    Databricks quoting and date functions, Postgres `median`, Redshift and Postgres averages and division in double
+    precision. Initial SQL and connection options are reported. Field names that are SQL reserved words are quoted.
+  - Dates: weeks follow the data source's Week start (or its locale), weekday numbers run 1 (Sunday) to 7; results that
+    depend on a fiscal year or an unknown week start stay TODO.
+  - Calculations: NULLs, `IIF`, string `+`, `= TRUE`, the `NULL` literal and `ROUND` follow Tableau's rules per
+    connection (live vs extract); `DATEDIFF`, `DATEADD`, `DATEPART`/`DATENAME`, `MAKEDATE`, `MAKEDATETIME`, `TODAY`,
+    `IN`, two-argument `MIN`/`MAX`, string, conversion, math and `REGEXP_` functions translate. A data-driven case
+    table covers every supported function.
+  - Parameters in calculations (what-if, thresholds, measure and dimension switches) become `:name` binds from the
+    notebook's parameters cell, which lists each parameter's values or range; custom SQL parameters become binds too.
+  - Filters follow Tableau's order of operations (extract, data source, context, FIXED, top N and conditions,
+    dimension, measure): relative date filters (`:as_of`), excludes that keep NULLs, exact top N with ties, condition
+    and wildcard filters, range bounds within Tableau's tolerance, and extract and data source filters, including
+    inside FIXED LODs. Context filters apply inside FIXED grains.
+  - Relationships (the logical layer): one model per logical table related by Ossie relationships; tiles aggregate
+    each related table on its own rows, so nothing is repeated, and filters and top N on those sheets follow Tableau.
+  - Data blending: each secondary source is aggregated at its linking fields and left-joined to the primary; a
+    secondary string dimension shows its value or `*`.
+  - Table calculations become window SQL over the sheet's marks: running totals, percent of total, differences,
+    ranks, moving calculations, `WINDOW_*`, `LOOKUP`, `INDEX`, `TOTAL`, with Compute Using and the sheet's sort;
+    crosstabs are padded the way Tableau pads them, including Marks card, aliased and computed-sorted dimensions.
+  - LODs: an INCLUDE or EXCLUDE nested in a FIXED, and nested LODs inside larger expressions and with context
+    filters, translate.
+  - Sets, groups and bins (fixed, conditional and top/bottom N sets; Include Other; NULL members) translate as
+    dimensions, In / Out and filters.
+  - Display: aliases show as labels, sheet and default sorts become the tile's `order by`, and number formats go to
+    notebook axes, tooltips and Ossie.
+  - Charts: Measure Names/Values sheets unpivot in Tableau's measure order; dual axis from the folded axis; square
+    marks as `mark_rect`; maps for US states, countries and latitude/longitude (shapes from a pinned CDN); text
+    sheets with several measures as tables. Reference lines and bands become window columns and rule layers; totals,
+    trend lines and forecasts are TODOs that hold the SQL or name the model.
+  - Dashboards: dashboard filter controls and filter actions become notebook parameters bound in their target tiles;
+    URL actions become links; stories become one notebook with a section per story point; hidden fields no sheet
+    uses get no metrics; folders go to the glossary; what isn't migrated is listed per dashboard in the report.
+  - Data that lives only in Tableau (Hyper files, Excel/CSV, application connectors, extracts with no connection) is
+    flagged; `extract --with-data` and `import --with-data` (new `tableau` extra) copy it to Parquet with Tableau's
+    column types, `build` points the models at the copies, and `init` keeps the copies out of Git. Live Excel and
+    text files follow the extract calculation rules.
+  - Formats: workbooks from Tableau 8.2 to 2024 parse; cross-database joins are reported, with TODOs where SQL would
+    read two databases, and same-named tables from different databases get separate models.
+  - Robustness: a failure in one workbook, data source, calculation, sheet or dashboard becomes a warning naming it
+    and the rest migrates; `migration/report.md` counts unread XML and TODOs by kind; a sheet with Aggregate Measures
+    off and a second calculation with an existing name become TODOs instead of wrong SQL.
 - The PyPI page links to the repository, issues and changelog.
 - Tests run offline only: the Dunder Mifflin data moved to `tests/data/dunder_mifflin/`, and the
   `live` extra and test marker are gone.
