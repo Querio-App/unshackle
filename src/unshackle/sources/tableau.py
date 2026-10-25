@@ -113,6 +113,10 @@ ALTAIR_UNIT = {"year": "year", "quarter": "yearquarter", "month": "yearmonth", "
 KNOWN_DERIV = set(DERIV_AGG) | set(TRUNC) | set(PART) | {"none", "usr", "attr", "std", "stp", "var", "vrp", "sum"}
 MARKS = {"bar": ("chart", "bar"), "line": ("chart", "line"), "area": ("chart", "area"), "circle": ("chart", "point"), "shape": ("chart", "point"), "pie": ("chart", "arc"), "ganttbar": ("chart", "bar")}
 MAP_MARKS = {"multipolygon", "polygon", "map", "filledmap", "density"}
+FILLED_MAP_MARKS = {"multipolygon", "polygon", "filledmap"}
+# Geographic roles drawn as shapes (Altair looks the field's names up in this TopoJSON's feature names)
+GEO_SHAPES = {"[State].[Name]": "us_states", "[Country].[ISO3166_2]": "countries", "[Country].[Name]": "countries"}
+GEO_LEVELS = ("[ZipCode]", "[City]", "[County]", "[State]", "[Country]")  # finest first; others ([CBSA/MSA], [Airport]...) as City
 FILE_CONNECTIONS = {"excel-direct", "textscan", "hyper", "dataengine", "ogrdirect", "stat-direct", "google-sheets", "excel", "msaccess"}
 # connections Tableau answers in Hyper even without <extract>: Hyper files, and live Excel and text files (from a hidden extract)
 HYPER_ENGINE = {"hyper", "dataengine", "excel-direct", "textscan"}
@@ -943,6 +947,41 @@ def _in_sql(expr: str, values: list[str | None], exclude: bool) -> str:
     return f"({test} or {x} is null)" if has_null else test
 
 
+def _deriv_label(f: "TField", d: str) -> str:
+    """Tableau's name for a measure aggregated with derivation `d` ("Avg. Discount"): just the field's name when `d` is
+    the measure's own Default Properties > Aggregation (SUM unless set), "Sum of x" for a SUM that isn't."""
+    if f.role == "measure" and DERIV_AGG[d] == DEFAULT_AGG.get(f.default_agg or "sum"):
+        return f.label
+    return f"Sum of {f.label}" if d == "sum" and f.role == "measure" else DERIV_LABEL[d].format(f.label)
+
+
+def _member_text(v: str) -> str:
+    """A Measure Names member or alias key ('"[ds].[sum:Sales:qk]"') -> '[ds].[sum:Sales:qk]' (backslash escapes undone)."""
+    v = v.strip()
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        v = v[1:-1]
+    return re.sub(r"\\(.)", r"\1", v)
+
+
+def _split_with(sql: str) -> tuple[str, str]:
+    """SQL starting with WITH -> (its CTE list, the final SELECT); ("", sql) otherwise."""
+    if not sql.startswith("with "):
+        return "", sql
+    depth, quote = 0, ""
+    for i, ch in enumerate(sql):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif depth == 0 and sql.startswith("\nselect", i):
+            return sql[5:i], sql[i + 1:]
+    return "", sql
+
+
 def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     """-> (formula without // comments, code with strings blanked, code with strings and [fields] blanked, comments)."""
     clean: list[str] = []
@@ -1352,6 +1391,7 @@ class TField:
     description: str = ""
     hidden: bool = False
     param: bool = False
+    semantic_role: str = ""  # Geographic Role, e.g. '[State].[Name]', '[Country].[ISO3166_2]', '[Geographical].[Latitude]'
     value: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
     aliases: list[tuple[str, str]] = field(default_factory=list)  # <alias key= value=>: (member literal, label)
@@ -1645,6 +1685,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         f.description = _text(col.find("desc")) or f.description
         f.format = col.get("default-format") or f.format
         f.aliases = [(a.get("key", ""), a.get("value", "")) for a in col.findall("aliases/alias")] or f.aliases
+        f.semantic_role = col.get("semantic-role") or f.semantic_role
         calc = col.find("calculation")
         if calc is not None:
             f.calc_class = calc.get("class", "tableau")
@@ -3358,7 +3399,7 @@ class _Parser:
         return out
 
     def _is_measure(self, r: _Ref) -> bool:
-        if r.special == "records":
+        if r.special in ("records", "measure_values"):
             return True
         if r.special:
             return False
@@ -3382,7 +3423,8 @@ class _Parser:
         if r.special == "records":
             return "number_of_records", "count(*)", True, "Number of Records", "quantitative", ""
         if r.special in ("measure_names", "measure_values"):
-            raise _NoSQL("Measure Names/Values: unpivot the measures in SQL (one row per measure name) and colour by measure name")
+            raise _NoSQL("Measure Values: unpivot the measures in SQL (measure_name, measure_value: one row per measure) and colour or "
+                         "facet by measure_name")
         if r.special == "parameter":
             raise _NoSQL(f"parameter [{r.field.label if r.field else r.instance}] on a shelf")
         f, ds = r.field, r.ds
@@ -3438,7 +3480,7 @@ class _Parser:
             return _name(label), sql, True, label, etype, ""
         if d in DERIV_AGG:
             display = DERIV_LABEL[d].format(label)
-            return _name(display), AGG_SQL[DERIV_AGG[d]].format(base), True, display, "quantitative", ""
+            return _name(display), AGG_SQL[DERIV_AGG[d]].format(base), True, _deriv_label(f, d), "quantitative", ""
         if d == "attr":
             raise _NoSQL(f"ATTR([{label}]) on a shelf: group by the dimension or use min()/max()")
         if d in TRUNC or d in PART:
@@ -3667,7 +3709,10 @@ class _Parser:
                     lst = enc.setdefault(_local(child.tag), [])
                     if all(x.instance != ref.instance for x in lst):
                         lst.append(ref)
-        dual = len(panes) > 1 and len({(p.find("mark").get("class") if p.find("mark") is not None else "") for p in panes}) > 1
+        # Dual axis: a measure's axis folded onto the previous one (<encoding attr='space' fold='true'>); one scale when synchronized
+        folds = [e for e in table.findall("style/style-rule/encoding") if e.get("attr") == "space" and e.get("fold") == "true"]
+        dual = bool(folds)
+        synced = dual and all(e.get("synchronized") == "true" for e in folds)
         pane_marks: dict[str, str] = {}  # measure instance -> its pane's mark class (dual axis)
         for pane in panes:
             pm = pane.find("mark")
@@ -3680,16 +3725,25 @@ class _Parser:
 
         row_d, row_m = split(rows)
         col_d, col_m = split(cols)
+        everything = rows + cols + [r for rs in enc.values() for r in rs]
+        mv = self._measure_values(wb, view, deps) if any(r.special == "measure_values" for r in everything) else None
+        if isinstance(mv, str):
+            todos.append(mv)
+            mv = None
         geo = any(r.special == "geo" for r in rows + cols)
+        latlon = self._latlon(row_m, col_m)
         cls = mark_cls.lower()
-        if cls in MAP_MARKS or geo:
-            kind, mark = "unknown", "unknown"
-            todos.append(f"Tableau map ({mark_cls}, generated latitude/longitude): no Altair mark in the notebook target; keep the SQL and choose a bar/table, or link to the source view ({SKILL})")
+        geo_key: _Ref | None = None
+        geo_feature = ""
+        if cls in MAP_MARKS or geo or latlon:
+            geo_key, geo_feature, note = self._map(wb, everything, cls, latlon)
+            kind, mark = ("chart", "point") if latlon else ("chart", "geoshape") if geo_feature else ("table", "table")
+            if note:
+                todos.append(note)
         elif cls == "text":
             kind, mark = ("kpi", "text") if not (row_d or col_d) else ("table", "table")
         elif cls == "square":
-            kind, mark = "unknown", "unknown"
-            todos.append("Tableau square marks (heatmap/highlight table): use mark_rect() with x, y and color (skills/translate-dashboards)")
+            kind, mark = "chart", "rect"
         elif cls in MARKS:
             kind, mark = MARKS[cls]
             if cls == "ganttbar":
@@ -3715,16 +3769,36 @@ class _Parser:
                 chosen[ch] = r
 
         all_meas = row_m + col_m + [r for rs in enc.values() for r in rs if self._is_measure(r)]
-        if mark == "arc":
+        if kind == "kpi":
+            shown = {r.instance for r in enc.get("text", []) + row_m + col_m if self._is_measure(r)}
+            marks = [r for ch in ("text", "color", "size", "lod") for r in enc.get(ch, []) if not self._is_measure(r) and r.special != "geo"]
+            if mv is not None or len(shown) > 1 or marks:  # several measures (or names), or one mark per member: a table
+                kind, mark = "table", "table"
+        if mark == "geoshape":
+            put("key", geo_key)
+            put("color", next((r for r in enc.get("color", []) + enc.get("size", [])), None))
+            if cls not in FILLED_MAP_MARKS:
+                sized = ", ".join(r.field.label if r.field else r.instance for r in enc.get("size", []))
+                todos.append(f"Tableau draws a circle on each place{f' sized by {sized}' if sized else ''} (a symbol map); this map fills the "
+                             f"places instead{' and colours them by it' if sized and not enc.get('color') else ''}: draw circles at their "
+                             f"centroids for the same chart (skills/translate-dashboards)")
+        elif latlon:
+            put("longitude", latlon[1])
+            put("latitude", latlon[0])
+            for ch in ("color", "size"):
+                put(ch, (enc.get(ch) or [None])[0])
+            put("detail", (enc.get("lod") or [None])[0])
+        elif mark == "arc":
             put("theta", (enc.get("wedge-size") or all_meas or [None])[0])
             put("color", next((r for r in enc.get("color", []) + row_d + col_d if not self._is_measure(r)), None))
         elif kind == "kpi":
             put("text", next((r for r in enc.get("text", []) + all_meas if self._is_measure(r)), None))
-            if len({r.instance for r in all_meas}) > 1:
-                todos.append("several measures in one text sheet: one KPI tile per measure")
         elif kind != "table":
-            horizontal = bool(row_d and col_m and not col_d)
-            if mark == "point" and row_m and col_m:
+            horizontal = bool(row_d and col_m and not row_m)
+            if mark == "rect":  # highlight table / heatmap: the innermost dimensions on x and y, the outer ones facet
+                put("x", (col_d[-1:] or col_m or [None])[0])
+                put("y", (row_d[-1:] or row_m or [None])[0])
+            elif mark == "point" and row_m and col_m:
                 put("x", col_m[0])
                 put("y", row_m[0])
             elif horizontal:
@@ -3749,9 +3823,9 @@ class _Parser:
                 # Several measures on one shelf: Tableau draws one pane per measure (or overlays them on a dual axis).
                 del chosen[axis]
                 layer_refs = [(MARKS.get(pane_marks.get(r.instance, cls), ("chart", mark))[1], axis, r) for r in series]
-                compose = ("dual_axis" if axis == "y" else "layer") if dual else ("vconcat" if axis == "y" else "hconcat")
-                if dual and axis == "x":
-                    todos.append("dual axis on columns: add .resolve_scale(x='independent') to the layered chart")
+                compose = ("layer" if synced else "dual_axis") if dual else ("vconcat" if axis == "y" else "hconcat")
+                if dual and len(folds) != len(series) - 1:
+                    todos.append(f"{len(series)} measures with {len(folds)} dual axes: only some share an axis; split the layers into panels (skills/translate-dashboards)")
             elif axis:
                 todos.append("several measures on one axis: only the first is encoded; add the others as layers (skills/translate-dashboards)")
             elif dual:
@@ -3762,12 +3836,22 @@ class _Parser:
         tooltip = [r for r in enc.get("tooltip", []) if r.instance not in {x.instance for x in chosen.values()}]
         if tooltip:
             put("tooltip", tooltip[0])
+        if mv is None:  # Measure Names without Measure Values only names the series (each layer has its own colour)
+            chosen = {ch: r for ch, r in chosen.items() if r.special not in ("measure_names", "measure_values")}
+        else:  # the measures on Measure Values are its rows now, not columns
+            chosen = {ch: r for ch, r in chosen.items() if r.instance not in {m.instance for m in mv[0]}}
 
         # ---- SQL
         ordered: list[tuple[_Ref, bool]] = []  # (ref, critical)
         seen: set[str] = set()
         for r in rows + cols + [r for ch in ("color", "size", "text", "wedge-size", "lod", "shape", "path") for r in enc.get(ch, [])]:
-            if r.instance not in seen and r.special != "geo":
+            if r.special == "measure_values" and mv is not None:
+                for m in mv[0]:
+                    if m.instance not in seen:
+                        ordered.append((m, True))
+                        seen.add(m.instance)
+                continue
+            if r.instance not in seen and r.special not in ("geo", "measure_names"):
                 ordered.append((r, True))
                 seen.add(r.instance)
         for r in enc.get("tooltip", []):
@@ -3880,6 +3964,8 @@ class _Parser:
             totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit or members))
             try:
                 sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, members=members)
+                if mv is not None:
+                    sql = self._unpivot(sql, columns, *mv)
                 if totals:  # Tableau's Automatic totals; Total Using isn't in the file, so they stay a TODO with this SQL
                     totals_sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals, members)
                     if self.dialect in dialect.DIALECTS:
@@ -3891,6 +3977,7 @@ class _Parser:
                     note += f": {totals_sql}"
             except _NoSQL as exc:
                 todos.append(str(exc))
+                sql = ""
             if note:
                 todos.append(note)
             todos += self._sheet.notes  # type: ignore[union-attr]
@@ -3911,6 +3998,10 @@ class _Parser:
             return r.field.format
 
         def to_encoding(r: _Ref, channel: str) -> Encoding | None:
+            if mv is not None and r.special == "measure_names":
+                return Encoding("measure_name", "nominal", title="Measure Names", sort=list(mv[1]))
+            if mv is not None and r.special == "measure_values":
+                return Encoding("measure_value", "quantitative", title="Measure Values")
             c = by_inst.get(r.instance)
             if c is not None:
                 return Encoding(c[1], c[5], title=c[4], time_unit="" if sql else ALTAIR_UNIT.get(c[6], ""),  # type: ignore[arg-type]
@@ -3946,6 +4037,11 @@ class _Parser:
         formats = {c[1]: fmt for c in columns if (fmt := number_format(c[0], "text"))}
         if formats:
             config["formats"] = formats  # Tableau number formats of the columns (marks, tooltips, tables)
+        if mv is not None:
+            unpivoted = {m.instance for m in mv[0]}
+            config["columns"] = ({c[1]: c[4] for c in columns if not c[3]} | {"measure_name": "Measure Names", "measure_value": "Measure Values"}
+                                 | {c[1]: c[4] for c in columns if c[3] and c[0].instance not in unpivoted})
+            config["measure_names"] = list(mv[1])
         title = _text(ws.find("layout-options/title"))
         if title and title != "<Sheet Name>":
             config["title"] = title.replace("<Sheet Name>", name)
@@ -3963,7 +4059,7 @@ class _Parser:
         self._joined = None
         self._sheet = None
         tile = Tile(tid, name, kind, mark, sql, encodings, source_type=mark_cls, source_config=config,  # type: ignore[arg-type]
-                    todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose, references=references)  # type: ignore[arg-type]
+                    todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose, references=references, geo=geo_feature)  # type: ignore[arg-type]
         meta["aliases"] = aliases
         return tile, meta
 
@@ -4451,6 +4547,114 @@ class _Parser:
                              for n, m in enumerate(members, 1))
             return ([f"case {whens} else {len(members) + 1} end"] if members else []) + natural
         return [f"{using}{' desc' if desc else ''}", *natural]
+
+    def _measure_values(self, wb: _Workbook, view: ET.Element, deps: dict[tuple[str, str], ET.Element]) -> tuple[list[_Ref], list[str]] | str:
+        """The measures on a sheet's Measure Values card and their Measure Names labels, in Tableau's order; or a TODO.
+
+        The card is the sheet's filter on Measure Names (the measures it keeps). A label is the Measure Names alias, else
+        Tableau's name for the measure ("Sales" for SUM, "Avg. Discount", a calculation's name). Their order is the
+        Measure Names sort (<manual-sort>, which Desktop writes when the card is reordered), the measures it doesn't list
+        after; without one, Tableau orders them by label."""
+        flt = next((f for f in view.findall("filter") if (refs := self._shelf(wb, f.get("column"), deps)) and refs[0].special == "measure_names"), None)
+        top = flt.find("groupfilter") if flt is not None else None
+        if top is None:
+            return "Measure Values with no filter on Measure Names (every measure of the datasource): list the measures and unpivot them in SQL"
+        if top.get("function") not in ("union", "member") or any(g.get("function") != "member" for g in top.findall("groupfilter")):
+            return f"Measure Names filter ({top.get('function')}) keeps measures by a rule, not a list: list the measures and unpivot them in SQL"
+        members = [_member_text(g.get("member", "")) for g in ([top] if top.get("function") == "member" else top.findall("groupfilter"))]
+        measures = [r for m in members for r in self._shelf(wb, m, deps)]
+        if len(measures) != len(members) or not measures:
+            return f"Measure Names filter members not read ({', '.join(members)}): unpivot the measures in SQL"
+        aliases: dict[str, str] = {}
+        for ds_el in wb.root.findall("datasources/datasource"):
+            for col in ds_el.findall("column"):
+                if col.get("name") == "[:Measure Names]":
+                    aliases |= {_member_text(a.get("key", "")): a.get("value", "") for a in col.findall("aliases/alias")}
+        labels = []
+        for m, r in zip(members, measures):
+            if r.special == "records":
+                default = "Number of Records"
+            elif r.field is None:
+                default = r.instance
+            else:
+                default = _deriv_label(r.field, r.deriv) if r.deriv in DERIV_AGG else r.field.label
+            labels.append(aliases.get(m, default))
+        srt = next((m for m in view.findall("manual-sort") if "Measure Names" in m.get("column", "")), None)
+        listed = [_member_text(b.text or "") for b in srt.findall("dictionary/bucket")] if srt is not None else []
+        rank = {m: i for i, m in enumerate(listed)}
+        order = sorted(range(len(members)), key=lambda i: (rank.get(members[i], len(rank)), labels[i]))
+        return [measures[i] for i in order], [labels[i] for i in order]
+
+    def _unpivot(self, sql: str, columns: list, measures: list[_Ref], labels: list[str]) -> str:
+        """A sheet's SQL with one row per mark and measure (Measure Values): its dimensions, measure_name, measure_value
+        and its other columns, ordered by the dimensions and the measures' order."""
+        by_inst = {c[0].instance: c for c in columns}
+        values = [by_inst.get(m.instance) for m in measures]
+        if any(c is None for c in values):
+            raise _NoSQL("Measure Values: a measure is not in the sheet's SQL; unpivot the measures in SQL")
+        bad = [c[4] for c in values if c[5] != "quantitative" or (c[0].field is not None and c[0].deriv not in ("cnt", "ctd")  # type: ignore[index]
+                                                                  and c[0].field.datatype not in NUMERIC | {""})]
+        if bad:
+            raise _NoSQL(f"Measure Values of non-numeric measures ({', '.join(bad)}): unpivot them in SQL as text")
+        unpivoted = {m.instance for m in measures}
+        dims = [c for c in columns if not c[3]]
+        others = [c for c in columns if c[3] and c[0].instance not in unpivoted]
+        ctes, body = _split_with(sql)
+        lits = ["'" + label.replace("'", "''") + "'" for label in labels]
+        names = "\n  union all ".join(f"select {n} as measure_order, {lit} as measure_name" if n == 1 else f"select {n}, {lit}"
+                                      for n, lit in enumerate(lits, 1))
+        value = "case measure_names.measure_order " + " ".join(f"when {n} then measure_values.{c[1]}" for n, c in enumerate(values, 1)) + " end"  # type: ignore[index]
+        picks = ([f"measure_values.{c[1]}" for c in dims] + ["measure_names.measure_name", f"{value} as measure_value"]
+                 + [f"measure_values.{c[1]}" for c in others])
+        order = [str(i) for i in range(1, len(dims) + 1)] + ["measure_names.measure_order"]
+        head = f"with {ctes},\nmeasure_values as (" if ctes else "with measure_values as ("
+        return (f"{head}\n{body}\n)\nselect\n" + ",\n".join(f"  {p}" for p in picks)
+                + f"\nfrom measure_values\ncross join (\n  {names}\n) as measure_names\norder by {', '.join(order)}")
+
+    def _latlon(self, row_m: list[_Ref], col_m: list[_Ref]) -> tuple[_Ref, _Ref] | None:
+        """(latitude, longitude) when the sheet plots fields with those geographic roles on rows and columns."""
+        lat = next((r for r in row_m if r.field is not None and r.field.semantic_role == "[Geographical].[Latitude]"), None)
+        lon = next((r for r in col_m if r.field is not None and r.field.semantic_role == "[Geographical].[Longitude]"), None)
+        return (lat, lon) if lat is not None and lon is not None else None
+
+    def _map(self, wb: _Workbook, refs: list[_Ref], cls: str, latlon: Any) -> tuple[_Ref | None, str, str]:
+        """(the place field, the TopoJSON its names are looked up in, a note) for a map sheet. Tableau places each mark
+        by the finest geographic field in the view; Altair can draw US states and countries by name."""
+        if latlon:
+            return None, "", ""
+        places = [r for r in refs if r.field is not None and r.field.semantic_role and not self._is_measure(r) and r.special != "geo"
+                  and not r.field.semantic_role.startswith("[Geographical]")]
+
+        def level(r: _Ref) -> int:
+            role = r.field.semantic_role  # type: ignore[union-attr]
+            return next((i for i, p in enumerate(GEO_LEVELS) if role.startswith(p)), 1)
+
+        place = min(places, key=level, default=None)
+        if place is None:
+            return None, "", f"Tableau map with no geographic field in the view: showing its data as a table ({SKILL})"
+        f = place.field
+        assert f is not None
+        feature = GEO_SHAPES.get(f.semantic_role, "")
+        if feature == "us_states" and not self._us_states(wb, place):
+            feature = ""
+        if not feature:
+            return place, "", (f"Tableau map of {f.label} ({f.semantic_role}): Altair has no shapes for it here; showing its data as a "
+                               f"table (draw it with a GeoJSON of those places and transform_lookup, {SKILL})")
+        atlas = "US state names" if feature == "us_states" else "country names"
+        outside = ""
+        if feature == "us_states":
+            country = next((r.field.label for r in places if r.field is not None and r.field.semantic_role.startswith("[Country]")), "")
+            outside = f"; the view also shows [{country}]: places outside the US are not on this map" if country else ""
+        return place, feature, (f"map: check that every {f.label} value matches the map's {atlas} (Tableau also matches codes and "
+                                f"other spellings); places that don't match are drawn without data{outside}")
+
+    def _us_states(self, wb: _Workbook, place: _Ref) -> bool:
+        """A State field is a US state when the datasource's default country (Geographic Roles > Country) is the US."""
+        for ds_el in wb.root.findall("datasources/datasource"):
+            if ds_el.get("name") == place.dsname:
+                return any(sv.get("key") in ("[Country].[Name]", "[Country/Region].[Name]") and _param_value(sv.get("value"), "string") == "United States"
+                           for sv in ds_el.findall("semantic-values/semantic-value"))
+        return False
 
     def _ds_join(self, ds: TDatasource | None) -> str:
         """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""

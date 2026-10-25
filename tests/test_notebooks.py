@@ -164,10 +164,22 @@ def test_tableau_dual_axis_becomes_layers(tmp_path: Path):
     text = wb.read_text(encoding="utf-8")
     start = text.index("<worksheet name='Sales Trend'>")
     i = text.index("</pane>", start)
-    wb.write_text((text[:i] + second_pane + text[i + len("</pane>"):]).replace("<mark class='Automatic' />", "<mark class='Bar' />", 1), encoding="utf-8")
+    text = (text[:i] + second_pane + text[i + len("</pane>"):]).replace("<mark class='Automatic' />", "<mark class='Bar' />", 1)
+    # without a folded axis the two measures are two panels, each with its pane's mark
+    wb.write_text(text, encoding="utf-8")
+    tile = next(t for d in _parse(tmp_path / "panels", "tableau", fixture).dashboards for t in d.tiles if t.id == "sales-trend")
+    assert tile.compose == "vconcat" and [(l.mark, l.encodings["y"].field) for l in tile.layers] == [("bar", "sales"), ("line", "profit")]
+    # Dual Axis: Tableau folds the second measure's axis onto the first; Synchronize Axis gives them one scale
+    fold = (f"<style>\n          <style-rule element='axis'>\n            <encoding attr='space' class='0' field='{DS}.[sum:Profit:qk]' "
+            "field-type='quantitative' fold='true' scope='rows' type='space' />\n          </style-rule>\n        </style>")
+    start = text.index("<worksheet name='Sales Trend'>")
+    wb.write_text(text[:start] + text[start:].replace("<style />", fold, 1), encoding="utf-8")
     tile = next(t for d in _parse(repo, "tableau", fixture).dashboards for t in d.tiles if t.id == "sales-trend")
     assert tile.compose == "dual_axis" and [(l.mark, l.encodings["y"].field) for l in tile.layers] == [("bar", "sales"), ("line", "profit")]
     assert "dual axis" not in tile.todo
+    wb.write_text(text[:start] + text[start:].replace("<style />", fold.replace("fold='true'", "fold='true' synchronized='true'"), 1), encoding="utf-8")
+    tile = next(t for d in _parse(tmp_path / "synced", "tableau", fixture).dashboards for t in d.tiles if t.id == "sales-trend")
+    assert tile.compose == "layer" and len(tile.layers) == 2  # one shared y scale
 
 
 def test_notebook_executes_against_demo_warehouse(tmp_path: Path):

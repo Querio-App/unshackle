@@ -159,10 +159,11 @@ the SQL assumes the default (Monday); check it if the account sets another. Week
 | Mark | Tile |
 | --- | --- |
 | Bar / Line / Area / Circle / Shape / Pie | bar / line / area / point / point / arc (`wedge-size` -> theta, `color` -> color) |
-| Text with no dimensions / with dimensions | KPI (`mark_text`) / table (`return df`) |
+| Text with no dimensions / with dimensions | KPI (`mark_text`) / table (`return df`); several measures, Measure Values, or a dimension on text/colour/size/detail -> table |
 | Automatic | continuous date + measure -> line; dimension + measure -> bar; measure only -> KPI; measure on both shelves -> point; dimensions only -> table |
-| Map, Multipolygon, generated Latitude/Longitude | mark `unknown` + TODO (SQL still generated) |
-| Square | TODO: `mark_rect()` heatmap |
+| Square (highlight table, heatmap) | `mark_rect()`: innermost column dimension on x, row dimension on y, colour; outer dimensions facet |
+| Map (generated Latitude/Longitude, Multipolygon) | US states or countries by name: `mark_geoshape()` (see Maps); other places: table + TODO; SQL always generated |
+| Latitude/Longitude fields on rows/columns | `mark_point()` with `latitude`/`longitude` channels, `.project(type='mercator')` |
 
 `cols` -> x, `rows` -> y; a dimension on rows with the measure on cols is a
 horizontal bar (x = measure, y = dimension). Extra dimension -> color; `lod` ->
@@ -464,17 +465,40 @@ Tableau aggregates each source and left-joins on the linking fields. Write that 
 SQL: aggregate each side by the linking dimensions, then left join; or model both
 tables with entities and let MetricFlow join.
 
-**Dual axis / measure names**: several measures on rows become stacked panels
-(`alt.vconcat`), on columns side-by-side panels (`alt.hconcat`); a dual axis (panes with
-their own marks) becomes `alt.layer(...).resolve_scale(y='independent')`. Check each
-layer's mark against the view. `Measure Names`/`Measure Values`: unpivot in SQL
-(`union all` of one select per measure with a `measure_name` column) and colour by it.
-Dimensions nested on the shelves become `row`/`column` facets (the innermost one stays
-on the axis).
+**Several measures, dual axis**: several measures on rows become stacked panels
+(`alt.vconcat`), on columns side-by-side panels (`alt.hconcat`), each with its pane's mark.
+Tableau records **Dual Axis** as a folded axis (`<style-rule element='axis'><encoding
+attr='space' fold='true'>` on the second measure): that becomes one layered chart,
+`alt.layer(...).resolve_scale(y='independent')` (`x` on columns), or one shared scale when
+the axes are synchronized (`synchronized='true'`). Panes with different marks but no fold
+are not a dual axis. Dimensions nested on the shelves become `row`/`column` facets (the
+innermost one stays on the axis).
 
-**Maps**: no geo marks in unshackle notebooks. Keep the generated SQL (state/country + measure),
-render a sorted bar or table, and put the Tableau view URL in the tile title or a text
-tile. Don't try to reproduce polygons.
+**Measure Names / Measure Values**: the measures on the Measure Values card are the sheet's
+filter on `:Measure Names` (`<groupfilter function='member' member='"[ds].[sum:Sales:qk]"'>`).
+The tile SQL computes them per mark in a `measure_values` CTE, then unpivots: one row per
+mark and measure (`measure_name`, `measure_value`, NULL values kept), by a cross join with
+`(select 1 as measure_order, 'Sales' as measure_name union all select 2, ...)`. Names are
+the Measure Names aliases (`<column name='[:Measure Names]'><aliases>`, kept verbatim,
+trailing spaces included), else Tableau's names: the field's name for its default
+aggregation (SUM, or Default Properties > Aggregation), `Sum of x` for a SUM that isn't,
+`Avg. x`, `Distinct count of x`, a calculation's name. Order: the Measure Names
+`<manual-sort>` (Desktop writes one when the card is reordered; measures it doesn't list
+after), else the names by character code (`'S' < 'q'`). The chart encodes `measure_name`
+(colour, axis or facet, `sort=[...]` in that order) and `measure_value`. Measure Names with
+no Measure Values (a dual axis coloured by Measure Names) just names the layers. TODO: a
+Measure Names filter that keeps measures by a rule (`except`), none at all (every measure),
+or text/date measures on the card.
+
+**Maps**: Tableau places marks by the finest geographic field in the view (Geographic Role,
+`semantic-role`). A `[State].[Name]` field when the datasource's default country is the US
+(`<semantic-value key='[Country].[Name]' value='"United States"'>`) is drawn with the
+`us-atlas` states, a `[Country].[ISO3166_2]` / `[Country].[Name]` field with the
+`world-atlas` countries: `alt.topo_feature(...)`, `.mark_geoshape()` and
+`transform_lookup(lookup='properties.name', ...)` on the field (Tableau also matches codes
+and other spellings, so the TODO asks to check the names; places with no shape, such as
+Canadian provinces next to US states, are not drawn). A symbol map (circles) is drawn filled,
+with a TODO. Cities, ZIP codes and other roles: the data as a table with a TODO.
 
 **Custom SQL datasources**: materialize the query as a SQL model/dbt model named
 after the semantic model (`returns_custom_sql`); the tile SQL already inlines it as a
@@ -628,7 +652,9 @@ keys: [category, month of order date]
   Service (`POST /api/v1/vizql-data-service/query-datasource`, fields by caption,
   `"function": "SUM"`): it returns JSON rows to save as a CSV.
 - Measure Names/Values views export long format (`Measure Names`, `Measure Values`
-  columns).
+  columns), in the measures' order. Values are formatted as the sheet shows them
+  (`$11,805`, `19.5%`, `0.1M`). A sheet with several panes (dual axis, panels) lists each
+  mark once per pane; with Measure Names on colour, each pane's row has only its measure.
 - Extract-based views show the data as of the last refresh; compare after a refresh.
 
 ## Alternatives
