@@ -186,6 +186,9 @@ UNSHACKLE_LIVE=1 pytest tests/live/test_tableau_live.py -s
   signs the first one out, and the first run fails with a 401 that says so. Give each agent
   or terminal its own token (My Account Settings > Personal Access Tokens > Create), and
   set `TABLEAU_PAT_NAME` / `TABLEAU_PAT_SECRET` per process.
+- Tableau Cloud rate-limits sign-ins and requests per user (`429 Too Many Requests`); a run
+  signs in about five times. The test client waits (`Retry-After`, else 5 s doubling up to
+  60 s) and retries, so back-to-back runs on one token are slower, not failing.
 - By hand: `bootstrap.teardown(run="<run id>")` deletes one run, `bootstrap.sweep()` the stale
   ones (`sweep(older_than=timedelta(0))` deletes every run, including running ones):
   `UNSHACKLE_LIVE_RUN=x python -c "import sys; sys.path.insert(0, 'tests/live/tableau'); import bootstrap; print(bootstrap.sweep())"`.

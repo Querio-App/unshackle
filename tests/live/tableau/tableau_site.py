@@ -68,7 +68,17 @@ class Site:
         self.user_id = creds["user"]["id"]
 
     def call(self, method: str, path: str, **kw: Any) -> Any:
-        r = self.http.request(method, path, **kw)
+        # Tableau Cloud rate-limits sign-ins and requests per user (429): wait (Retry-After, else 5 s doubling up to
+        # 60 s) and send again; a rejected request changed nothing. Gateway errors are retried on reads only.
+        delay = 5.0
+        for attempt in range(8):
+            r = self.http.request(method, path, **kw)
+            retry = r.status_code == 429 or (r.status_code in (502, 503, 504) and method == "GET")
+            if not retry or attempt == 7:
+                break
+            after = r.headers.get("retry-after", "")
+            time.sleep(float(after) if after.isdigit() else delay)
+            delay = min(delay * 2, 60)
         if r.status_code == 401 and "X-Tableau-Auth" in self.http.headers:
             raise RuntimeError(f"{method} {path.split('?')[0]} -> 401: signed out. If another process signed in with the same "
                                f"Personal Access Token, give each live run its own PAT (tests/live/README.md). {r.text[:300]}")
