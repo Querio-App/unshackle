@@ -109,7 +109,7 @@ def test_semantic_layer_todos(bundle):
 
 def test_tile_sql(bundle):
     t = _tiles(bundle)
-    assert "sum(post_discount_revenue * (1 - :churn_rate) * (1 + :growth_rate)) as forecast_revenue" in t["What If Forecast"].sql
+    assert "sum((post_discount_revenue * (1 - :churn_rate)) * (1 + :growth_rate)) as forecast_revenue" in t["What If Forecast"].sql
     assert ("case when :measure = 'Revenue' then sum(post_discount_revenue) when :measure = 'Quantity' then sum(quantity) "
             "when :measure = 'Orders' then count(distinct order_id)") in t["Selected Measure by Status"].sql
     assert "case when :group_by = 'Status' then status else account_id end as breakdown" in t["Revenue by Breakdown"].sql

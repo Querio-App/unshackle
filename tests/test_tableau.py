@@ -158,7 +158,7 @@ def test_parse_dashboards_and_tiles(tmp_path: Path):
 
     geo = t["sales-map"]
     assert (geo.kind, geo.mark) == ("unknown", "unknown") and "map" in geo.todo and "parameter" not in geo.todo
-    assert "(1.0 * sum(profit) / nullif(sum(sales), 0)) > :target_margin as above_target" in geo.sql  # the parameter as a bind
+    assert "(cast(1.0 as double precision) * sum(profit) / nullif(sum(sales), 0)) > :target_margin as above_target" in geo.sql  # the parameter as a bind
     assert geo.encodings["detail"].field == "state" and "state" in geo.sql
 
     sheets = d["Superstore Sales sheets"]
