@@ -257,6 +257,16 @@ class Warning:
     severity: Literal["info", "warn", "block"] = "warn"
 
 
+@dataclass
+class Skipped:
+    """Source content the parser doesn't read, counted by kind (listed in migration/report.md)."""
+
+    kind: str
+    count: int
+    why: str = "not read"
+    where: str = ""  # the first place it was seen
+
+
 # Engine names as sources report them (Lightdash warehouse types, Tableau connection
 # classes, Power BI M connectors), lower-cased with punctuation dropped -> unshackle.toml type.
 WAREHOUSE_ENGINES = {
@@ -294,6 +304,7 @@ class Bundle:
     permissions: list[Permission] = field(default_factory=list)
     row_filters: list[RowFilter] = field(default_factory=list)
     warnings: list[Warning] = field(default_factory=list)
+    skipped: list[Skipped] = field(default_factory=list)
 
     def warn(self, item: str, message: str, severity: str = "warn") -> None:
         self.warnings.append(Warning(item=item, message=message, severity=severity))  # type: ignore[arg-type]

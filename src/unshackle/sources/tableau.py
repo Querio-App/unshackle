@@ -61,6 +61,7 @@ from unshackle.ir import (
     Reference,
     RowFilter,
     SemanticModel,
+    Skipped,
     Table,
     Tile,
     VerifiedQuery,
@@ -75,6 +76,7 @@ from unshackle.sources import _dialect as dialect
 from unshackle.sources import _tableau_analytics as ta
 from unshackle.sources import _tableau_calc as tc
 from unshackle.sources import _tableau_tablecalc as tcalc
+from unshackle.sources import _tableau_xml as txml
 from unshackle.sources._semyaml import grid_rows
 from unshackle.sources import _manual
 from unshackle.sources.base import Inventory, Source
@@ -588,6 +590,21 @@ def readable(formula: str, fields: dict[str, "TField"], params: dict[str, "TFiel
     return re.sub(r"(?<!\]\.)\[((?:[^\]]|\]\])+)\](?!\.)", sub, out)
 
 
+def _disaggregated(tile: Tile) -> None:
+    """Analysis > Aggregate Measures off: Tableau draws one mark per row, so the aggregated tile SQL would be wrong."""
+    note = ("Aggregate Measures is off on this sheet (Analysis menu): Tableau shows one mark per data source row, not aggregates. "
+            "Write the tile SQL as the rows themselves: select the shelf fields (measures without their aggregation) from the "
+            "data source with the sheet's filters, without group by")
+    if tile.sql:
+        tile.todo = f"{tile.todo}; {note}" if tile.todo else note
+        tile.source_config = {**(tile.source_config or {}), "aggregated_sql": tile.sql}  # what it would be with Aggregate Measures on
+        tile.sql = ""
+
+
+def _dict(x: Any) -> dict[str, Any]:
+    return x if isinstance(x, dict) else {}
+
+
 def _views(v: dict[str, Any]) -> int:
     try:
         return int((v.get("usage") or {}).get("totalViewCount") or 0)
@@ -751,6 +768,8 @@ def _member_sql(v: str | None) -> str | None:
     return "'" + v.replace("'", "''") + "'"
 
 
+# dashboard zones with nothing to migrate: containers, spacers, the title, legends (charts draw their own), story navigation
+QUIET_ZONES = {"layout-basic", "layout-flow", "empty", "title", "color", "size", "shape", "map", "flipboard", "flipboard-nav"}
 SORT_TAGS = {"computed-sort": "computed", "alphabetic-sort": "alphabetic", "manual-sort": "manual", "natural-sort": "natural"}
 
 
@@ -1952,14 +1971,13 @@ class _Parser:
     def __init__(self, store: RawStore):
         self.store = store
         self.b = Bundle(tool="tableau")
-        self.site: dict[str, Any] = self._json("_site.json") or {}
-        self.wb_meta = {w.get("id"): w for w in self._json("workbooks.json") or [] if isinstance(w, dict)}
-        self.published = {d.get("id"): d for d in self._json("datasources.json") or [] if isinstance(d, dict)}
-        self.groups = {g.get("id"): g.get("name") for g in self._json("groups.json") or [] if isinstance(g, dict)}
+        self.site: dict[str, Any] = _dict(self._json("_site.json"))
+        self.wb_meta = {w.get("id"): w for w in self._records("workbooks.json")}
+        self.published = {d.get("id"): d for d in self._records("datasources.json")}
+        self.groups = {g.get("id"): g.get("name") for g in self._records("groups.json")}
         self.view_index: dict[tuple[str, str], dict[str, Any]] = {}
-        for v in self._json("views.json") or []:
-            if isinstance(v, dict):
-                self.view_index[((v.get("workbook") or {}).get("id", ""), v.get("name", ""))] = v
+        for v in self._records("views.json"):
+            self.view_index[(_dict(v.get("workbook")).get("id", ""), v.get("name", ""))] = v
         self.models: dict[str, _Model] = {}
         self.ds_models: dict[str, dict[str, _Model]] = {}
         self.cache: dict[tuple[str, str], _Calc] = {}
@@ -1994,6 +2012,7 @@ class _Parser:
                 if isinstance(t, dict) and t.get("table") and t.get("parquet"):
                     self.copied.setdefault((Path(rel).stem, t.get("datasource", "")), {})[t.get("relation", "")] = t
         self.copied_used: dict[str, dict[str, Any]] = {}
+        self.unread: dict[tuple[str, str], list] = {}  # (kind, why) -> [count, first place]: XML the parser doesn't read
         self.manual = self.store.exists(_manual.IMPORT_META)  # `unshackle import`: files downloaded by hand
         if self.manual:  # extract lists copy errors in _errors.json; an import keeps them with its copies
             for rel in self.store.glob("extracts/*.json"):
@@ -2009,88 +2028,137 @@ class _Parser:
             self.b.warn(rel, f"unreadable JSON: {exc}")
             return None
 
-    def _xml(self, rel: str) -> ET.Element | None:
+    def _records(self, rel: str) -> list[dict[str, Any]]:
+        """A JSON list of objects from the export; anything else in it is left out."""
+        data = self._json(rel)
+        return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+    def _xml(self, rel: str, root_tag: str) -> ET.Element | None:
         try:
-            return ET.fromstring(self.store.path(rel).read_bytes())
-        except ET.ParseError as exc:
+            root = ET.fromstring(self.store.path(rel).read_bytes())
+        except (ET.ParseError, ValueError, OSError) as exc:
             self.b.warn(rel, f"XML did not parse: {exc}")
             return None
+        if txml.local(root.tag) != root_tag:
+            self.b.warn(rel, f"not migrated: not a Tableau {root_tag} (its root element is <{txml.local(root.tag)}>)")
+            return None
+        return root
+
+    def _guard(self, item: str, step: Any, *args: Any) -> bool:
+        """Run one element's step. An exception becomes a warning naming the element, and the rest still migrates."""
+        try:
+            step(*args)
+            return True
+        except Exception as exc:  # noqa: BLE001 - one element must not stop the migration
+            self.b.warn(item, f"not migrated: unshackle failed on it ({type(exc).__name__}: {str(exc)[:300]})")
+            return False
+
+    def _each(self, data_sources: list[TDatasource], step: Any) -> list[TDatasource]:
+        """`step` on each data source; one that fails is left out of the rest of the migration (and of its workbook)."""
+        kept = []
+        for ds in data_sources:
+            if self._guard(f"{ds.src} datasource {ds.caption}", step, ds):
+                kept.append(ds)
+                continue
+            if ds in self.tds:
+                self.tds.remove(ds)
+            for wb in self.workbooks:
+                if wb.datasources.get(ds.name) is ds:
+                    del wb.datasources[ds.name]
+        return kept
+
+    def _count_unread(self, root: ET.Element, where: str) -> None:
+        for (kind, why), (n, place) in txml.unread(root, where).items():
+            hit = self.unread.setdefault((kind, why), [0, place])
+            hit[0] += n
+
+    def _read_tds(self, rel: str, root: ET.Element) -> None:
+        did = Path(rel).stem
+        meta = self.published.get(did) or {}
+        # a file downloaded by hand is named after its data source (Tableau names the download so)
+        ds = read_datasource(root, f"{rel}#", rel, caption=str(meta.get("name") or (did if self.manual else "")))
+        ds.caption = str(meta.get("name") or ds.caption)
+        ds.published = str(meta.get("contentUrl", "") or ds.published)
+        self.tds.append(ds)
+        self._count_unread(root, ds.caption)
+
+    def _read_workbook(self, rel: str, root: ET.Element) -> None:
+        wid = Path(rel).stem
+        meta = self.wb_meta.get(wid) or {}
+        wb = _Workbook(wid, str(meta.get("name") or wid), rel, root, project=str(_dict(meta.get("project")).get("name", "")),
+                       description=str(meta.get("description") or ""))
+        for el in root.findall("datasources/datasource"):
+            self._guard(f"{rel} datasource {el.get('caption') or el.get('name', '')}", self._read_wb_datasource, wb, rel, root, el)
+        self.workbooks.append(wb)
+        self._count_unread(root, wb.name)
+
+    def _read_wb_datasource(self, wb: _Workbook, rel: str, root: ET.Element, el: ET.Element) -> None:
+        ds = read_datasource(el, f"{rel}#{el.get('name', '')}", rel, workbook=wb.id, locale=root.get("locale", ""))
+        if ds.name == "Parameters":
+            wb.params.update(ds.fields)
+        else:
+            wb.datasources[ds.name] = ds
+
+    def _calcs(self, ds: TDatasource) -> None:
+        for f in list(ds.fields.values()):
+            if f.is_calc and not f.param and f.local not in ds.unused:
+                self._calc(ds, f)
+
+    def _ds_finish(self, ds: TDatasource) -> None:
+        for note in sorted(self.calc_notes.get(ds.uid, ())):
+            for m in (self.ds_models.get(ds.uid) or {}).values():
+                self._describe(m, note)
+        self._display(ds)
+        self._ds_filter_rules(ds)
 
     def run(self) -> Bundle:
         for rel in self.store.glob("datasources/*.tds"):
-            root = self._xml(rel)
-            if root is None:
-                continue
-            did = Path(rel).stem
-            meta = self.published.get(did) or {}
-            # a file downloaded by hand is named after its data source (Tableau names the download so)
-            ds = read_datasource(root, f"{rel}#", rel, caption=meta.get("name") or (did if self.manual else ""))
-            ds.caption = meta.get("name") or ds.caption
-            ds.published = meta.get("contentUrl", "") or ds.published
-            self.tds.append(ds)
+            root = self._xml(rel, "datasource")
+            if root is not None:
+                self._guard(rel, self._read_tds, rel, root)
         for rel in self.store.glob("workbooks/*.twb"):
-            root = self._xml(rel)
-            if root is None:
-                continue
-            wid = Path(rel).stem
-            meta = self.wb_meta.get(wid) or {}
-            wb = _Workbook(wid, meta.get("name") or wid, rel, root, project=(meta.get("project") or {}).get("name", ""),
-                           description=meta.get("description") or "")
-            for el in root.findall("datasources/datasource"):
-                ds = read_datasource(el, f"{rel}#{el.get('name', '')}", rel, workbook=wid, locale=root.get("locale", ""))
-                if ds.name == "Parameters":
-                    wb.params.update(ds.fields)
-                    continue
-                wb.datasources[ds.name] = ds
-            self.workbooks.append(wb)
+            root = self._xml(rel, "workbook")
+            if root is not None:
+                self._guard(rel, self._read_workbook, rel, root)
         data_sources = list(self.tds) + [ds for wb in self.workbooks for ds in wb.datasources.values()]
-        for ds in data_sources:
-            self._local_data(ds)
-        for ds in data_sources:
-            self._link_published(ds)
-        self.b.detect_warehouse(
+        data_sources = self._each(data_sources, self._local_data)
+        data_sources = self._each(data_sources, self._link_published)
+        self._guard("warehouse type", lambda: self.b.detect_warehouse(
             c for ds in data_sources for c in [ds.connection_class, *(r.connection_class for r in ds.relations.values())]
             if c not in ("federated", "sqlproxy")
-        )
+        ))
         self.dialect = self.store.warehouse(self.b.datasource) or self.b.warehouse  # unshackle.toml wins over the export
-        for ds in sorted(data_sources, key=lambda d: bool(connections(d))):  # cross-database ones last: they key tables by database
-            self._assign_models(ds)
+        # cross-database ones last: they key tables by database
+        kept = {id(ds) for ds in self._each(sorted(data_sources, key=lambda d: bool(connections(d))), self._assign_models)}
+        data_sources = [ds for ds in data_sources if id(ds) in kept]
         if self.copied_used:
-            self._load_step()
-        self._count_names(data_sources)
-        self._hidden_unused(data_sources)
+            self._guard("extract data", self._load_step)
+        self._guard("field names", self._count_names, data_sources)
+        self._guard("hidden fields", self._hidden_unused, data_sources)
+        data_sources = self._each(data_sources, self._base_fields)
         for ds in data_sources:
-            self._base_fields(ds)
+            self._guard(f"{ds.src} datasource {ds.caption}", self._calcs, ds)
         for ds in data_sources:
-            for f in list(ds.fields.values()):
-                if f.is_calc and not f.param and f.local not in ds.unused:
-                    self._calc(ds, f)
-        for ds in data_sources:
-            for note in sorted(self.calc_notes.get(ds.uid, ())):
-                for m in (self.ds_models.get(ds.uid) or {}).values():
-                    self._describe(m, note)
-            self._display(ds)
-            self._ds_filter_rules(ds)
+            self._guard(f"{ds.src} datasource {ds.caption}", self._ds_finish, ds)
         for lod in self.lod_names.values():
             if lod.model is not None:
-                lod.model.sm.sql = lod.sql()
+                self._guard(f"semantic model {lod.model.sm.name}", lambda lod=lod: setattr(lod.model.sm, "sql", lod.sql()))
         for m in self.models.values():
             if m.sm.measures and not any(d.type == "time" for d in m.sm.dimensions):
                 self.b.warn(f"semantic model {m.sm.name}", "has measures but no date column; MetricFlow needs defaults.agg_time_dimension", "info")
         for wb in self.workbooks:
-            try:
-                self._dashboards(wb)
-            except Exception as exc:  # noqa: BLE001 - one bad workbook must not stop the rest
-                self.b.warn(wb.src, f"dashboards skipped: {exc}")
-            self._knowledge(wb)
+            self._guard(f"{wb.src} workbook {wb.name}", self._dashboards, wb)
+            self._guard(f"{wb.src} workbook {wb.name}", self._knowledge, wb)
         if self.tds:
-            self._tds_knowledge()
-        self._metadata_only()
-        self._in_dialect(data_sources)
-        self._permissions()
+            self._guard("published data sources", self._tds_knowledge)
+        self._guard("metadata", self._metadata_only)
+        self._guard("warehouse dialect", self._in_dialect, data_sources)
+        self._guard("permissions", self._permissions)
         for e in self._json("_errors.json") or []:
             if isinstance(e, dict):
                 self.b.warn(e.get("item", "?"), f"extract failed: {e.get('error', '')}")
+        self.b.skipped = [Skipped(kind, n, why, where) for (kind, why), (n, where) in
+                          sorted(self.unread.items(), key=lambda x: (x[0][1] != txml.NOT_READ, -x[1][0], x[0][0]))]
         return self.b.settle_time_dimensions()
 
     def _in_dialect(self, data_sources: list[TDatasource]) -> None:
@@ -2497,6 +2565,11 @@ class _Parser:
                         "another name")
         return True
 
+    def _clash(self, model: _Model, name: str, f: TField) -> bool:
+        """True when `name` in the model is another field: a column, or a calculation with a different formula."""
+        prev = self.defs.get((model.key, name))
+        return prev is None or " ".join(prev.split()) != " ".join((f.formula or "").split())
+
     def _register(self, model: _Model, name: str) -> None:
         self.owner[name] = model.key
         model.elements.add(name)
@@ -2607,9 +2680,21 @@ class _Parser:
                 if (ds.origin.uid, f.local) in table:
                     table[key] = table[(ds.origin.uid, f.local)]  # type: ignore[index]
             return res
-        res = self._translate(ds, f, stack + (key,))
+        try:
+            res = self._translate(ds, f, stack + (key,))
+        except Exception as exc:  # noqa: BLE001 - one calculation must not stop the migration
+            res = self._failed(ds, f, exc)
         self.cache[key] = res
         return res
+
+    def _failed(self, ds: TDatasource, f: TField, exc: Exception) -> _Calc:
+        """A calculation unshackle failed on: a TODO that keeps its formula, and a warning naming it."""
+        msg = f"not translated: unshackle failed on this calculation ({type(exc).__name__}: {str(exc)[:200]})"
+        self.b.warn(f"{ds.src} datasource {ds.caption} field {f.label}", msg)
+        try:
+            return self._todo(ds, f, self._field_model(ds, f), msg)
+        except Exception:  # noqa: BLE001
+            return _Calc("todo", todo=msg)
 
     def params_for(self, ds: TDatasource) -> dict[str, TField]:
         wb = next((w for w in self.workbooks if w.id == ds.workbook), None)
@@ -3322,6 +3407,9 @@ class _Parser:
             return self._todo(ds, f, model, f"aggregate not translated ({exc}); see skills/translate-metrics", True)
         name = self._namer(model, f.label)
         if self._exists(model, name, ds, f):
+            if self._clash(model, name, f):  # another field has the name: its SQL is not this calculation's
+                return _Calc("todo", todo=f"`{name}` in semantic model {model.sm.name} is another field with the same name; translate it "
+                                          "under another name (see skills/translate-metrics)")
             return _Calc("agg", sql=self.metric_sql.get(name, ""), metric=name)
         kw = dict(label=f.label, description=f.description, semantic_model=model.sm.name, source_ref=src)
         if cl.kind == "agg" and cl.agg is not None:
@@ -6226,7 +6314,7 @@ class _Parser:
         worksheets = {ws.get("name", ""): ws for ws in wb.root.findall("worksheets/worksheet")}
         built: dict[str, tuple[Tile, dict[str, Any]]] = {}
         self._wb = wb
-        self._quick_filters(wb, worksheets)
+        self._guard(f"{wb.src} filters shown on dashboards", self._quick_filters, wb, worksheets)
 
         def tile_for(name: str, deltas: list[ET.Element] | None = None) -> tuple[Tile, dict[str, Any]]:
             key = name if not deltas else f"{name}\x00{''.join(ET.tostring(d, encoding='unicode') for d in deltas)}"
@@ -6245,17 +6333,41 @@ class _Parser:
                 self._ws = name
                 try:
                     built[key] = self._tile(wb, ws)
-                except Exception as exc:  # noqa: BLE001
+                    if ws.find("table/view/aggregation[@value='false']") is not None:
+                        _disaggregated(built[key][0])
+                except Exception as exc:  # noqa: BLE001 - one worksheet must not stop its dashboard
+                    self.b.warn(f"{wb.src} worksheet {name}", f"not migrated: unshackle failed on it ({type(exc).__name__}: {str(exc)[:300]})")
                     built[key] = (Tile(slugify(name), name, "unknown", todo=f"worksheet not parsed: {exc}"), {"params": [], "filters": {}})
                 finally:
                     self._sheet, self._joined, self._ws = None, None, ""
             t, m = built[key]
             return copy.deepcopy(t), m
 
-        actions = self._actions(wb)
+        actions: list[dict[str, Any]] = []
+        self._guard(f"{wb.src} actions", lambda: actions.extend(self._actions(wb)))
         boards = {db.get("name") or "Dashboard": db for db in wb.root.findall("dashboards/dashboard") if db.get("type") != "storyboard"}
         on_board = {name: self._board_sheets(db, worksheets) for name, db in boards.items()}
         self._targets = {}
+        if not self._guard(f"{wb.src} filter actions", self._action_sets, actions, worksheets, on_board):
+            self._targets = {}
+        placed: set[str] = set()
+        for dname, db in boards.items():
+            before = set(placed)  # a dashboard that fails leaves its sheets to the workbook's other sheets
+            if not self._guard(f"{wb.src} dashboard {dname}", lambda dname=dname, db=db: self.b.dashboards.append(
+                    self._dashboard(wb, db, dname, worksheets, tile_for, actions, set(boards), placed))):
+                placed &= before
+        for db in wb.root.findall("dashboards/dashboard"):
+            if db.get("type") == "storyboard":
+                before = set(placed)
+                if not self._guard(f"{wb.src} story {db.get('name', '')}", lambda db=db: self.b.dashboards.append(
+                        self._story(wb, db, worksheets, boards, tile_for, actions, placed))):
+                    placed &= before
+        stray = [n for n in worksheets if n not in placed]
+        if stray:
+            self._guard(f"{wb.src} worksheets not on a dashboard", self._stray, wb, stray, tile_for)
+
+    def _action_sets(self, actions: list[dict[str, Any]], worksheets: dict[str, ET.Element], on_board: dict[str, list[str]]) -> None:
+        """Which fields each filter action filters its target sheets on (self._targets)."""
         by_action = []
         for a in actions:
             if a["kind"] != "filter":
@@ -6273,13 +6385,9 @@ class _Parser:
                          if j != i and (o["target"] or o["dashboard"]) == board)
             for t in self._action_targets(a, on_board):
                 self._targets.setdefault(t, []).extend((fs, _name(src) if shared else "") for fs, src in fields)
-        placed: set[str] = set()
-        for dname, db in boards.items():
-            self.b.dashboards.append(self._dashboard(wb, db, dname, worksheets, tile_for, actions, set(boards), placed))
-        for db in wb.root.findall("dashboards/dashboard"):
-            if db.get("type") == "storyboard":
-                self.b.dashboards.append(self._story(wb, db, worksheets, boards, tile_for, actions, placed))
-        stray = [n for n in worksheets if n not in placed]
+
+    def _stray(self, wb: _Workbook, stray: list[str], tile_for: Any) -> None:
+        """The worksheets on no dashboard, as one notebook."""
         if stray:
             tiles, filters = [], {}
             total = 0
@@ -6344,6 +6452,13 @@ class _Parser:
                     controls.setdefault(pf.name, pf)
             elif t2 in ("web", "bitmap"):
                 gaps.append(f"{'web page' if t2 == 'web' else 'image'} zone" + (f" ({z.get('param')})" if z.get("param") else ""))
+            elif t2 in ("", "viz") and zname:
+                gaps.append(f"zone {zname}: no worksheet of that name in the workbook")
+            elif t2 == "highlighter":
+                refs = self._shelf(wb, z.get("param"), {})
+                gaps.append("highlight control" + (f" on [{refs[0].field.label}]" if refs and refs[0].field is not None else ""))
+            elif t2 not in QUIET_ZONES and t2 not in ("", "viz"):
+                gaps.append(f"{t2} zone" + (f" ({z.get('param')})" if z.get("param") else ""))
         binds: dict[str, DashboardFilter] = {}
         for tile in tiles:
             meta = metas.get(tile.title) or {}
