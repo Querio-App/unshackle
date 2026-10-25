@@ -7,6 +7,7 @@ the Postgres form has:
 - BigQuery, Databricks: identifiers are quoted with backticks (a double-quoted name is a string there) and string
   literals escape with a backslash; BigQuery writes `date_trunc(x, MONTH)`, and `extract` parts are mapped to the
   same numbers (ISO week, Sunday = 0 day of week);
+- BigQuery, Databricks: `interval '1 day'` is written `interval 1 day`, and `cast(x as varchar)` `cast(x as string)`;
 - Postgres has no `median()`: `percentile_cont(0.5) within group (order by x)`;
 - Redshift keeps the scale of a DECIMAL input in `avg()` and in decimal division, truncating the rest, and averages
   integers as integers: `avg()` and the `1.0 * a / nullif(b, 0)` divisions are computed in double precision, as
@@ -119,6 +120,15 @@ class _Rewriter:
 
     def word(self, t: str) -> str:
         name = t.lower()
+        if self.w in ("bigquery", "databricks"):
+            m = re.fullmatch(r"'(\d+) (day|month)'", self.peek()) if name == "interval" else None
+            if m:  # interval '1 day' -> interval 1 day
+                while self.toks[self.i].isspace():
+                    self.i += 1
+                self.i += 1
+                return f"interval {m.group(1)} {m.group(2)}"
+            if name == "varchar" and self.peek() != "(":
+                return "string"
         if self.peek() != "(":
             return t
         if name == "avg" and self.w == "redshift":

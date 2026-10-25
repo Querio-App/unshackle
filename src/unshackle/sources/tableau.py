@@ -737,11 +737,154 @@ class _TabParser(ax._Parser):
         return super().primary()
 
 
-def parse_formula(text: str) -> ax.Node:
+def parse_formula(text: str, dates: "_DateOpts | None" = None) -> ax.Node:
+    """`dates`: the datasource's Date Properties, which DATETRUNC/DATEPART/DATENAME of weeks, quarters and years follow."""
     text = DATE_LIT.sub(lambda m: f"DATE('{m.group(1)}')", text)
     if not text.strip():
         raise ax.FormulaError("empty formula")
-    return _normalize(_TabParser(text).parse())
+    return _normalize(_dates(_TabParser(text).parse(), dates or _DateOpts()))
+
+
+# --------------------------------------------------------------------------- Date Properties
+
+WEEKDAYS = ("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday")  # index = extract(dow)
+MONTHS = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december")
+# First day of the week by locale region (CLDR), for a datasource with no Week start of its own: Tableau then uses the locale.
+SUNDAY_REGIONS = {"US", "CA", "MX", "BR", "JP", "KR", "TW", "HK", "IL", "PH"}
+MONDAY_REGIONS = {"GB", "IE", "AU", "NZ", "DE", "AT", "CH", "FR", "BE", "LU", "NL", "ES", "IT", "SE", "NO", "DK", "FI", "PL", "CZ", "RU"}
+DATE_UNITS = ("week", "weekday", "quarter", "year")
+
+
+@dataclass(frozen=True)
+class _DateOpts:
+    """A datasource's Date Properties as they apply to date functions and shelf dates."""
+
+    week_start: str = ""  # sunday..saturday; "" not known (no Week start, no locale)
+    fiscal: int = 1  # first month of the fiscal year
+    calendar: str = ""  # "" or Gregorian; anything else (ISO-8601 week-based) is not translated
+    language: str = ""  # of the locale (day names); "" not known
+
+
+def _locale_week_start(locale: str) -> str:
+    region = re.split(r"[-_]", locale)[1].upper() if re.match(r"^[A-Za-z]{2,3}[-_][A-Za-z]{2}\b", locale) else ""
+    return "sunday" if region in SUNDAY_REGIONS else "monday" if region in MONDAY_REGIONS else ""
+
+
+def date_opts(ds: "TDatasource | None") -> _DateOpts:
+    """The Date Properties a datasource's calculations and sheets use: a workbook on a published datasource uses the published
+    one's (its own copy under <overridable-settings> is only the fallback when that wasn't extracted); with no Week start, the
+    locale's first day of the week."""
+    chain = [d for d in (ds.origin if ds is not None else None, ds) if d is not None]
+    week = next((d.week_start for d in chain if d.week_start in WEEKDAYS), "")
+    week = week or next((s for d in chain if (s := _locale_week_start(d.locale))), "")
+    fiscal = next((d.fiscal_start for d in chain if d.fiscal_start), "")
+    calendar = next((d.calendar for d in chain if d.calendar), "")
+    language = next((d.locale[:2].lower() for d in chain if d.locale), "")
+    month = 1 if not fiscal else MONTHS.index(fiscal) + 1 if fiscal in MONTHS else 0
+    return _DateOpts(week, month, "" if calendar.lower() == "gregorian" else calendar, language)
+
+
+def _shift(x: str, months: int) -> str:
+    return x if not months else f"{x} {'+' if months > 0 else '-'} interval '{abs(months)} month'"
+
+
+def _week_trunc(x: str, start: str) -> str:
+    """The first day of x's week, weeks starting on `start` (date_trunc('week') starts them on Monday)."""
+    k = (1 - WEEKDAYS.index(start)) % 7
+    return f"date_trunc('week', {x})" if not k else f"(date_trunc('week', {x} + interval '{k} day') - interval '{k} day')"
+
+
+def _year_start(x: str, fiscal: int) -> str:
+    return f"date_trunc('year', {x})" if fiscal == 1 else f"(date_trunc('year', {_shift(x, 1 - fiscal)}) + interval '{fiscal - 1} month')"
+
+
+def date_sql(fn: str, unit: str, x: str, opts: _DateOpts, start: str = "", fiscal_field: bool = False) -> str | None:
+    """Tableau's DATETRUNC (fn "trunc"), DATEPART ("part") or DATENAME ("name") of a week, weekday, quarter or year of the SQL
+    date x, following the Date Properties. Weeks start on `start` (the function's start_of_week) or the Week start; week numbers
+    count from the week holding the first day of the year. A datasource's Fiscal year start applies only to date fields set to
+    the fiscal calendar (`fiscal_field`: quarters and years start on it, week numbers count from it, and a fiscal year is named
+    after the calendar year it ends in). None: the plain date_trunc is already right. Raises FormulaError when the result
+    depends on something unknown."""
+    if opts.fiscal == 0:
+        raise ax.FormulaError("the datasource's Fiscal year start is not a month name")
+    weeks = unit == "week"  # DATEPART('weekday') is 1 on Sunday whatever the Week start and start_of_week
+    if unit in ("week", "weekday") and opts.calendar:
+        raise ax.FormulaError(f"the datasource uses the {opts.calendar} calendar (Date Properties); week-based dates are not translated")
+    start = start or opts.week_start
+    if weeks and not start:
+        raise ax.FormulaError("weeks start on the datasource's Week start (Date Properties), which this datasource does not set, "
+                              "and no locale says which day it is: Tableau uses its locale's (Sunday in en_US, Monday in most of "
+                              "Europe). For Sunday weeks write `date_trunc('week', d + interval '1 day') - interval '1 day'`")
+    f = opts.fiscal
+    same = fn == "trunc" and unit == "quarter" and (f - 1) % 3 == 0  # fiscal quarters that start with the calendar ones
+    if f != 1 and not fiscal_field and not same and (unit in ("quarter", "year") or (unit == "week" and fn != "trunc")):
+        d = "[date]"
+        calendar = date_sql(fn, unit, d, _DateOpts(start, 1, opts.calendar, opts.language), start) or f"date_trunc('{unit}', {d})"
+        fiscal = date_sql(fn, unit, d, opts, start, fiscal_field=True) or f"date_trunc('{unit}', {d})"
+        raise ax.FormulaError(f"the datasource's Fiscal year start is {MONTHS[f - 1].capitalize()}, which Tableau applies only to date "
+                              "fields set to the fiscal calendar (Default Properties > Fiscal Year Start): for such a field write "
+                              f"`{fiscal}`, for a calendar one `{calendar}`")
+    if fn == "trunc":
+        if unit == "week":
+            return None if start == "monday" else _week_trunc(x, start)
+        if unit == "quarter":
+            o = (f - 1) % 3
+            return None if not o else f"(date_trunc('quarter', {_shift(x, -o)}) + interval '{o} month')"
+        if unit == "year":
+            return None if f == 1 else _year_start(x, f)
+        raise ax.FormulaError(f"DATETRUNC('{unit}') is not translated")
+    if unit == "week":
+        if f != 1:  # a fiscal field (TODO hints only): whole weeks between the fiscal year's first week and x's week
+            part = f"cast((cast({_week_trunc(x, start)} as date) - cast({_week_trunc(_year_start(x, f), start)} as date)) / 7 + 1 as integer)"
+        else:
+            # day of year minus x's place in its week (0 on the Week start) is the day of year of its week's first day
+            # (<= 0 in week 1): floor((doy - place + 5) / 7) + 1, with no date arithmetic
+            s = WEEKDAYS.index(start)
+            place = f"extract(dow from {x})" if not s else f"(extract(dow from {x}) + {7 - s} - 7 * floor((extract(dow from {x}) + {7 - s}) / 7))"
+            part = f"cast(floor((extract(doy from {x}) - {place} + 5) / 7) + 1 as integer)"
+    elif unit == "weekday":
+        dow = f"extract(dow from {x})"
+        if fn == "name":
+            if opts.language != "en":
+                raise ax.FormulaError("DATENAME('weekday') gives the day's name in the locale's language, and no English locale is "
+                                      "recorded: write `case extract(dow from d) when 0 then '<Sunday>' ... end` in that language")
+            return "case " + dow + " " + " ".join(f"when {i} then '{d.capitalize()}'" for i, d in enumerate(WEEKDAYS)) + " end"
+        part = f"cast({dow} + 1 as integer)"
+    elif unit == "quarter":
+        part = (f"cast(extract(quarter from {x}) as integer)" if f == 1
+                else f"cast(floor(((extract(month from {x}) + {12 - f}) % 12) / 3) + 1 as integer)")
+    else:
+        part = f"cast(extract(year from {_shift(x, 13 - f if f > 1 else 0)}) as integer)"
+    return part if fn == "part" else f"cast({part} as varchar)"
+
+
+def _dates(node: ax.Node, opts: _DateOpts) -> ax.Node:
+    """DATETRUNC / DATEPART / DATENAME of weeks, weekdays, quarters and years -> Tableau-only row functions whose SQL follows
+    the Date Properties (registered in the shared ROW_FUNCS under a `tableau:` name no other source's parser produces)."""
+    if isinstance(node, ax.Call):
+        args = [_dates(a, opts) for a in node.args]
+        if node.name in ("datetrunc", "datepart", "datename") and args and isinstance(args[0], ax.Str) and args[0].value.lower() in DATE_UNITS:
+            unit = args[0].value.lower()
+            if len(args) not in (2, 3):
+                raise ax.FormulaError(f"{node.name.upper()} takes a date part, a date and an optional start of week")
+            start = ""
+            if len(args) == 3:
+                if not isinstance(args[2], ax.Str) or args[2].value.lower() not in WEEKDAYS:
+                    raise ax.FormulaError(f"{node.name.upper()}'s start_of_week must be a literal day name")
+                start = args[2].value.lower()
+            fn = node.name[4:]
+            tmpl = date_sql(fn, unit, "{0}", opts, start)
+            if tmpl is None:
+                return ax.Call(node.name, args[:2])
+            name = "tableau:" + hashlib.sha1(tmpl.encode()).hexdigest()[:12]  # one name per SQL template
+            ax.ROW_FUNCS.setdefault(name, (tmpl, 1))
+            return ax.Call(name, [args[1]])
+        return ax.Call(node.name, args)
+    if isinstance(node, ax.BinOp):
+        return ax.BinOp(node.op, _dates(node.left, opts), _dates(node.right, opts))
+    if isinstance(node, ax.Unary):
+        return ax.Unary(node.op, _dates(node.operand, opts))
+    return node
 
 
 def _normalize(node: ax.Node) -> ax.Node:
@@ -871,6 +1014,12 @@ class TDatasource:
     inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
     hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
     settings: dict[str, list[str]] = field(default_factory=dict)  # CONNECTION_SETTINGS attribute -> values on its connections
+    # Date Properties: <date-options start-of-week='monday' fiscal-year-start='july' /> (in a workbook's copy of a published
+    # datasource, under <overridable-settings>), <default-calendar-type>, and a locale the datasource was authored in
+    week_start: str = ""
+    fiscal_start: str = ""
+    calendar: str = ""
+    locale: str = ""
 
 
 @dataclass
@@ -975,7 +1124,7 @@ class _NoSQL(Exception):
     pass
 
 
-def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", caption: str = "") -> TDatasource:
+def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", caption: str = "", locale: str = "") -> TDatasource:
     name = el.get("name") or el.get("formatted-name") or caption or "datasource"
     ds = TDatasource(uid=uid, name=name, caption=el.get("caption") or caption or el.get("formatted-name") or name, src=src, workbook=workbook)
     conn = el.find("connection")
@@ -1068,6 +1217,11 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
     ds.filters = el.findall("filter")
     for dp in el.findall("drill-paths/drill-path"):
         ds.hierarchies.append((dp.get("name", ""), [_unbracket(x.text) for x in dp.findall("field") if x.text]))
+    for opts in el.findall("date-options") + el.findall("overridable-settings/date-options"):
+        ds.week_start = (opts.get("start-of-week") or "").lower() or ds.week_start
+        ds.fiscal_start = (opts.get("fiscal-year-start") or "").lower() or ds.fiscal_start
+    ds.calendar = (el.findtext("overridable-settings/default-calendar-type") or el.findtext("default-calendar-type") or "").strip()
+    ds.locale = locale or next((v for c in el.iter() if (v := c.get("author-locale") or c.get("locale"))), "")
     return ds
 
 
@@ -1183,7 +1337,7 @@ class _Parser:
             wb = _Workbook(wid, meta.get("name") or wid, rel, root, project=(meta.get("project") or {}).get("name", ""),
                            description=meta.get("description") or "")
             for el in root.findall("datasources/datasource"):
-                ds = read_datasource(el, f"{rel}#{el.get('name', '')}", rel, workbook=wid)
+                ds = read_datasource(el, f"{rel}#{el.get('name', '')}", rel, workbook=wid, locale=root.get("locale", ""))
                 if ds.name == "Parameters":
                     wb.params.update(ds.fields)
                     continue
@@ -1557,7 +1711,7 @@ class _Parser:
     def _row_sql(self, ds: TDatasource, g: TField) -> str:
         """A row-level calc's SQL again, in the current context (joined columns qualified, FIXED values joined in tiles)."""
         text = self.prepped.get((ds.uid, g.local)) or scan_formula(g.formula or "")[0]
-        return ax.strip_outer(ax.to_sql(parse_formula(text), lambda r: self._row_ref(ds, r)))
+        return ax.strip_outer(ax.to_sql(parse_formula(text, date_opts(ds)), lambda r: self._row_ref(ds, r)))
 
     def _lod_col(self, lod: _Lod, col: str) -> str:
         """A FIXED value: its column in the grain's SQL model, or in a tile, the grain joined to the sheet's rows."""
@@ -1637,7 +1791,7 @@ class _Parser:
         if ATTR_FN.search(bare):
             return self._todo(ds, f, model, f"ATTR() returns the value only when it is constant in the view: use the dimension itself or min()/max(); see {SKILL}")
         try:
-            node = parse_formula(clean)
+            node = parse_formula(clean, date_opts(ds))
         except ax.FormulaError as exc:
             return self._todo(ds, f, model, f"formula not translated ({exc}); see skills/translate-metrics")
         dep_agg = False
@@ -1758,7 +1912,7 @@ class _Parser:
             raise ax.FormulaError("not a FIXED LOD")
         dims = [_unesc(d) for d in BRACKETED.findall(m.group(2))]
         nested = _nested_fixed(text)
-        node = parse_formula("1" if nested else m.group(3).strip())
+        node = parse_formula("1" if nested else m.group(3).strip(), date_opts(ds))
         for name in dims + ax.refs(node):
             g = ds.fields.get(name)
             if g is None:
@@ -2002,7 +2156,7 @@ class _Parser:
         groups: list[str] = []
         users = True
         try:
-            node = parse_formula(clean)
+            node = parse_formula(clean, date_opts(ds))
             groups = [a.args[0].value for a in _find_calls(node, {"ismemberof"}) if a.args and isinstance(a.args[0], ax.Str)]
             users = bool(_find_calls(node, {"username", "fullname", "userdomain"}))
             tables = {id(m) for r in ax.refs(node) if (g := ds.fields.get(r)) is not None and (m := self._field_model(ds, g)) is not None}
@@ -2182,14 +2336,16 @@ class _Parser:
             return _name(display), AGG_SQL[DERIV_AGG[d]].format(base), True, display, "quantitative", ""
         if d == "attr":
             raise _NoSQL(f"ATTR([{label}]) on a shelf: group by the dimension or use min()/max()")
-        if d in TRUNC:
-            unit = TRUNC[d]
+        if d in TRUNC or d in PART:
+            unit = TRUNC.get(d) or PART[d]
             display = f"{UNIT_LABEL[unit]} of {label}"
-            return _name(display), f"date_trunc('{unit}', {base})", False, display, "temporal", unit
-        if d in PART:
-            unit = PART[d]
-            display = f"{UNIT_LABEL[unit]} of {label}"
-            return _name(display), f"extract({unit} from {base})", False, display, "ordinal", ""
+            try:  # weeks, quarters and years follow the datasource's Date Properties
+                sql = date_sql("trunc" if d in TRUNC else "part", "weekday" if unit == "dow" else unit, base, date_opts(ds)) if unit in DATE_UNITS + ("dow",) else None
+            except ax.FormulaError as exc:
+                raise _NoSQL(f"{display}: {exc}") from None
+            if d in TRUNC:
+                return _name(display), sql or f"date_trunc('{unit}', {base})", False, display, "temporal", unit
+            return _name(display), sql or f"extract({unit} from {base})", False, display, "ordinal", ""
         if d == "none" or not d:
             if f.datatype in TIME_TYPES:
                 etype = "temporal"
@@ -2217,7 +2373,7 @@ class _Parser:
             return _Special("fixed", outer, self.lod_names[calc.lod], value=self._grain_sql(ds, lambda: self._row_sql(ds, f)))
         if calc.kind == "agg" and calc.lod:
             try:
-                node: ax.Node | None = parse_formula(self.prepped.get(key) or scan_formula(f.formula or "")[0])
+                node: ax.Node | None = parse_formula(self.prepped.get(key) or scan_formula(f.formula or "")[0], date_opts(ds))
                 hit = self._lod_arg(ds, node)  # type: ignore[arg-type]
             except ax.FormulaError:
                 hit, node = None, None
@@ -2239,7 +2395,7 @@ class _Parser:
                 raise _NoSQL(f"[{f.label}] ({kind} LOD) on a shelf without an aggregation")
             outer = DERIV_AGG[d]
         try:
-            cl = ax.classify(parse_formula(inner), LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+            cl = ax.classify(parse_formula(inner, date_opts(ds)), LANG, lambda r: self._row_ref(ds, r), lambda r: None)
             if cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
                 raise ax.FormulaError("the expression after ':' is not one aggregate")
             inner_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
@@ -2342,7 +2498,7 @@ class _Parser:
             return AGG_SQL[x.agg].format(x.expr)
 
         try:
-            node = parse_formula(text)
+            node = parse_formula(text, date_opts(ds))
             for call in _find_calls(node, set(TABLEAU_AGGS)):
                 homes = {self._home(ds, r) for r in ax.refs(call)}
                 if homes - {"", "mixed"} and not homes & {"", "mixed"}:
@@ -2898,7 +3054,7 @@ class _Parser:
             return f"[{key}]"
 
         try:
-            node = parse_formula(PARAM_REF.sub(bind, clean))
+            node = parse_formula(PARAM_REF.sub(bind, clean), date_opts(ds))
             if _has_agg(node):
                 return None
             return ax.strip_outer(ax.to_sql(node, lambda n: binds[n] if n in binds else self._row_ref(ds, n)))
@@ -2932,7 +3088,7 @@ class _Parser:
     def _expression_sql(self, ds: TDatasource | None, expression: str) -> str:
         if ds is None:
             raise ax.FormulaError("no datasource")
-        node = parse_formula(scan_formula(expression)[0])
+        node = parse_formula(scan_formula(expression)[0], date_opts(ds))
         cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: self._metric_ref(ds, r))
         if cl.kind == "agg" and cl.agg is not None and cl.agg.condition is None:
             return AGG_SQL[cl.agg.agg].format(cl.agg.expr)

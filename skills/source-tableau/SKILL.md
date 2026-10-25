@@ -89,7 +89,7 @@ unshackle build tableau
 | `SUM(IF [Returned] = 'Yes' THEN 1 ELSE 0 END)`, `SUM(ZN([x]))` | measure whose `expr` is the row expression |
 | `SUM([Profit]) / SUM([Sales])`, `[Calc A] / [Calc B]` | ratio metric (implied measures/metrics added when needed) |
 | `[Profit Ratio] * 100` | derived metric |
-| row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#` | dimension `expr` (time dimension with that grain for `DATETRUNC`), or measure `expr` when the calc's role is measure |
+| row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#`, `DATEPART`/`DATENAME` of week, weekday, quarter, year | dimension `expr` (time dimension with that grain for `DATETRUNC`; weeks, quarters and years follow the Date Properties, see Dates below), or measure `expr` when the calc's role is measure |
 | custom SQL `<relation type='text'>` | `queries/<ds>-custom-sql.sql` (TODO: materialize) + semantic model named after the datasource |
 | joins (`<relation type='join'>`) on a table's key | foreign entity on the other table's model (Ossie relationship with `join_type` in `custom_extensions`); the join's semantics go in both models' descriptions |
 | `{FIXED [a] : AGG([x])}` (one FIXED dimension) | semantic model `<a>_lod` defined by its query (`select a, agg(x) ... group by 1` over the datasource's rows, joins included): Ossie's dataset `source`, and in dbt projects `models/unshackle/<a>_lod.sql`. Primary entity `a`, foreign entity `a` on the table holding it. The value is a dimension (or a measure + metric when the field is a measure); all FIXED fields at the same grain share one model |
@@ -112,7 +112,40 @@ Shelf refs look like `[federated.x].[sum:Sales:qk]` = derivation : field : type
 (`qk` quantitative, `nk` nominal, `ok` ordinal). Derivations: `none` (dimension),
 `sum/avg/cnt/ctd/min/max/med` (aggregate), `usr` (aggregate calc), `tyr/tqr/tmn/twk/tdy`
 (date truncation -> `date_trunc`, temporal), `yr/qr/mn/wk/dy/wd` (date part ->
-`extract`, ordinal).
+`extract`, ordinal). Weeks, quarters and years follow the datasource's Date Properties (below).
+
+### Dates: week start and fiscal year
+
+Tableau keeps a datasource's Date Properties as `<date-options start-of-week='monday'
+fiscal-year-start='july' />`. A workbook's copy of a published datasource repeats them under
+`<overridable-settings>` (with `<default-calendar-type>`), but the published datasource's own
+setting is the one that counts; the copy is used only when the `.tds` wasn't extracted.
+
+- `DATETRUNC('week')`, `DATEPART`/`DATENAME('week')` and the shelf dates `twk`/`wk` follow the
+  Week start (or the function's `start_of_week`): `date_trunc('week', d + interval '1 day') -
+  interval '1 day'` for Sunday; week 1 is the week holding January 1.
+- `DATEPART('weekday')` and `wd` are 1 on Sunday to 7 on Saturday, whatever the Week start and
+  `start_of_week`. `DATENAME('weekday')` gives the English day name when the locale is English;
+  with another or no locale it stays TODO (the names are in the locale's language).
+- With no Week start, Tableau uses the locale. unshackle reads the workbook's `locale` or the
+  datasource's `author-locale` / `locale` (Sunday for `en_US`, `en_CA`, `ja_JP`...; Monday for
+  `en_GB`, `de_DE`, `fr_FR`...). With neither, week results stay TODO (never Monday by default):
+  set the start the customer's Tableau uses and write the SQL from the TODO.
+- A datasource's Fiscal year start changes nothing for date fields on the standard calendar;
+  Tableau applies it only to fields set to the fiscal calendar (Default Properties > Fiscal Year
+  Start), which the files don't show. So with a Fiscal year start other than January, quarter,
+  year and week-number results (`DATETRUNC`/`DATEPART`/`DATENAME`, `tqr/qr/tyr/yr/wk`) stay TODO
+  with the SQL for both cases; for a fiscal field, quarters start in that month, week 1 holds the
+  fiscal year's first day, and the fiscal year is named after the calendar year it ends in (July
+  start: 2024-07-01 is in 2025). Quarter truncation stays translated when fiscal quarters begin
+  with the calendar ones (January, April, July or October).
+- The ISO-8601 week-based calendar stays TODO for week and weekday results.
+
+The week SQL shifts Monday weeks (`date_trunc('week')` in Postgres, DuckDB, Redshift, Databricks,
+BigQuery's `week(monday)`) with `interval` arithmetic; for BigQuery and Databricks the dialect
+pass writes `interval 1 day`. Snowflake's `date_trunc('week')` follows the session's `WEEK_START`:
+the SQL assumes the default (Monday); check it if the account sets another. Weekday numbers use
+`extract(dow) + 1` (mapped per dialect).
 
 | Mark | Tile |
 | --- | --- |
