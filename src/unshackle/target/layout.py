@@ -18,6 +18,7 @@ DEFAULT_PATHS = {
     "automations": "automations",
     "evals": "evals",
     "sql_models": "queries/models",
+    "data": "data",
 }
 
 DBT_OVERRIDES = {

@@ -101,9 +101,14 @@ def inventory(tool: str, repo: Path) -> None:
 @TOOL
 @REPO
 @click.option("--only", multiple=True, help="Inventory ids to extract (repeatable). Default: everything.")
-def extract(tool: str, repo: Path, only: tuple[str, ...]) -> None:
+@click.option("--with-data", is_flag=True, help="Also copy data that lives only in the tool (Tableau extracts, Excel, CSV) to Parquet.")
+def extract(tool: str, repo: Path, only: tuple[str, ...], with_data: bool = False) -> None:
     """Pull raw definitions into migration/raw/<tool>/ (no LLM, exact copies)."""
     src = get_source(tool)
+    if with_data:
+        if not hasattr(src, "with_data"):
+            raise click.ClickException(f"--with-data: {tool} has no data of its own to copy")
+        src.with_data = True
     store = RawStore(repo, tool)
     if not only:
         store.begin()
@@ -174,13 +179,14 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
 @TOOL
 @REPO
 @click.option("--only", multiple=True)
-def migrate(tool: str, repo: Path, only: tuple[str, ...]) -> None:
+@click.option("--with-data", is_flag=True, help="Also copy data that lives only in the tool to Parquet (see extract).")
+def migrate(tool: str, repo: Path, only: tuple[str, ...], with_data: bool) -> None:
     """init + inventory + extract + build in one go."""
     ctx = click.get_current_context()
     with _voyage("setting up", "taking inventory", "extracting", "parsing", "writing"):
         ctx.invoke(init, repo=repo, name=None, update_skills=False)
         ctx.invoke(inventory, tool=tool, repo=repo)
-        ctx.invoke(extract, tool=tool, repo=repo, only=only)
+        ctx.invoke(extract, tool=tool, repo=repo, only=only, with_data=with_data)
         ctx.invoke(build_cmd, tool=tool, repo=repo, dry_run=False)
 
 

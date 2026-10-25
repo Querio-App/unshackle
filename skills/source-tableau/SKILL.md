@@ -33,7 +33,7 @@ description: Use when migrating Tableau (Server or Cloud workbooks, published da
 
 ```
 unshackle inventory tableau        # workbooks, views (totalViewCount), published datasources
-unshackle extract tableau [--only workbook:<luid> --only view:<luid> --only datasource:<luid>]
+unshackle extract tableau [--only workbook:<luid> --only view:<luid> --only datasource:<luid>] [--with-data]
 unshackle build tableau
 unshackle todo
 ```
@@ -48,6 +48,7 @@ Raw files under `migration/raw/tableau/`:
 | `metadata/<luid>.json` | Metadata API: embedded datasources, fields + formulas, upstream tables, custom SQL |
 | `views/<luid>.csv` | `GET .../views/{id}/data` for the 20 most viewed views (parity) |
 | `permissions/<luid>.json` | `GET .../workbooks/{id}/permissions` |
+| `extracts/<luid>.json` | `--with-data` only: the tables copied to Parquet for that workbook or data source (below) |
 
 The GraphQL query asks for 10 workbooks at a time and halves the batch on
 `NODE_LIMIT_EXCEEDED`. With `--only`, published datasources used by the chosen
@@ -398,12 +399,39 @@ tile. Don't try to reproduce polygons.
 after the semantic model (`returns_custom_sql`); the tile SQL already inlines it as a
 CTE so the notebook runs meanwhile.
 
-**Extracts vs live**: unshackle reads the connection behind the extract; the `.hyper` is
-never downloaded. Extract filters, aggregation ("aggregate data for visible
-dimensions") and incremental refresh are not in the migrated SQL: check the
-datasource's Extract settings and add those filters to the semantic model or SQL.
-Extracts from Excel/CSV/Google Sheets have no warehouse table: unshackle warns; point the
-model at the warehouse copy of that data.
+**Extracts vs live**: for a data source on a warehouse, unshackle reads the connection behind
+the extract and the `.hyper` is never downloaded. Tableau answers from the extract, so the
+report says so for each one (with its row limit, extract filters, incremental refresh and last
+refresh when the file records them). Extract filters, aggregation ("Aggregate data for visible
+dimensions") and rows changed since the refresh are not in the migrated SQL: check the data
+source's Extract settings in Tableau and add those filters to the semantic model or SQL.
+
+**Data only in Tableau** (no warehouse table holds it): data sources on a Hyper file
+(`hyper`), Excel, CSV and other files (`excel-direct`, `textscan`, `google-sheets`...), cloud
+file and application connectors (Salesforce, Google Analytics, Box, OneDrive, web data
+connectors...), and extracts with no connection behind them. `inventory` flags published ones
+(`data_only_in_tableau`, from the REST `type`) and the report lists each one. To migrate their
+data, install the `tableau` extra (`pip install "unshackle[tableau]"`: Tableau's Hyper API,
+openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
+
+- Those workbooks and data sources are downloaded again with `includeExtract=true`.
+- Each table becomes `data/tableau/<table>.parquet` (`[paths] data` in `unshackle.toml`) with
+  Tableau's column types. With an extract, the table is the extract's (what Tableau answers
+  from; its filters, row limit and aggregation are already applied, and it is as fresh as the
+  last refresh); the models then use the extract's columns. Without one, Excel sheets and CSV
+  files are read as they are and cast to the types in the metadata records; empty cells are
+  NULL. Not read (an extract error, the data source stays on its file): Data Interpreter
+  (`cleaning='yes'`), named ranges, `.xls`.
+- `build` points their models at `tableau_data.<table>` and writes `queries/tableau-data.sql`
+  with a TODO to choose where they live: on DuckDB run it from the repo root (views over the
+  Parquet files); for another warehouse, load each file into `tableau_data.<table>` (Snowflake
+  `COPY INTO`, `bq load`, Redshift `COPY`, a dbt seed or dbt-duckdb external source), replace
+  the file with that step and set the warehouse type. Also decide how the tables are refreshed
+  (Tableau refreshed the extract) and whether the data belongs in Git before committing
+  `data/`.
+
+Without `--with-data` they keep their file's table and the report says to copy the data or
+point the model at a warehouse table holding it.
 
 **Warehouse dialect**: tile, LOD model and semantic SQL is written for the warehouse type
 in `unshackle.toml` (`[datasources.warehouse] type`), else the one the connection classes

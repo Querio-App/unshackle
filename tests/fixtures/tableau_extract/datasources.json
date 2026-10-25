@@ -1,0 +1,22 @@
+[
+  {
+    "id": "00000000-0000-4000-8000-000000000081",
+    "name": "Order Lines",
+    "contentUrl": "OrderLines",
+    "type": "hyper",
+    "hasExtracts": false,
+    "project": {
+      "name": "Sales"
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000082",
+    "name": "Order History",
+    "contentUrl": "OrderHistory",
+    "type": "salesforce",
+    "hasExtracts": true,
+    "project": {
+      "name": "Sales"
+    }
+  }
+]
