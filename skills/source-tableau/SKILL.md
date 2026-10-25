@@ -294,9 +294,27 @@ of the tables (which would repeat the "one" side's rows):
 - an aggregate calc over several tables (`SUM([Revenue]) / SUM([Business Size])`) is split:
   each aggregate on its own table, then the expression per mark.
 
-Sheets over related tables with filters, a top N, LODs, Number of Records, a row-level
-calc over several tables, a logical table that is itself a join, or a relationship that
-isn't column equalities stay TODO.
+A sheet whose shelves read one table but whose filters (or the data source's filters) read
+another is a sheet over related tables too. Filters follow Tableau's order:
+
+- data source and context filters first; then the members of each top N and condition
+  filter (`filter_<n>` CTE), computed over the related aggregates at the filtered field's
+  level after those filters only (a top N ranks the field's own values, ties to the first
+  in ascending order); the sheet then keeps the rows that relate to a member;
+- a dimension filter on another table's field is read through the same left joins as the
+  dimensions: a row is kept when a row it relates to passes (orders with no shipping row see
+  a NULL mode, so excluding EXPRESS keeps them and listing modes drops them), also when a
+  key repeats on the other side. The `dimensions` CTE inner joins the filtered tables, so a
+  value no passing row relates to is not a mark;
+- measure filters last, on each mark's aggregate of the measure's own table (a filter on a
+  measure not on the sheet is a hidden `filter_<n>` column of that table's CTE).
+
+Sheets over related tables with LODs, Number of Records, a row-level calc over several
+tables, sets shown as members, a logical table that is itself a join, or a relationship
+that isn't column equalities stay TODO, and so do these filters there: a top N or
+condition in the context, a condition inside a top N, a top N or condition whose aggregate
+reads several tables, a measure filter on a calc over several tables, a filter on a field
+that reads several tables, and extract filters (the extract's tables are filtered).
 
 In the semantic layer, a calc over one grain's FIXED values is a metric on that grain's
 model (`large_account_orders` on `account_id_lod`), and a nested FIXED is a `_lod` model

@@ -230,7 +230,7 @@ def test_what_stays_todo(tmp_path):
 
     b = _edited(tmp_path, edit)
     tile = _tiles(b)["Business Size by Status"]
-    assert not tile.sql and "filters or a top N on a sheet over related tables" in tile.todo
+    assert tile.sql and not tile.todo  # filters on sheets over related tables: tests/test_tableau_relationship_filters.py
     todo = {m.label: m.todo for m in b.metrics if m.todo}
     assert "row-level calculation over fields of related tables (accounts, orders)" in todo["Revenue x Size"]
     assert "FIXED LOD on a data source with relationships" in todo["Account Size Fixed"]

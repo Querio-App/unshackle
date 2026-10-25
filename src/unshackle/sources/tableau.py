@@ -1583,6 +1583,20 @@ class _MemberSet:
 
 
 @dataclass
+class _RelFilter:
+    """A filter on a sheet over related tables (_rel_tile_sql): `sql` over the qualified columns of `tables` (relations)."""
+
+    label: str
+    kind: str  # "row": a predicate on rows; "agg": a predicate on `value`, an aggregate of one table; "members": top N, condition
+    sql: str  # members: the member SQL
+    tables: set[str]
+    before: bool = False  # data source and context filters: top N and conditions are computed over the rows they leave
+    value: str = ""
+    members: tuple[str, _MemberSet] | None = None
+    agg_tables: set[str] = field(default_factory=set)  # members: the relations its aggregate reads
+
+
+@dataclass
 class _SheetCtx:
     ds: TDatasource | None
     row_lods: list[_Lod] = field(default_factory=list)  # FIXED grains joined to the rows
@@ -3869,12 +3883,14 @@ class _Parser:
                 ordered.append((r, False))
                 seen.add(r.instance)
         tile_ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
-        rel_tile = len(self._related_tables(tile_ds, ordered)) > 1  # fields of several logical tables of a data source with relationships
+        # fields (shown, or filtered on) of several logical tables of a data source with relationships
+        rel_tile = len(set(self._related_tables(tile_ds, ordered)) | self._filter_tables(wb, tile_ds, view, deps)) > 1
         join_from, join_todo = self._tile_join(tile_ds, ordered)
         if join_todo:
             todos.append(join_todo)
         qualify_one = False  # one table, its columns qualified (FIXED grains are joined to it)
         members: list = []  # top N and condition filters: (member SQL, _MemberSet[, the filters computed before them])
+        sheet_filters: list[tuple[ET.Element, tuple[str, Any]]] = []  # each worksheet filter with what _filter made of it
 
         sorts = sheet_sorts(view, tile_ds.default_sorts if tile_ds is not None else [])
 
@@ -3883,6 +3899,7 @@ class _Parser:
             self._joined = tile_ds if (join_from or qualify_one or rel_tile) else None
             problems, columns, dropped, notes = [], [], set(), []
             members.clear()
+            sheet_filters.clear()
             for r, critical in ordered:
                 try:
                     if self._is_table_calc(r):  # its SQL comes last, from the sheet's other columns (_window_tile_sql)
@@ -3917,6 +3934,7 @@ class _Parser:
                 res = self._filter(wb, flt, deps, meta)
                 if res is None:
                     continue
+                sheet_filters.append((flt, res))
                 k, v = res
                 if k == "where":
                     where.append(v)
@@ -3963,15 +3981,12 @@ class _Parser:
         sql = totals_sql = ""
         if problems:
             todos += problems
-        elif rel_tile and tile_ds is not None and members:
-            todos.append("a top N or condition filter on a sheet over related tables: compute its members (over the rows the "
-                         "context leaves) and keep their rows in the tile SQL")
         elif rel_tile and tile_ds is not None and self._sheet.table_calcs:  # type: ignore[union-attr]
             todos.append(f"table calculations on a sheet over related tables: add them as window SQL over the tile's marks ({SKILL})")
         elif rel_tile and tile_ds is not None:
             columns = [c for c in columns if not c[3]] + [c for c in columns if c[3]]
             try:
-                sql = self._rel_tile_sql(tile_ds, columns, where, having, order, limit)
+                sql = self._rel_tile_sql(tile_ds, columns, self._rel_filters(wb, tile_ds, sheet_filters, deps))
             except _NoSQL as exc:
                 todos.append(str(exc))
             todos += self._sheet.notes  # type: ignore[union-attr]
@@ -4207,19 +4222,23 @@ class _Parser:
             return f"(\n{model.rel.sql}\n) as {_ident(rel)}"
         return f"{model.sm.table} as {_ident(rel)}"
 
-    def _rel_tile_sql(self, ds: TDatasource, columns: list, where: list[str], having: list[str], order: list[str], limit: str) -> str:
+    def _rel_tile_sql(self, ds: TDatasource, columns: list, filters: list[_RelFilter]) -> str:
         """A sheet over related logical tables, as Tableau computes it with relationships:
         - each measure is aggregated on its own table's rows at the sheet's dimensions. A row counts once per distinct
           combination of the dimensions it relates to: the table is joined to the distinct (its relationship columns,
           dimensions of the other tables) reached through left joins, so rows with no match get NULL dimensions;
         - the dimensions' own combinations (the dimension tables inner joined) are marks too, with NULL measures when no row
           relates to them, and a sheet without measures shows just those;
-        - the per-table results are joined on the dimensions (NULL matches NULL)."""
+        - the per-table results are joined on the dimensions (NULL matches NULL).
+        Filters (_rel_filters), in Tableau's order: data source and context filters, then the members of top N and condition
+        filters (each over the related aggregates at the filtered field's level, after those), then the rows: a filter on
+        another table's field keeps a row when a combination it relates to passes (the filtered field reached through the
+        same left joins as the dimensions), and the dimension tables are inner joined to the filtered tables. Measure filters
+        last, on each mark's aggregate of the measure's own table."""
         ctx = self._sheet
         assert ctx is not None
-        if where or having or order or limit:
-            raise _NoSQL(f"filters or a top N on a sheet over related tables: Tableau applies them to each table's query through the "
-                         f"relationships; write them in the tile SQL ({SKILL})")
+        if ctx.member_sets:
+            raise _NoSQL(f"sets shown as their members on a sheet over related tables: keep their rows in the tile SQL ({SKILL})")
         if ctx.specials or ctx.row_lods:
             raise _NoSQL(f"LOD expressions on a sheet over related tables: write the tile SQL by hand ({SKILL})")
 
@@ -4259,26 +4278,32 @@ class _Parser:
                 groups.setdefault(rel, []).append((agg, f"{c[1]}_part_{j}"))
                 refs.append(f"{cte(rel)}.{c[1]}_part_{j}")
             picks[c[1]] = re.sub(r"\{(\d+)\}", lambda m: refs[int(m.group(1))], expr)
-        group_by = ("\ngroup by " + ", ".join(str(i) for i in range(1, len(dims) + 1))) if dims else ""
+        shown = list(groups)  # tables with measures on the sheet: their rows are marks too
         ctes: list[tuple[str, str]] = []
+        rows: list[_RelFilter] = []
+        final: list[str] = []  # measure filters, on the joined marks
+        before = [f for f in filters if f.kind == "row" and f.before]
+        for i, f in enumerate(filters, 1):
+            if f.kind == "members":
+                ctes.append((f"filter_{i}", self._rel_members(ds, f, before)))
+                x = _paren(f.sql)
+                rows.append(_RelFilter(f.label, "row", f"({x} in (select member from filter_{i}) or ({x} is null and exists "
+                                                       f"(select 1 from filter_{i} where member is null)))", f.tables))
+            elif f.kind == "agg":
+                rel = next(iter(f.tables))
+                groups.setdefault(rel, []).append((f.value, f"filter_{i}"))
+                final.append(f.sql.replace(f.value, f"{cte(rel)}.filter_{i}"))
+            else:
+                rows.append(f)
+        marks = []
+        dim_cols = [(c[2], c[1], dim_home[c[1]]) for c in dims]
         if dims:
-            rels = list(dict.fromkeys(dim_home.values()))
-            tree = self._rel_tree(ds, rels[0], set(rels))
-            joins = "".join(f"\ninner join {self._rel_from(ds, b)} on {self._rel_on(a, b, cols)}" for a, b, cols in tree)
-            ctes.append(("dimensions", f"select distinct {', '.join(f'{c[2]} as {c[1]}' for c in dims)}\nfrom {self._rel_from(ds, rels[0])}{joins}"))
+            ctes.append(("dimensions", self._rel_domain(ds, dim_cols, rows)))
+            marks.append("dimensions")
         for rel, aggs in groups.items():
-            others = {dim_home[c[1]] for c in dims} - {rel}
-            items = [f"{c[2]} as {c[1]}" if dim_home[c[1]] == rel else f"rel_dims.{c[1]}" for c in dims] + [f"{sql} as {a}" for sql, a in aggs]
-            frm = self._rel_from(ds, rel)
-            if others:
-                tree = self._rel_tree(ds, rel, others)
-                keys = list(dict.fromkeys(fc for a, _, cols in tree if a == rel for fc, _ in cols))
-                joins = "".join(f"\nleft join {self._rel_from(ds, b)} on {self._rel_on(a, b, cols)}" for a, b, cols in tree)
-                inner = (f"select distinct {', '.join([f'{_ident(rel)}.{_ident(k)} as rel_key_{i}' for i, k in enumerate(keys, 1)] + [f'{c[2]} as {c[1]}' for c in dims if dim_home[c[1]] != rel])}\n"
-                         f"from {frm}{joins}")
-                on = " and ".join(f"{_ident(rel)}.{_ident(k)} is not distinct from rel_dims.rel_key_{i}" for i, k in enumerate(keys, 1))
-                frm += f"\ninner join (\n{inner}\n) as rel_dims on {on}"
-            ctes.append((cte(rel), f"select {', '.join(items)}\nfrom {frm}{group_by}"))
+            ctes.append((cte(rel), self._rel_measure(ds, rel, dim_cols, aggs, rows)))
+            if rel in shown:
+                marks.append(cte(rel))
         labels = {c[1]: alias_sql(f"marks.{c[1]}", c[0].field) or f"marks.{c[1]}" for c in labeled.values()}
         exprs = {c[0].instance: picks.get(c[1]) or f"marks.{c[1]}" for c in columns}
         for inst, (deriv, _) in list(ctx.sort_by.items()):
@@ -4289,17 +4314,146 @@ class _Parser:
                 del ctx.sort_by[inst]
                 ctx.notes.append(f"sort by {srt.using} ({srt.direction.lower()}) not applied: add it to the tile's order by")
         order_by = self._sort_order(dims, lambda i, c: (str(i), labels.get(c[1], f"marks.{c[1]}"), f"marks.{c[1]}"), "marks")
-        return self._join_aggregates(ctes, [n for n, _ in ctes], [cte(rel) for rel in groups], [c[1] for c in dims],
-                                     [picks[c[1]] for c in columns if c[3]], [c[1] for c in columns if c[3]], labels, order_by)
+        return self._join_aggregates(ctes, marks, [cte(rel) for rel in groups], [c[1] for c in dims],
+                                     [picks[c[1]] for c in columns if c[3]], [c[1] for c in columns if c[3]], labels, order_by, final)
+
+    def _rel_domain(self, ds: TDatasource, dims: list[tuple[str, str, str]], filters: list[_RelFilter]) -> str:
+        """The distinct combinations of `dims` ((SQL, column, relation)): their tables and the filtered tables inner joined."""
+        rels = list(dict.fromkeys([h for _, _, h in dims] + [t for f in filters for t in sorted(f.tables)]))
+        tree = self._rel_tree(ds, rels[0], set(rels))
+        joins = "".join(f"\ninner join {self._rel_from(ds, b)} on {self._rel_on(a, b, cols)}" for a, b, cols in tree)
+        where = "\nwhere " + "\n  and ".join(f.sql for f in filters) if filters else ""
+        return f"select distinct {', '.join(f'{sql} as {a}' for sql, a, _ in dims)}\nfrom {self._rel_from(ds, rels[0])}{joins}{where}"
+
+    def _rel_measure(self, ds: TDatasource, rel: str, dims: list[tuple[str, str, str]], aggs: list[tuple[str, str]],
+                     filters: list[_RelFilter], having: str = "") -> str:
+        """Aggregates `aggs` ((SQL, column)) of one table's rows at `dims` ((SQL, column, relation)): each row once per distinct
+        combination of the other tables' dimensions it reaches through left joins, among the combinations that pass the
+        filters on other tables' fields; filters on the table's own fields apply to its rows."""
+        own = [f.sql for f in filters if f.tables <= {rel}]
+        far = [f for f in filters if not f.tables <= {rel}]
+        for f in far:
+            if rel in f.tables:
+                raise _NoSQL(f"filter on [{f.label}] reads several related tables ({', '.join(sorted(f.tables))}); write it in the tile SQL ({SKILL})")
+        items = [f"{sql} as {a}" if h == rel else f"rel_dims.{a}" for sql, a, h in dims] + [f"{sql} as {a}" for sql, a in aggs]
+        frm = self._rel_from(ds, rel)
+        reach = {h for _, _, h in dims if h != rel} | {t for f in far for t in f.tables}
+        if reach:
+            tree = self._rel_tree(ds, rel, reach)
+            keys = list(dict.fromkeys(fc for a, _, cols in tree if a == rel for fc, _ in cols))
+            joins = "".join(f"\nleft join {self._rel_from(ds, b)} on {self._rel_on(a, b, cols)}" for a, b, cols in tree)
+            where = "\nwhere " + "\n  and ".join(f.sql for f in far) if far else ""
+            inner = (f"select distinct {', '.join([f'{_ident(rel)}.{_ident(k)} as rel_key_{i}' for i, k in enumerate(keys, 1)] + [f'{sql} as {a}' for sql, a, h in dims if h != rel])}\n"
+                     f"from {frm}{joins}{where}")
+            on = " and ".join(f"{_ident(rel)}.{_ident(k)} is not distinct from rel_dims.rel_key_{i}" for i, k in enumerate(keys, 1))
+            frm += f"\ninner join (\n{inner}\n) as rel_dims on {on}"
+        if own:
+            frm += "\nwhere " + "\n  and ".join(own)
+        group_by = ("\ngroup by " + ", ".join(str(i) for i in range(1, len(dims) + 1))) if dims else ""
+        return f"select {', '.join(items)}\nfrom {frm}{group_by}" + (f"\nhaving {having}" if having else "")
+
+    def _rel_members(self, ds: TDatasource, f: _RelFilter, before: list[_RelFilter]) -> str:
+        """The members a top N or condition filter keeps on a sheet over related tables: its aggregate per member of the
+        filtered field, over the rows the data source and context filters leave (_rel_measure); a condition keeps the
+        members whose aggregates pass, a top N ranks the field's members (its own table's values) by the aggregate."""
+        assert f.members is not None
+        expr, ms = f.members
+        if len(f.tables) != 1 or len(f.agg_tables) != 1:
+            what = "its field" if len(f.tables) != 1 else "its aggregate"
+            n = f.tables if len(f.tables) != 1 else f.agg_tables
+            raise _NoSQL(f"top N or condition filter on [{f.label}]: {what} reads {', '.join(sorted(n)) or 'no table'}, not one related "
+                         f"table; compute its members in the tile SQL ({SKILL})")
+        if ms.top and ms.having:
+            raise _NoSQL(f"a condition inside the top N filter on [{f.label}] over related tables: compute its members in the tile SQL ({SKILL})")
+        field_rel, agg_rel = next(iter(f.tables)), next(iter(f.agg_tables))
+        dim = [(expr, "member", field_rel)]
+        flts = before + [_RelFilter(f.label, "row", p, f.tables) for p in ms.preds]
+        if not ms.top:
+            return self._rel_measure(ds, agg_rel, dim, [], flts, " and ".join(ms.having))
+        agg, direction, count = ms.top
+        domain = self._rel_domain(ds, dim, flts)
+        value = self._rel_measure(ds, agg_rel, dim, [(agg, "value")], flts)
+        nulls = "nulls last" if direction == "desc" else "nulls first"
+        return (f"select member from (\nselect d.member, row_number() over (order by v.value {direction} {nulls}, d.member) as filter_rank\n"
+                f"from (\n{domain}\n) as d\nleft join (\n{value}\n) as v on d.member is not distinct from v.member\n) as ranked\n"
+                f"where filter_rank <= {count}")
+
+    def _rel_filters(self, wb: _Workbook, ds: TDatasource, sheet_filters: list[tuple[ET.Element, tuple[str, Any]]], deps: dict) -> list[_RelFilter]:
+        """The data source filters and the sheet's filters (as _filter made them) on a sheet over related tables, with the
+        tables each reads. Raises _NoSQL for the ones that can't be placed."""
+        out: list[_RelFilter] = []
+        for owner, kind, flt in self._ds_filters(ds):
+            g = ds.fields.get(_unbracket(flt.get("column")))
+            label = g.label if g else _unbracket(flt.get("column"))
+            if kind == "extract":
+                raise _NoSQL(f"extract filter on [{label}] of a data source with relationships: Tableau filters the extract's tables; "
+                             f"add it to the tile SQL ({SKILL})")
+            try:
+                pred = self._ds_filter_sql(ds, flt)
+            except ax.FormulaError as exc:
+                raise _NoSQL(f"data source filter on [{label}] not translated ({exc}); add it to the tile SQL ({SKILL})") from None
+            if pred:
+                out.append(_RelFilter(label, "row", pred, self._tables_of(ds, g) if g is not None else set(), before=True))
+        for flt, (k, v) in sheet_filters:
+            if k == "todo":
+                continue
+            r = self._shelf(wb, flt.get("column"), deps)[0]
+            label = r.field.label if r.field else r.instance
+            tables = self._tables_of(ds, r.field) if r.field is not None and r.ds is ds else set()
+            context = flt.get("context") == "true"
+            if k == "where":
+                out.append(_RelFilter(label, "row", v, tables, before=context))
+            elif k == "having":
+                value = self._column(r)[1]
+                if len(tables) != 1 or (self._sheet is not None and r.instance in self._sheet.rel_parts) or value not in v:
+                    raise _NoSQL(f"measure filter on [{label}] over several related tables: Tableau filters the marks on its value; "
+                                 f"add it to the tile SQL ({SKILL})")
+                out.append(_RelFilter(label, "agg", v, tables, value=value))
+            elif k == "members":
+                if context:
+                    raise _NoSQL(f"a top N or condition filter on [{label}] in the context of a sheet over related tables: add it to "
+                                 f"the tile SQL ({SKILL})")
+                out.append(_RelFilter(label, "members", v[0], tables, members=v, agg_tables=self._expr_tables(ds, flt)))
+        return out
+
+    def _expr_tables(self, ds: TDatasource, flt: ET.Element) -> set[str]:
+        """The relations the formulas of a filter's <groupfilter>s (a top N's order, a condition) read."""
+        out: set[str] = set()
+        for gf in flt.iter("groupfilter"):
+            if gf.get("function") in ("filter", "order") and gf.get("expression") and _has_agg(parse_formula(scan_formula(gf.get("expression", ""))[0], date_opts(ds))):
+                for x in BRACKETED.findall(scan_formula(gf.get("expression", ""))[1]):
+                    g = ds.fields.get(_unesc(x))
+                    if g is not None:
+                        out |= self._tables_of(ds, g)
+        return out
+
+    def _filter_tables(self, wb: _Workbook, ds: TDatasource | None, view: ET.Element, deps: dict) -> set[str]:
+        """On a data source with relationships, the logical tables its data source filters and a sheet's filters read."""
+        if ds is None or not ds.related:
+            return set()
+        rels: set[str] = set()
+        for _, _, flt in self._ds_filters(ds):
+            g = ds.fields.get(_unbracket(flt.get("column")))
+            rels |= self._tables_of(ds, g) if g is not None else set()
+        for flt in view.findall("filter"):
+            refs = self._shelf(wb, flt.get("column"), deps)
+            if refs and refs[0].ds is ds and refs[0].field is not None:
+                rels |= self._tables_of(ds, refs[0].field)
+            try:
+                rels |= self._expr_tables(ds, flt)
+            except ax.FormulaError:
+                pass
+        return {o.caption if (o := ds.object_of(t)) is not None else t for t in rels}
 
     @staticmethod
     def _join_aggregates(ctes: list[tuple[str, str]], marks_from: list[str], measures: list[str], dims: list[str], values: list[str],
-                         aliases: list[str], labels: dict[str, str] | None = None, order: list[str] | None = None) -> str:
+                         aliases: list[str], labels: dict[str, str] | None = None, order: list[str] | None = None,
+                         where: list[str] | None = None) -> str:
         """Aggregates computed separately (one CTE each, with the sheet's dimension columns `dims` and its values), joined on
         the dimensions: the marks are the distinct dimension values of the CTEs in `marks_from`, each CTE in `measures`
         left joined to them (NULL matches NULL); `values` are SQL over the CTEs' columns, output as `aliases`. Without
         dimensions each CTE is one row, cross joined. `labels`: SQL showing a dimension (its aliases); `order`: ORDER BY
-        items (default: the dimensions). Used for relationships (one CTE per related table)."""
+        items (default: the dimensions); `where`: conditions on the joined marks. Used for relationships (one CTE per related table)."""
         ctes = list(ctes)
         if dims:
             ctes.append(("marks", "\nunion\n".join(f"select {', '.join(dims)} from {n}" for n in marks_from)))
@@ -4307,6 +4461,8 @@ class _Parser:
             tail = "\norder by " + ", ".join(order or [str(i) for i in range(1, len(dims) + 1)])
         else:
             frm, tail = "\ncross join ".join(measures), ""
+        if where:
+            tail = "\nwhere " + "\n  and ".join(where) + tail
         items = [f"{(labels or {})[d]} as {d}" if d in (labels or {}) else f"marks.{d}" for d in dims] + [f"{v} as {a}" for v, a in zip(values, aliases)]
         body = "select\n" + ",\n".join(f"  {x}" for x in items) + f"\nfrom {frm}{tail}"
         return "with " + ",\n".join(f"{n} as (\n{b}\n)" for n, b in ctes) + "\n" + body
