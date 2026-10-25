@@ -4587,7 +4587,7 @@ class _Parser:
 
     def _unpivot(self, sql: str, columns: list, measures: list[_Ref], labels: list[str]) -> str:
         """A sheet's SQL with one row per mark and measure (Measure Values): its dimensions, measure_name, measure_value
-        and its other columns, ordered by the dimensions and the measures' order."""
+        and its other columns, ordered by the dimensions in the sheet's sorts, then the measures' order."""
         by_inst = {c[0].instance: c for c in columns}
         values = [by_inst.get(m.instance) for m in measures]
         if any(c is None for c in values):
@@ -4606,10 +4606,36 @@ class _Parser:
         value = "case measure_names.measure_order " + " ".join(f"when {n} then measure_values.{c[1]}" for n, c in enumerate(values, 1)) + " end"  # type: ignore[index]
         picks = ([f"measure_values.{c[1]}" for c in dims] + ["measure_names.measure_name", f"{value} as measure_value"]
                  + [f"measure_values.{c[1]}" for c in others])
-        order = [str(i) for i in range(1, len(dims) + 1)] + ["measure_names.measure_order"]
+        order = self._unpivot_order(dims, by_inst) + ["measure_names.measure_order"]
         head = f"with {ctes},\nmeasure_values as (" if ctes else "with measure_values as ("
         return (f"{head}\n{body}\n)\nselect\n" + ",\n".join(f"  {p}" for p in picks)
                 + f"\nfrom measure_values\ncross join (\n  {names}\n) as measure_names\norder by {', '.join(order)}")
+
+    def _unpivot_order(self, dims: list, by_inst: dict[str, tuple]) -> list[str]:
+        """ORDER BY items for the dimensions of an unpivoted sheet, over the measure_values CTE's columns: each in its sort
+        (_sort_order), a computed sort by the sorted-by measure's column. The rows are repeated once per measure, which
+        changes no member's place."""
+        ctx = self._sheet
+        if ctx is None or not dims:
+            return [str(i) for i in range(1, len(dims) + 1)]
+        saved = dict(ctx.sort_by)
+        try:
+            for inst in list(ctx.sort_by):
+                using = by_inst.get(ctx.sorts[inst].using)
+                if using is not None and using[3]:
+                    ctx.sort_by[inst] = (ctx.sort_by[inst][0], f"measure_values.{using[1]}")
+                else:
+                    del ctx.sort_by[inst]
+                    ctx.notes.append(f"sort by {ctx.sorts[inst].using} ({ctx.sorts[inst].direction.lower()}) not applied: add it to the tile's order by")
+            for c in dims:
+                srt = ctx.sorts.get(c[0].instance)
+                if c[0].instance in ctx.labels and srt is not None and srt.kind in ("manual", "computed"):
+                    ctx.notes.append(f"{c[4]} has aliases: with Measure Values its {srt.kind} sort compares the labels, not the values; "
+                                     "check the order")
+            return self._sort_order(dims, lambda i, c: (str(i), f"measure_values.{c[1]}", f"measure_values.{c[1]}"), "measure_values")
+        finally:
+            ctx.sort_by.clear()
+            ctx.sort_by.update(saved)
 
     def _latlon(self, row_m: list[_Ref], col_m: list[_Ref]) -> tuple[_Ref, _Ref] | None:
         """(latitude, longitude) when the sheet plots fields with those geographic roles on rows and columns."""

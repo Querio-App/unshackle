@@ -156,6 +156,30 @@ def test_measure_names_on_columns_facet_the_measure_values_axis(tiles, con, rows
     assert _same(con.sql(t.sql).fetchall(), _measures(rows, ["payment_cycle"], {"quantity": qty, "Net Revenue": net}))
 
 
+def test_measure_values_follow_the_sheet_sorts(tmp_path: Path, con, rows):
+    """A sort on the sheet's dimensions orders the marks, then each mark's measures in their order: paper types by
+    quantity (descending), statuses in a manual order."""
+    ds = "federated.marks0demo"
+
+    def edit(x):
+        for sheet, srt in (("Measures by Paper Type", f"<computed-sort column='[{ds}].[none:paper_type:nk]' direction='DESC' using='[{ds}].[sum:quantity:qk]' />"),
+                           ("Measures by Status", f"<manual-sort column='[{ds}].[none:status:nk]' direction='ASC'><dictionary><bucket>&quot;RETURNED&quot;</bucket>"
+                                                  "<bucket>&quot;CANCELLED&quot;</bucket><bucket>%all%</bucket></dictionary></manual-sort>")):
+            a = x.index(f"<worksheet name=\"{sheet}\">")
+            b = x.index("<aggregation value='true' />", a)
+            x = x[:b] + srt + "\n          " + x[b:]
+        return x
+
+    t = _tiles(_parse(tmp_path, edit))
+    by_qty = rows.groupby("paper_type").quantity.sum().sort_values(ascending=False).index.tolist()
+    got = con.sql(t["Measures by Paper Type"].sql).fetchall()
+    assert list(dict.fromkeys(r[0] for r in got)) == by_qty and not t["Measures by Paper Type"].todo
+    assert [r[1] for r in got[:4]] == ["Distinct count of order_id", "quantity", "Average Order Value", "Avg. Revenue"]
+    got = con.sql(t["Measures by Status"].sql).fetchall()
+    assert list(dict.fromkeys(r[0] for r in got)) == ["RETURNED", "CANCELLED", "COMPLETED"]  # the others after, in natural order
+    assert [r[1] for r in got[:3]] == ["Cancelled Quantity", "Net Revenue", "quantity"]
+
+
 def test_measure_names_filter_rules_are_todo(tmp_path: Path):
     def mv_filter(x):
         start = x.index("<worksheet name=\"Order Totals\">")

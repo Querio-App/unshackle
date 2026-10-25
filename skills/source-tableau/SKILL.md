@@ -484,7 +484,8 @@ trailing spaces included), else Tableau's names: the field's name for its defaul
 aggregation (SUM, or Default Properties > Aggregation), `Sum of x` for a SUM that isn't,
 `Avg. x`, `Distinct count of x`, a calculation's name. Order: the Measure Names
 `<manual-sort>` (Desktop writes one when the card is reordered; measures it doesn't list
-after), else the names by character code (`'S' < 'q'`). The chart encodes `measure_name`
+after), else the names by character code (`'S' < 'q'`). The marks themselves follow the sheet's sorts
+(as for any sheet; a computed sort by the sorted-by measure's value), each mark's measures in that order. The chart encodes `measure_name`
 (colour, axis or facet, `sort=[...]` in that order) and `measure_value`. Measure Names with
 no Measure Values (a dual axis coloured by Measure Names) just names the layers. TODO: a
 Measure Names filter that keeps measures by a rule (`except`), none at all (every measure),
