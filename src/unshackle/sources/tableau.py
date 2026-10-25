@@ -1417,6 +1417,7 @@ class TDatasource:
     # and what its settings change (row limits, filters, incremental refresh, last refresh)
     extract_ds: "TDatasource | None" = None
     extract_notes: list[str] = field(default_factory=list)
+    extract_rows: bool = False  # the models read the extract's own copy (extract --with-data): its filters are already applied
 
 
 @dataclass
@@ -2004,11 +2005,11 @@ class _Parser:
         reason = extract_only(ds)
         if not reason:
             if ds.extract_ds is not None and ds.relations:
-                notes = [n for n in ds.extract_notes if not n.startswith("last refreshed")]
+                notes = [n for n in ds.extract_notes if not n.startswith("last refreshed") and " extract filter on " not in n]
                 self.b.warn(item, "Tableau answers from this data source's extract" + (f" ({'; '.join(ds.extract_notes)})" if ds.extract_notes else "")
-                            + ", the migrated SQL from the warehouse: rows changed since the last refresh, and the extract's filters, row "
-                            "limit or aggregation (Extract settings: Aggregate data for visible dimensions) make the numbers differ. Add its "
-                            "filters to the models and tiles, or drop the extract settings in Tableau and compare again", "warn" if notes else "info")
+                            + ", the migrated SQL from the warehouse: rows changed since the last refresh, and the extract's row limit or "
+                            "aggregation (Extract settings: Aggregate data for visible dimensions) make the numbers differ; its filters are "
+                            "applied to the models and tiles. Drop the other extract settings in Tableau and compare again", "warn" if notes else "info")
             return
         copied = self.copied.get((Path(ds.src).stem, ds.name if ds.workbook else ""))
         if not copied:
@@ -2016,6 +2017,7 @@ class _Parser:
         from_extract = ds.extract_ds is not None and any(t.get("from") == "extract" for t in copied.values())
         if from_extract:
             assert ds.extract_ds is not None
+            ds.extract_rows = True
             ds.relations, ds.joins, ds.join_steps = dict(ds.extract_ds.relations), [], []
             ds.objects, ds.relationships = dict(ds.extract_ds.objects), list(ds.extract_ds.relationships)  # the live tables' graph is gone
             first = next(iter(ds.relations), "")
@@ -4778,7 +4780,8 @@ class _Parser:
         User filters (USERNAME() / ISMEMBEROF() calcs) are left to the row filters."""
         out, seen = [], set()
         for owner in [d for d in (ds.origin, ds) if d is not None]:
-            for kind, flts in (("extract", owner.extract_filters), ("data source", owner.filters)):
+            extract = [] if owner.extract_rows or ds.extract_rows else owner.extract_filters  # a copy of the extract has them applied
+            for kind, flts in (("extract", extract), ("data source", owner.filters)):
                 for flt in flts:
                     key = ET.tostring(flt)
                     g = owner.fields.get(_unbracket(flt.get("column")))

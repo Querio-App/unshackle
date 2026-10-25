@@ -285,6 +285,23 @@ def test_models_read_the_copies_and_tiles_match(repo: Path, frames, monkeypatch)
     assert run("Average Price by Paper Type") == pytest.approx(p.groupby("paper_type").price.mean().to_dict())
 
 
+def test_a_copy_of_the_extract_has_its_filters_applied(repo: Path):
+    """The models read the extract's own rows, so its extract filters are not applied again (a relative date one would count
+    from another day); a data source filter still is."""
+    tds = next((repo / "migration" / "raw" / "tableau" / "datasources").glob("*82.tds"))
+    extract_filter = ("<filter class='categorical' column='[status]'>"
+                      "<groupfilter function='member' level='[status]' member='&quot;COMPLETED&quot;' /></filter>")
+    ds_filter = ("<filter class='categorical' column='[status]'><groupfilter function='except'>"
+                 "<groupfilter function='level-members' level='[status]' />"
+                 "<groupfilter function='member' level='[status]' member='&quot;RETURNED&quot;' /></groupfilter></filter>")
+    xml = tds.read_text().replace("</extract>", extract_filter + "</extract>").replace("</datasource>", ds_filter + "</datasource>")
+    tds.write_text(xml)
+    b = get_source("tableau").parse(RawStore(repo, "tableau"))
+    sql = next(t.sql for d in b.dashboards for t in d.tiles if t.title == "Cancelled Revenue by Status")
+    assert "'COMPLETED'" not in sql and "where (status <> 'RETURNED' or status is null)" in sql
+    assert not [rf for rf in b.row_filters if rf.name.endswith("_extract")]
+
+
 def test_build_writes_the_load_step(repo: Path):
     pytest.importorskip("duckdb")
     build.apply(get_source("tableau").parse(RawStore(repo, "tableau")), repo)
