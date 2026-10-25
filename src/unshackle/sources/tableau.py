@@ -122,7 +122,7 @@ TABLE_CALC = re.compile(
 )
 USER_FN = re.compile(r"\b(USERNAME|ISMEMBEROF|USERDOMAIN|FULLNAME|ISUSERNAME|ISFULLNAME|USERATTRIBUTE\w*)\s*\(", re.I)
 ATTR_FN = re.compile(r"\bATTR\s*\(", re.I)
-DATE_LIT = re.compile(r"#(\d{4}-\d{2}-\d{2})#")
+DATE_LIT = re.compile(r"#(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2})?#")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # connection attributes that change what the warehouse returns, and how the migration carries them
 CONNECTION_SETTINGS = {
@@ -701,6 +701,15 @@ class _TabParser(ax._Parser):
         if v.lower() != word:
             raise ax.FormulaError(f"expected {word.upper()}, got {v or 'end of formula'!r}")
 
+    def compare(self) -> ax.Node:
+        left = super().compare()
+        if self._is("in"):  # [x] IN (a, b, ...)
+            self.take()
+            if self.peek()[1] != "(":
+                raise ax.FormulaError("IN takes a list of values in parentheses (IN with a set is not translated)")
+            left = ax.Call("in", [left, *self.call_args()])
+        return left
+
     def primary(self) -> ax.Node:
         kind, value = self.peek()
         if kind == "kw" and value == "if":
@@ -743,7 +752,7 @@ class _TabParser(ax._Parser):
 
 def parse_formula(text: str, dates: "_DateOpts | None" = None) -> ax.Node:
     """`dates`: the datasource's Date Properties, which DATETRUNC/DATEPART/DATENAME of weeks, quarters and years follow."""
-    text = DATE_LIT.sub(lambda m: f"DATE('{m.group(1)}')", text)
+    text = DATE_LIT.sub(lambda m: f"DATETIME('{m.group(1)}{m.group(2)}')" if m.group(2) else f"DATE('{m.group(1)}')", text)
     if not text.strip():
         raise ax.FormulaError("empty formula")
     return _normalize(_dates(_TabParser(text).parse(), dates or _DateOpts()))
@@ -867,6 +876,12 @@ def _dates(node: ax.Node, opts: _DateOpts) -> ax.Node:
     the Date Properties (registered in the shared ROW_FUNCS under a `tableau:` name no other source's parser produces)."""
     if isinstance(node, ax.Call):
         args = [_dates(a, opts) for a in node.args]
+        if node.name == "datename" and len(args) == 2 and isinstance(args[0], ax.Str) and args[0].value.lower() == "month":
+            if opts.language != "en":
+                raise ax.FormulaError("DATENAME('month') gives the month's name in the locale's language, and no English locale is "
+                                      "recorded: write `case extract(month from d) when 1 then '<January>' ... end` in that language")
+            return _tableau_fn("case extract(month from {0}) " + " ".join(f"when {i} then '{m.capitalize()}'" for i, m in enumerate(MONTHS, 1))
+                               + " end", [args[1]])
         if node.name in ("datetrunc", "datepart", "datename") and args and isinstance(args[0], ax.Str) and args[0].value.lower() in DATE_UNITS:
             unit = args[0].value.lower()
             if len(args) not in (2, 3):
@@ -880,9 +895,16 @@ def _dates(node: ax.Node, opts: _DateOpts) -> ax.Node:
             tmpl = date_sql(fn, unit, "{0}", opts, start)
             if tmpl is None:
                 return ax.Call(node.name, args[:2])
-            name = "tableau:" + hashlib.sha1(tmpl.encode()).hexdigest()[:12]  # one name per SQL template
-            ax.ROW_FUNCS.setdefault(name, (tmpl, 1))
-            return ax.Call(name, [args[1]])
+            return _tableau_fn(tmpl, [args[1]])
+        if node.name == "datediff" and len(args) in (3, 4) and isinstance(args[0], ax.Str) and args[0].value.lower() == "week":
+            start = ""
+            if len(args) == 4:
+                if not isinstance(args[3], ax.Str) or args[3].value.lower() not in WEEKDAYS:
+                    raise ax.FormulaError("DATEDIFF's start_of_week must be a literal day name")
+                start = args[3].value.lower()
+            # whole weeks between the weeks' first days: week boundaries crossed
+            week = date_sql("trunc", "week", "{0}", opts, start) or "date_trunc('week', {0})"
+            return _tableau_fn(f"cast((cast({week.replace('{0}', '{1}')} as date) - cast({week} as date)) / 7 as integer)", args[1:3])
         return ax.Call(node.name, args)
     if isinstance(node, ax.BinOp):
         return ax.BinOp(node.op, _dates(node.left, opts), _dates(node.right, opts))
@@ -891,11 +913,20 @@ def _dates(node: ax.Node, opts: _DateOpts) -> ax.Node:
     return node
 
 
+def _tableau_fn(tmpl: str, args: list[ax.Node]) -> ax.Call:
+    """A Tableau-only row function with this SQL template, registered in the shared ROW_FUNCS."""
+    name = "tableau:" + hashlib.sha1(tmpl.encode()).hexdigest()[:12]  # one name per SQL template
+    ax.ROW_FUNCS.setdefault(name, (tmpl, len(args)))
+    return ax.Call(name, args)
+
+
 def _normalize(node: ax.Node) -> ax.Node:
     if isinstance(node, ax.Call):
         args = [_normalize(a) for a in node.args]
         if node.name == "datepart" and len(args) == 2 and isinstance(args[0], ax.Str) and args[0].value.lower() in ("year", "month", "day"):
             return ax.Call(args[0].value.lower(), [args[1]])
+        if node.name in ("min", "max") and len(args) == 2:  # MIN(a, b): a row-level function, not the aggregate
+            return ax.Call(node.name + "2", args)
         return ax.Call(node.name, args)
     if isinstance(node, ax.BinOp):
         return ax.BinOp(node.op, _normalize(node.left), _normalize(node.right))
