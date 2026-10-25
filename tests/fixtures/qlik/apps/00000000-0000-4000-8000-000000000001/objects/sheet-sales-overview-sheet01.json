@@ -1,0 +1,324 @@
+{
+  "qProperty": {
+    "qInfo": {
+      "qId": "sheet01",
+      "qType": "sheet"
+    },
+    "qMetaDef": {
+      "title": "Sales overview",
+      "description": ""
+    },
+    "rank": 0,
+    "columns": 24,
+    "rows": 12,
+    "qChildListDef": {
+      "qData": {
+        "title": "/title"
+      }
+    },
+    "cells": [
+      {
+        "name": "kpi01",
+        "type": "kpi",
+        "col": 0,
+        "row": 0,
+        "colspan": 6,
+        "rowspan": 2
+      },
+      {
+        "name": "kpi02",
+        "type": "kpi",
+        "col": 6,
+        "row": 0,
+        "colspan": 6,
+        "rowspan": 2
+      },
+      {
+        "name": "filters01",
+        "type": "filterpane",
+        "col": 12,
+        "row": 0,
+        "colspan": 12,
+        "rowspan": 4
+      },
+      {
+        "name": "bar01",
+        "type": "barchart",
+        "col": 0,
+        "row": 2,
+        "colspan": 12,
+        "rowspan": 5
+      },
+      {
+        "name": "line01",
+        "type": "linechart",
+        "col": 0,
+        "row": 7,
+        "colspan": 24,
+        "rowspan": 5
+      }
+    ]
+  },
+  "qChildren": [
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "kpi01",
+          "qType": "kpi"
+        },
+        "visualization": "kpi",
+        "title": "Revenue",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "qHyperCubeDef": {
+          "qDimensions": [],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m01",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000020"
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    },
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "kpi02",
+          "qType": "kpi"
+        },
+        "visualization": "kpi",
+        "title": "Orders",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "qHyperCubeDef": {
+          "qDimensions": [],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m02",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000021"
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    },
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "filters01",
+          "qType": "filterpane"
+        },
+        "visualization": "filterpane",
+        "title": "",
+        "showTitles": false,
+        "qMetaDef": {},
+        "qChildListDef": {
+          "qData": {}
+        }
+      },
+      "qChildren": [
+        {
+          "qProperty": {
+            "qInfo": {
+              "qId": "listbox01",
+              "qType": "listbox"
+            },
+            "visualization": "listbox",
+            "title": "",
+            "qMetaDef": {},
+            "qListObjectDef": {
+              "qDef": {
+                "qFieldDefs": [
+                  "status"
+                ],
+                "qFieldLabels": [
+                  "status"
+                ],
+                "qGrouping": "N",
+                "autoSort": true
+              },
+              "qShowAlternatives": true
+            }
+          },
+          "qChildren": []
+        },
+        {
+          "qProperty": {
+            "qInfo": {
+              "qId": "listbox02",
+              "qType": "listbox"
+            },
+            "visualization": "listbox",
+            "title": "",
+            "qMetaDef": {},
+            "qListObjectDef": {
+              "qDef": {
+                "qFieldDefs": [
+                  "paper_type"
+                ],
+                "qFieldLabels": [
+                  "paper_type"
+                ],
+                "qGrouping": "N",
+                "autoSort": true
+              },
+              "qShowAlternatives": true
+            }
+          },
+          "qChildren": []
+        }
+      ]
+    },
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "bar01",
+          "qType": "barchart"
+        },
+        "visualization": "barchart",
+        "title": "Revenue by account manager",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "orientation": "vertical",
+        "barGrouping": {
+          "grouping": "grouped"
+        },
+        "qHyperCubeDef": {
+          "qDimensions": [
+            {
+              "qDef": {
+                "cId": "d01",
+                "qGrouping": "N",
+                "qFieldDefs": [],
+                "qFieldLabels": [],
+                "autoSort": true,
+                "othersLabel": "Others"
+              },
+              "qOtherTotalSpec": {
+                "qOtherMode": "OTHER_OFF",
+                "qTotalMode": "TOTAL_OFF"
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000012"
+            }
+          ],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m03",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000020"
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0,
+            1
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    },
+    {
+      "qProperty": {
+        "qInfo": {
+          "qId": "line01",
+          "qType": "linechart"
+        },
+        "visualization": "linechart",
+        "title": "Monthly revenue",
+        "subtitle": "",
+        "footnote": "",
+        "showTitles": true,
+        "qMetaDef": {},
+        "qHyperCubeDef": {
+          "qDimensions": [
+            {
+              "qDef": {
+                "cId": "d02",
+                "qGrouping": "N",
+                "qFieldDefs": [],
+                "qFieldLabels": [],
+                "autoSort": true,
+                "othersLabel": "Others"
+              },
+              "qOtherTotalSpec": {
+                "qOtherMode": "OTHER_OFF",
+                "qTotalMode": "TOTAL_OFF"
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000011"
+            }
+          ],
+          "qMeasures": [
+            {
+              "qDef": {
+                "cId": "m04",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000020"
+            },
+            {
+              "qDef": {
+                "cId": "m05",
+                "qGrouping": "N",
+                "qExpressions": [],
+                "qActiveExpression": 0,
+                "autoSort": true
+              },
+              "qLibraryId": "00000000-0000-4000-8000-000000000022"
+            }
+          ],
+          "qMode": "S",
+          "qInterColumnSortOrder": [
+            0,
+            1,
+            2
+          ],
+          "qSuppressMissing": true,
+          "qSuppressZero": false
+        }
+      },
+      "qChildren": []
+    }
+  ]
+}

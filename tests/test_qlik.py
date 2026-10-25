@@ -22,7 +22,7 @@ from unshackle.sources.qlik import (
     set_predicate,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures" / "qlik"  # a real Qlik Cloud extract (tests/live/test_qlik_live.py); see README
+FIXTURES = Path(__file__).parent / "fixtures" / "qlik"  # a hand-written app over tests/data/dunder_mifflin; see README
 APP = "00000000-0000-4000-8000-000000000001"
 RAW = Path("migration/raw/qlik")
 DATA = Path(__file__).parent / "data" / "dunder_mifflin"
@@ -152,9 +152,9 @@ def test_parse_semantic_layer(tmp_path: Path):
     assert {t.name for t in b.tables} == set(models)
     orders = models["orders"]
     assert orders.table == "orders" and not orders.todo
-    assert [(e.name, e.type, e.expr) for e in orders.entities] == [
-        ("orders", "primary", "order_id"), ("shippings", "foreign", "shipping_id"), ("accounts", "foreign", "account_id"),
-        ("products", "foreign", "product_id")]
+    assert [(e.name, e.type, e.expr) for e in orders.entities] == [  # LOAD *: the file's columns, in order
+        ("orders", "primary", "order_id"), ("products", "foreign", "product_id"), ("accounts", "foreign", "account_id"),
+        ("shippings", "foreign", "shipping_id")]
     dims = {d.name: d for d in orders.dimensions}
     assert dims["status"].label == "Order status" and dims["purchased_at"].type == "time"
     month = dims["purchase_month"]  # a master dimension with a calculated field definition
@@ -163,6 +163,7 @@ def test_parse_semantic_layer(tmp_path: Path):
     assert products["paper_type"].expr == "" and products["paper_type_2"].expr == "UPPER(paper_type)"  # PAPER_TYPE
     reviews = {d.name: d for d in models["reviews"].dimensions}
     assert reviews["sentiment"].expr == "CASE WHEN rating >= 4 THEN 'Positive' ELSE 'Negative' END"
+    assert reviews["sentiment"].label == "Review sentiment"
     assert [e.name for e in models["reviews"].entities] == ["reviews", "orders"]  # reviews.order_id -> orders, one row each
     assert models["monthly_targets"].todo.startswith("the load script builds this table in a way unshackle doesn't translate")
     assert "RESIDENT orders" in next(w.message for w in b.warnings if w.item == "monthly_targets")
@@ -173,12 +174,12 @@ def test_parse_semantic_layer(tmp_path: Path):
         "orders": ("simple", "orders", ""), "revenue": ("simple", "revenue", ""),
         "completed_revenue": ("simple", "completed_revenue", "{{ Dimension('orders__status') }} = 'COMPLETED'"),
         "completed_orders": ("simple", "completed_orders", "UPPER({{ Dimension('orders__status') }}) = 'COMPLETED'"),  # $(vCompletedStatus)
-        "revenue_outside_the_west": ("simple", "revenue_outside_the_west", "{{ Dimension('shippings__shipping_region') }} <> 'West'"),
+        "revenue_outside_the_south": ("simple", "revenue_outside_the_south", "{{ Dimension('shippings__shipping_region') }} <> 'South'"),
     }
     aov = metrics["average_order_value"]  # reuses the master measures it divides
     assert (aov.type, aov.numerator, aov.denominator) == ("ratio", "revenue", "orders")
-    target = metrics["revenue_vs_target"]
-    assert (target.type, target.expr, target.metrics) == ("derived", "1.0 * revenue / nullif(1000000, 0)", ["revenue"])
+    target = metrics["revenue_vs_target"]  # $(vRevenueTarget), a variable defined in the app
+    assert (target.type, target.expr, target.metrics) == ("derived", "1.0 * revenue / nullif(2500000, 0)", ["revenue"])
     assert metrics["average_revenue_per_account"].todo.startswith("Qlik expression: Aggr()")
     assert metrics["average_revenue_per_account"].source_expression == "Avg(Aggr(Sum(post_discount_revenue), account_id))"
     assert metrics["share_of_revenue"].todo.startswith("Qlik expression: TOTAL")
@@ -191,9 +192,11 @@ def test_parse_dashboards(tmp_path: Path):
     dashes = {d.slug: d for d in b.dashboards}
     assert list(dashes) == ["sales-overview", "orders-detail"]
     overview = dashes["sales-overview"]
-    assert overview.url == f"https://example.eu.qlikcloud.com/sense/app/{APP}/sheet/id000033" and overview.views == 1
+    assert overview.url == f"https://example.eu.qlikcloud.com/sense/app/{APP}/sheet/sheet01" and overview.views == 12
     assert overview.layout == [["revenue", "orders"], ["revenue_by_account_manager"], ["monthly_revenue"]]
     assert [(f.name, f.field, f.kind) for f in overview.filters] == [("status", "status", "value"), ("paper_type", "paper_type", "value")]
+    assert dashes["orders-detail"].layout == [["orders_by_status_and_paper_type"],
+                                              ["revenue_by_shipping_region", "average_revenue_per_account_by_region"]]
     tiles = {t.id: t for d in b.dashboards for t in d.tiles}
     kpi = tiles["revenue"]
     assert (kpi.kind, kpi.mark, kpi.encodings["text"].field) == ("kpi", "text", "revenue")
@@ -209,9 +212,10 @@ def test_parse_dashboards(tmp_path: Path):
         "revenue", "completed_revenue"]
     assert "SUM(CASE WHEN orders.status = 'COMPLETED' THEN orders.post_discount_revenue END) AS completed_revenue" in line.sql
     assert "ignores selections on status" in line.todo  # a set modifier on a filtered field
-    table = tiles["orders_by_status_and_paper_type"]
+    table = tiles["orders_by_status_and_paper_type"]  # an inline dimension and a master one
     assert table.kind == "table" and "1.0 * SUM(orders.post_discount_revenue) / nullif(COUNT(DISTINCT orders.order_id), 0)" in table.sql
-    pie = tiles["revenue_by_shipping_region"]
+    assert table.sql.endswith("GROUP BY 1, 2\nORDER BY 1, 2")
+    pie = tiles["revenue_by_shipping_region"]  # an inline measure
     assert pie.mark == "arc" and set(pie.encodings) == {"theta", "color"} and "LEFT JOIN shippings" in pie.sql
     aggr = tiles["average_revenue_per_account_by_region"]
     assert aggr.sql == "" and aggr.todo.startswith("Qlik expression not translated: Aggr()")
@@ -222,21 +226,22 @@ def test_section_access(tmp_path: Path):
     _, b = parse(tmp_path)
     rf = {r.name: r for r in b.row_filters}
     assert len(rf) == 20  # four users x the five tables associated with PAPER_TYPE; monthly_targets is an island
-    jim = rf["orders_dm_jim"]
-    assert jim.groups == ["DM\\JIM"] and jim.table == "orders"
-    assert jim.predicate == "product_id IN (SELECT product_id FROM products WHERE UPPER(paper_type) IN ('COPY', 'PRINTER'))"
-    assert rf["products_dm_jim"].predicate == "UPPER(paper_type) IN ('COPY', 'PRINTER')"
-    assert rf["accounts_dm_jim"].predicate.startswith("account_id IN (SELECT account_id FROM orders WHERE product_id IN (")
-    assert rf["shippings_dm_angela"].predicate.endswith("UPPER(paper_type) IN ('CARDSTOCK')))")
-    admin = rf["products_dm_michael"]  # ADMIN with *: every value listed in the column (Qlik reduces ADMIN too)
+    pam = rf["orders_dm_pam"]
+    assert pam.groups == ["DM\\PAM"] and pam.table == "orders"
+    assert pam.predicate == "product_id IN (SELECT product_id FROM products WHERE UPPER(paper_type) IN ('COPY', 'PRINTER'))"
+    assert rf["products_dm_pam"].predicate == "UPPER(paper_type) IN ('COPY', 'PRINTER')"
+    assert rf["accounts_dm_pam"].predicate.startswith("account_id IN (SELECT account_id FROM orders WHERE product_id IN (")
+    assert rf["reviews_dm_pam"].predicate.startswith("order_id IN (SELECT order_id FROM orders WHERE product_id IN (")
+    assert rf["shippings_dm_oscar"].predicate.endswith("UPPER(paper_type) IN ('CARDSTOCK')))")
+    admin = rf["products_dm_david"]  # ADMIN with *: every value listed in the column (Qlik reduces ADMIN too)
     assert admin.predicate == "UPPER(paper_type) IN ('CARDSTOCK', 'COPY', 'KRAFT ROLL', 'MULTIPURPOSE', 'PRINTER')"
     assert all("USERID values are Qlik user ids" in r.todo for r in rf.values())
     omit = [p for p in b.permissions if p.resource_type == "Column"]
-    assert [(p.principal, p.resource_id, p.effect) for p in omit] == [("user:DM\\DWIGHT", "orders.order_contact_email", "forbid")]
+    assert [(p.principal, p.resource_id, p.effect) for p in omit] == [("user:DM\\STANLEY", "orders.order_contact_email", "forbid")]
     deny = [p for p in b.permissions if p.resource_type in ("Notebook", "Table")]
     assert {p.resource_id for p in deny} == {"sales-overview", "orders-detail", "accounts", "products", "orders", "shippings",
                                              "reviews", "monthly_targets"}
-    assert all(p.principal == "*" and p.effect == "forbid" and 'principal == User::"DM\\\\JIM"' in p.condition for p in deny)
+    assert all(p.principal == "*" and p.effect == "forbid" and 'principal == User::"DM\\\\PAM"' in p.condition for p in deny)
 
 
 def test_section_access_variants(tmp_path: Path):
@@ -265,11 +270,11 @@ def test_build_outputs(tmp_path: Path):
         "orders": "COUNT(DISTINCT order_id)", "revenue": "SUM(post_discount_revenue)",
         "completed_revenue": "SUM(CASE WHEN status = 'COMPLETED' THEN post_discount_revenue END)",
         "completed_orders": "COUNT(DISTINCT CASE WHEN UPPER(status) = 'COMPLETED' THEN order_id END)",
-        "revenue_vs_target": "1.0 * SUM(post_discount_revenue) / nullif(1000000, 0)",
+        "revenue_vs_target": "1.0 * SUM(post_discount_revenue) / nullif(2500000, 0)",
         "average_order_value": "1.0 * SUM(post_discount_revenue) / nullif(COUNT(DISTINCT order_id), 0)"}
-    (west,) = ossie["metrics"]
-    assert west["expression"]["dialects"][0]["expression"] == (
-        "SUM(CASE WHEN shippings.shipping_region <> 'West' THEN orders.post_discount_revenue END)")
+    (south,) = ossie["metrics"]
+    assert south["expression"]["dialects"][0]["expression"] == (
+        "SUM(CASE WHEN shippings.shipping_region <> 'South' THEN orders.post_discount_revenue END)")
     text = (repo / "semantic/orders.ossie.yaml").read_text()
     assert "TODO(unshackle): metric average_revenue_per_account" in text and "TODO(unshackle): metric share_of_revenue" in text
     nb = notebook_source(repo / "notebooks/sales-overview.ipynb")
@@ -280,13 +285,30 @@ def test_build_outputs(tmp_path: Path):
     cedar = (repo / "policies/qlik.cedar").read_text()
     assert 'resource in Column::"warehouse.main.orders.order_contact_email"' in cedar and cedar.count("forbid (") == 9
     script = (repo / "knowledge/dunder-mifflin-sales-load-script.md").read_text()
-    assert "LOAD * FROM [lib://unshackle-live:DataFiles/orders.parquet]" in script and "DM\\JIM" not in script  # access rows stay out
+    assert "LOAD * FROM [lib://Sales:DataFiles/orders.parquet]" in script and "DM\\PAM" not in script  # access rows stay out
     assert "status (selected values" in (repo / "knowledge/dunder-mifflin-sales-bookmarks.md").read_text()
 
 
-def test_tiles_and_metrics_return_qlik_numbers_on_duckdb(tmp_path: Path):
-    """The live test's Qlik results, recomputed from the fixture's SQL on the same data in DuckDB."""
+def dunder_mifflin() -> dict:
+    """The fixture app's tables as Qlik loads them, as pandas frames."""
     import duckdb
+
+    con = duckdb.connect()
+    t = {n: con.execute(f"select * from read_parquet('{DATA / n}.parquet')").df()
+         for n in ("accounts", "products", "orders", "shippings", "reviews")}
+    t["orders"]["post_discount_revenue"] = t["orders"]["post_discount_revenue"].astype(float)
+    t["products"]["PAPER_TYPE"] = t["products"]["paper_type"].str.upper()  # Upper(paper_type) AS PAPER_TYPE
+    return t
+
+
+def test_tiles_and_metrics_return_qlik_numbers_on_duckdb(tmp_path: Path):
+    """The generated SQL on DuckDB returns what Qlik's engine computes for the same app, worked out with pandas.
+
+    Qlik semantics: Sum() adds the field over the rows of its table; a selection keeps the rows associated with the
+    selected values; a chart dimension's values come through the association, and rows with no associated value
+    (orders without a shipping row) form a null (`-`) row; Section Access reduces every associated table."""
+    import duckdb
+    import pandas as pd
 
     from unshackle.run import notebook_queries, query
 
@@ -298,20 +320,59 @@ def test_tiles_and_metrics_return_qlik_numbers_on_duckdb(tmp_path: Path):
         con.execute(f"create table {t} as select * from read_parquet('{DATA / t}.parquet')")
     con.close()
     url = f"duckdb:///{db}"
+    dm = dunder_mifflin()
+    orders, revenue = dm["orders"], "post_discount_revenue"
+    by_product = orders.merge(dm["products"], on="product_id", how="left")
+    num = lambda frame, col: [float(v) for v in frame[col]]  # noqa: E731
+
     params, sqls = notebook_queries(repo / "notebooks/sales-overview.ipynb")
-    assert query(sqls["revenue"], params, url)["revenue"].tolist() == [pytest.approx(313685779.95)]
-    assert query(sqls["orders"], params, url)["orders"].tolist() == [3503]
+    assert num(query(sqls["revenue"], params, url), "revenue") == [pytest.approx(orders[revenue].sum())]
+    assert query(sqls["orders"], params, url)["orders"].tolist() == [pd.concat([orders.order_id, dm["reviews"].order_id]).nunique()]
+    copy = query(sqls["revenue"], {**params, "paper_type": "Copy"}, url)  # a filter pane selection
+    assert num(copy, "revenue") == [pytest.approx(by_product[by_product.paper_type == "Copy"][revenue].sum())]
+
     managers = query(sqls["revenue_by_account_manager"], {**params, "status": "COMPLETED"}, url)
-    assert dict(zip(managers["account_manager"], managers["revenue"]))["Kevin Malone"] == pytest.approx(14519934.86)
+    completed = orders[orders.status == "COMPLETED"].merge(dm["accounts"], on="account_id")
+    expected = completed.groupby("account_manager")[revenue].sum().sort_index()
+    assert managers["account_manager"].tolist() == expected.index.tolist()
+    assert num(managers, "revenue") == pytest.approx(expected.tolist())
+
     monthly = query(sqls["monthly_revenue"], params, url)
-    assert len(monthly) == 34 and monthly["completed_revenue"].sum() == pytest.approx(201016932.41)
+    month = orders.assign(month=pd.to_datetime(orders.purchased_at).dt.to_period("M").dt.to_timestamp())  # MonthStart()
+    expected = month.groupby("month").agg(revenue=(revenue, "sum"),
+                                         completed=(revenue, lambda s: s[month.loc[s.index, "status"] == "COMPLETED"].sum()))
+    assert pd.to_datetime(monthly["purchase_month"]).tolist() == expected.index.tolist()
+    assert num(monthly, "revenue") == pytest.approx(expected["revenue"].tolist())
+    assert num(monthly, "completed_revenue") == pytest.approx(expected["completed"].tolist())
+
     _, detail = notebook_queries(repo / "notebooks/orders-detail.ipynb")
+    table = query(detail["orders_by_status_and_paper_type"], {}, url)
+    expected = by_product.groupby(["status", "paper_type"]).agg(orders=("order_id", "nunique"), revenue=(revenue, "sum"))
+    assert list(zip(table["status"], table["paper_type"])) == expected.index.tolist()
+    assert table["orders"].tolist() == expected["orders"].tolist()
+    assert num(table, "revenue") == pytest.approx(expected["revenue"].tolist())
+    assert num(table, "average_order_value") == pytest.approx((expected["revenue"] / expected["orders"]).tolist())
+
     regions = query(detail["revenue_by_shipping_region"], {}, url)
-    assert regions[regions["shipping_region"].isna()]["revenue"].tolist() == [pytest.approx(73156717.21)]  # Qlik's null row
+    shipped = orders.merge(dm["shippings"], on="shipping_id", how="left")
+    expected = shipped.groupby("shipping_region", dropna=False)[revenue].sum()
+    assert {r: float(v) for r, v in zip(regions["shipping_region"].fillna("-"), regions["revenue"])} == pytest.approx(
+        {"-" if pd.isna(r) else r: v for r, v in expected.items()})
+    assert regions["shipping_region"].isna().sum() == 1  # Qlik's null row: orders without a shipping row
+
     rf = {r.name: r.predicate for r in b.row_filters}
-    assert query(f"select sum(post_discount_revenue) as r from orders where {rf['orders_dm_jim']}", {}, url)["r"].tolist() == [
-        pytest.approx(196857073.65)]
-    assert query(f"select count(*) as n from accounts where {rf['accounts_dm_jim']}", {}, url)["n"].tolist() == [179]
+    access = {"dm_david": {"CARDSTOCK", "COPY", "KRAFT ROLL", "MULTIPURPOSE", "PRINTER"}, "dm_pam": {"COPY", "PRINTER"},
+              "dm_stanley": {"MULTIPURPOSE", "KRAFT ROLL"}, "dm_oscar": {"CARDSTOCK"}}
+    for user, types in access.items():
+        visible = by_product[by_product.PAPER_TYPE.isin(types)]
+        got = query(f"select sum(post_discount_revenue) as r from orders where {rf['orders_' + user]}", {}, url)
+        assert num(got, "r") == [pytest.approx(visible[revenue].sum())], user
+        got = query(f"select count(*) as n from accounts where {rf['accounts_' + user]}", {}, url)
+        assert got["n"].tolist() == [visible.account_id.nunique()], user
+        got = query(f"select count(*) as n from reviews where {rf['reviews_' + user]}", {}, url)
+        assert got["n"].tolist() == [dm["reviews"].order_id.isin(visible.order_id).sum()], user
+        got = query(f"select count(*) as n from products where {rf['products_' + user]}", {}, url)
+        assert got["n"].tolist() == [dm["products"].PAPER_TYPE.isin(types).sum()], user
 
 
 # ------------------------------------------------------------ data model sources
@@ -335,7 +396,7 @@ def test_rest_metadata_fallback_is_conservative(tmp_path: Path):
     assert "shippings" not in [e.name for e in orders.entities]  # 3503 shipping ids, 2812 shipping rows: not provably unique
     assert {m.name for m in b.semantic_models} == {"accounts", "products", "orders", "shippings", "reviews", "monthly_targets"}
     metrics = {m.name: m for m in b.metrics}
-    assert not metrics["revenue"].todo and metrics["revenue_outside_the_west"].todo
+    assert not metrics["revenue"].todo and metrics["revenue_outside_the_south"].todo
 
 
 def test_sql_loads_and_warehouse_detection(tmp_path: Path):
@@ -500,7 +561,7 @@ def test_extract_with_fake_engine(tmp_path: Path, qlik_env: list[httpx.Request])
     assert store.get_json("apps.json")[0]["itemViews"] == {"total": 7} and store.get_json("spaces.json") == [{"id": "s1", "name": "Sales", "type": "shared"}]
     p = f"apps/{APP}/"
     for rel in ("script.qvs", "measures.json", "dimensions.json", "variables.json", "bookmarks.json", "tables-and-keys.json",
-                "objects/sheet-sales-overview-id000033.json"):
+                "objects/sheet-sales-overview-sheet01.json"):
         assert store.exists(p + rel), rel
     assert not store.exists(p + "data-metadata.json")
     assert yaml.safe_load(store.get_text(p + "connections.yml")) == {"connections": {"pg": {"type": "postgres",

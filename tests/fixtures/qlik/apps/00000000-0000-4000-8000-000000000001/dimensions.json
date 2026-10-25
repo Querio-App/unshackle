@@ -1,134 +1,128 @@
 [
   {
-    "qDim": {
-      "qFieldDefs": [
-        "shipping_region"
-      ],
-      "qFieldLabels": [
-        "Shipping region"
-      ],
-      "qGrouping": "N",
-      "qOrigin": "PROGRAM",
-      "title": "Shipping region"
-    },
     "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000005",
+      "qId": "00000000-0000-4000-8000-000000000010",
       "qType": "dimension"
     },
-    "qMetaDef": {
-      "description": "",
-      "tags": [],
-      "title": "Shipping region"
-    }
-  },
-  {
     "qDim": {
-      "qFieldDefs": [
-        "sentiment"
-      ],
-      "qFieldLabels": [
-        "Review sentiment"
-      ],
       "qGrouping": "N",
-      "qOrigin": "PROGRAM",
-      "title": "Review sentiment"
-    },
-    "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000006",
-      "qType": "dimension"
-    },
-    "qMetaDef": {
-      "description": "",
-      "tags": [],
-      "title": "Review sentiment"
-    }
-  },
-  {
-    "qDim": {
-      "qFieldDefs": [
-        "paper_type"
-      ],
-      "qFieldLabels": [
-        "Paper type"
-      ],
-      "qGrouping": "N",
-      "qOrigin": "PROGRAM",
-      "title": "Paper type"
-    },
-    "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000007",
-      "qType": "dimension"
-    },
-    "qMetaDef": {
-      "description": "",
-      "tags": [],
-      "title": "Paper type"
-    }
-  },
-  {
-    "qDim": {
       "qFieldDefs": [
         "status"
       ],
       "qFieldLabels": [
         "Order status"
       ],
-      "qGrouping": "N",
-      "qOrigin": "PROGRAM",
       "title": "Order status"
-    },
-    "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000008",
-      "qType": "dimension"
     },
     "qMetaDef": {
-      "description": "",
-      "tags": [],
-      "title": "Order status"
+      "title": "Order status",
+      "description": "COMPLETED, CANCELLED or RETURNED",
+      "tags": []
     }
   },
   {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000011",
+      "qType": "dimension"
+    },
     "qDim": {
+      "qGrouping": "N",
       "qFieldDefs": [
         "=MonthStart(purchased_at)"
       ],
       "qFieldLabels": [
         "Purchase month"
       ],
-      "qGrouping": "N",
-      "qOrigin": "PROGRAM",
       "title": "Purchase month"
-    },
-    "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000009",
-      "qType": "dimension"
     },
     "qMetaDef": {
-      "description": "",
-      "tags": [],
-      "title": "Purchase month"
+      "title": "Purchase month",
+      "description": "The month the order was placed",
+      "tags": []
     }
   },
   {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000012",
+      "qType": "dimension"
+    },
     "qDim": {
+      "qGrouping": "N",
       "qFieldDefs": [
         "account_manager"
       ],
       "qFieldLabels": [
         "Account manager"
       ],
-      "qGrouping": "N",
-      "qOrigin": "PROGRAM",
       "title": "Account manager"
-    },
-    "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000010",
-      "qType": "dimension"
     },
     "qMetaDef": {
+      "title": "Account manager",
       "description": "",
-      "tags": [],
-      "title": "Account manager"
+      "tags": []
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000013",
+      "qType": "dimension"
+    },
+    "qDim": {
+      "qGrouping": "N",
+      "qFieldDefs": [
+        "paper_type"
+      ],
+      "qFieldLabels": [
+        "Paper type"
+      ],
+      "title": "Paper type"
+    },
+    "qMetaDef": {
+      "title": "Paper type",
+      "description": "",
+      "tags": []
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000014",
+      "qType": "dimension"
+    },
+    "qDim": {
+      "qGrouping": "N",
+      "qFieldDefs": [
+        "shipping_region"
+      ],
+      "qFieldLabels": [
+        "Shipping region"
+      ],
+      "title": "Shipping region"
+    },
+    "qMetaDef": {
+      "title": "Shipping region",
+      "description": "",
+      "tags": []
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000015",
+      "qType": "dimension"
+    },
+    "qDim": {
+      "qGrouping": "N",
+      "qFieldDefs": [
+        "sentiment"
+      ],
+      "qFieldLabels": [
+        "Review sentiment"
+      ],
+      "title": "Review sentiment"
+    },
+    "qMetaDef": {
+      "title": "Review sentiment",
+      "description": "Positive for ratings of 4 and 5",
+      "tags": []
     }
   }
 ]

@@ -1,4 +1,4 @@
 {
-  "engine": "12.2969.0",
-  "url": "https://example.eu.qlikcloud.com"
+  "url": "https://example.eu.qlikcloud.com",
+  "engine": "12.0.0"
 }

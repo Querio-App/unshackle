@@ -1,32 +1,32 @@
 [
   {
-    "qDefinition": "COMPLETED",
     "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000050",
+      "qId": "00000000-0000-4000-8000-000000000030",
       "qType": "variable"
     },
+    "qName": "vCompletedStatus",
+    "qDefinition": "COMPLETED",
     "qIsScriptCreated": true,
     "qMetaDef": {},
-    "qName": "vCompletedStatus",
     "qNumberPresentation": {
       "qType": "U",
-      "qUseThou": 0,
-      "qnDec": 10
+      "qnDec": 10,
+      "qUseThou": 0
     }
   },
   {
-    "qComment": "Annual revenue target",
-    "qDefinition": "1000000",
     "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000051",
+      "qId": "00000000-0000-4000-8000-000000000031",
       "qType": "variable"
     },
-    "qMetaDef": {},
     "qName": "vRevenueTarget",
+    "qDefinition": "2500000",
+    "qComment": "Revenue target",
+    "qMetaDef": {},
     "qNumberPresentation": {
       "qType": "U",
-      "qUseThou": 0,
-      "qnDec": 10
+      "qnDec": 10,
+      "qUseThou": 0
     }
   }
 ]

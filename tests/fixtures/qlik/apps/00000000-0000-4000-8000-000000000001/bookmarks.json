@@ -1,42 +1,31 @@
 [
   {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000040",
+      "qType": "bookmark"
+    },
+    "qMetaDef": {
+      "title": "Completed orders",
+      "description": "Only completed orders"
+    },
     "qBookmark": {
       "qStateData": [
         {
+          "qStateName": "$",
           "qFieldItems": [
             {
               "qDef": {
                 "qName": "status",
                 "qType": "PRESENT"
               },
-              "qExcludedValues": [],
-              "qExcludedValuesCount": 0,
-              "qSelectInfo": {
-                "qContinuousRangeInfo": [],
-                "qNumberFormat": {
-                  "qType": "U",
-                  "qUseThou": 0,
-                  "qnDec": 10
-                },
-                "qRangeHi": "NaN",
-                "qRangeInfo": [],
-                "qRangeLo": "NaN"
-              },
               "qValues": [],
-              "qValuesCount": 1
+              "qValuesCount": 1,
+              "qExcludedValues": [],
+              "qExcludedValuesCount": 0
             }
-          ],
-          "qStateName": "$"
+          ]
         }
       ]
-    },
-    "qInfo": {
-      "qId": "00000000-0000-4000-8000-000000000004",
-      "qType": "bookmark"
-    },
-    "qMetaDef": {
-      "description": "",
-      "title": "Completed orders"
     }
   }
 ]
