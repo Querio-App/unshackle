@@ -17,6 +17,7 @@ TOOLS = {
     "superset": "unshackle.sources.superset:SupersetSource",
     "redash": "unshackle.sources.redash:RedashSource",
     "quicksight": "unshackle.sources.quicksight:QuickSightSource",
+    "qlik": "unshackle.sources.qlik:QlikSource",
 }
 
 

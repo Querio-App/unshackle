@@ -1,0 +1,218 @@
+[
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000011",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Count({<status={$(vCompletedStatus)}>} DISTINCT order_id)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Completed orders",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Completed orders (unshackle live test)",
+      "tags": [],
+      "title": "Completed orders"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000012",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Count(DISTINCT order_id)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Orders",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Orders (unshackle live test)",
+      "tags": [],
+      "title": "Orders"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000013",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Sum(post_discount_revenue) / Sum(TOTAL post_discount_revenue)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Share of revenue",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Share of revenue (unshackle live test)",
+      "tags": [],
+      "title": "Share of revenue"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000014",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Sum(post_discount_revenue)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Revenue",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Revenue (unshackle live test)",
+      "tags": [],
+      "title": "Revenue"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000015",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Sum({<shipping_region-={'West'}>} post_discount_revenue)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Revenue outside the West",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Revenue outside the West (unshackle live test)",
+      "tags": [],
+      "title": "Revenue outside the West"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000016",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Sum({<status={'COMPLETED'}>} post_discount_revenue)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Completed revenue",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Completed revenue (unshackle live test)",
+      "tags": [],
+      "title": "Completed revenue"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000017",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Avg(Aggr(Sum(post_discount_revenue), account_id))",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Average revenue per account",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Average revenue per account (unshackle live test)",
+      "tags": [],
+      "title": "Average revenue per account"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000018",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Sum(post_discount_revenue) / $(vRevenueTarget)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Revenue vs target",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Revenue vs target (unshackle live test)",
+      "tags": [],
+      "title": "Revenue vs target"
+    }
+  },
+  {
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000019",
+      "qType": "measure"
+    },
+    "qMeasure": {
+      "qActiveExpression": 0,
+      "qDef": "Sum(post_discount_revenue) / Count(DISTINCT order_id)",
+      "qExpressions": [],
+      "qGrouping": "N",
+      "qLabel": "Average order value",
+      "qNumFormat": {
+        "qType": "U",
+        "qUseThou": 0,
+        "qnDec": 10
+      },
+      "qOrigin": "PROGRAM"
+    },
+    "qMetaDef": {
+      "description": "Average order value (unshackle live test)",
+      "tags": [],
+      "title": "Average order value"
+    }
+  }
+]

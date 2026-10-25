@@ -10,7 +10,7 @@ You're running inside the customer's repo with `unshackle` installed. Load
 
 | Skill | Use it for |
 | --- | --- |
-| `skills/source-<tool>/SKILL.md` | Access, what's automatic, tool-specific translation (looker, lightdash, omni, hex, sigma, thoughtspot, powerbi, tableau, metabase, superset, redash, quicksight) |
+| `skills/source-<tool>/SKILL.md` | Access, what's automatic, tool-specific translation (looker, lightdash, omni, hex, sigma, thoughtspot, powerbi, tableau, metabase, superset, redash, quicksight, qlik) |
 | `skills/translate-metrics/SKILL.md` | Calculations -> Apache Ossie (plus MetricFlow in dbt projects) or SQL models |
 | `skills/translate-dashboards/SKILL.md` | Finishing notebook tiles and Altair charts |
 | `skills/translate-permissions/SKILL.md` | BI security -> Cedar + row filters |

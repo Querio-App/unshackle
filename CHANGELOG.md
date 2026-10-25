@@ -6,6 +6,10 @@
 - Redash: multi-value enum and query dropdown parameters in `IN ({{ p }})` translate to `IN :p` with a
   list default (bound with SQLAlchemy's expanding parameters); static widget values with several values are
   joined as Redash does. Parameters spliced as raw SQL or inside a longer string get TODOs that say what to do.
+- Qlik Sense source (Qlik Cloud): `unshackle extract qlik` through the engine (QIX) and REST APIs with an
+  OAuth machine-to-machine client or an API key, `unshackle import qlik` for `qlik app unbuild` folders. Plain
+  script loads, master measures (set modifiers with listed values, ratios, variables), sheets and inline
+  Section Access translate; the rest of the load script, Aggr/TOTAL and searches are TODOs. Verified live.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.

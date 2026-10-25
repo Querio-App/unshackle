@@ -1,0 +1,134 @@
+[
+  {
+    "qDim": {
+      "qFieldDefs": [
+        "shipping_region"
+      ],
+      "qFieldLabels": [
+        "Shipping region"
+      ],
+      "qGrouping": "N",
+      "qOrigin": "PROGRAM",
+      "title": "Shipping region"
+    },
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000005",
+      "qType": "dimension"
+    },
+    "qMetaDef": {
+      "description": "",
+      "tags": [],
+      "title": "Shipping region"
+    }
+  },
+  {
+    "qDim": {
+      "qFieldDefs": [
+        "sentiment"
+      ],
+      "qFieldLabels": [
+        "Review sentiment"
+      ],
+      "qGrouping": "N",
+      "qOrigin": "PROGRAM",
+      "title": "Review sentiment"
+    },
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000006",
+      "qType": "dimension"
+    },
+    "qMetaDef": {
+      "description": "",
+      "tags": [],
+      "title": "Review sentiment"
+    }
+  },
+  {
+    "qDim": {
+      "qFieldDefs": [
+        "paper_type"
+      ],
+      "qFieldLabels": [
+        "Paper type"
+      ],
+      "qGrouping": "N",
+      "qOrigin": "PROGRAM",
+      "title": "Paper type"
+    },
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000007",
+      "qType": "dimension"
+    },
+    "qMetaDef": {
+      "description": "",
+      "tags": [],
+      "title": "Paper type"
+    }
+  },
+  {
+    "qDim": {
+      "qFieldDefs": [
+        "status"
+      ],
+      "qFieldLabels": [
+        "Order status"
+      ],
+      "qGrouping": "N",
+      "qOrigin": "PROGRAM",
+      "title": "Order status"
+    },
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000008",
+      "qType": "dimension"
+    },
+    "qMetaDef": {
+      "description": "",
+      "tags": [],
+      "title": "Order status"
+    }
+  },
+  {
+    "qDim": {
+      "qFieldDefs": [
+        "=MonthStart(purchased_at)"
+      ],
+      "qFieldLabels": [
+        "Purchase month"
+      ],
+      "qGrouping": "N",
+      "qOrigin": "PROGRAM",
+      "title": "Purchase month"
+    },
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000009",
+      "qType": "dimension"
+    },
+    "qMetaDef": {
+      "description": "",
+      "tags": [],
+      "title": "Purchase month"
+    }
+  },
+  {
+    "qDim": {
+      "qFieldDefs": [
+        "account_manager"
+      ],
+      "qFieldLabels": [
+        "Account manager"
+      ],
+      "qGrouping": "N",
+      "qOrigin": "PROGRAM",
+      "title": "Account manager"
+    },
+    "qInfo": {
+      "qId": "00000000-0000-4000-8000-000000000010",
+      "qType": "dimension"
+    },
+    "qMetaDef": {
+      "description": "",
+      "tags": [],
+      "title": "Account manager"
+    }
+  }
+]

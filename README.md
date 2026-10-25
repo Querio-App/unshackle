@@ -22,6 +22,7 @@ Every tool can be extracted through its API. To import downloaded files instead,
 | Apache Superset | **Live:** Superset in Docker; 9 parity checks |
 | Redash | **Live:** Redash in Docker; 6 parity checks |
 | Amazon QuickSight | **Live:** a QuickSight account; the migrated SQL is checked on Athena (QuickSight has no API for chart data) |
+| Qlik Sense | **Live:** a Qlik Cloud tenant; 14 parity checks against Qlik's engine |
 | Looker | **Real projects:** 18 open-source LookML projects; no live instance |
 | Power BI | **Real projects:** published Power BI projects; no live instance |
 | Omni | Saved exports |
@@ -95,6 +96,7 @@ unshackle build tableau
 | Omni | a model's YAML folder (from Git sync), one folder per model |
 | ThoughtSpot | `.tml` files or the `.zip` from Export TML |
 | Hex | project YAML (Git export) and `hex context semantic-project pull` output |
+| Qlik Sense | a `qlik app unbuild` folder per app (add the app's data metadata as `data-metadata.json` for `LOAD *` columns and joins) |
 | Sigma | not supported: Sigma has no download of workbook or data model definitions |
 
 `import` replaces `migration/raw/<tool>/` with the files, unpacking `.zip` downloads,

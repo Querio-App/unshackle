@@ -1,0 +1,57 @@
+///$tab Main
+SET ThousandSep=',';
+SET DecimalSep='.';
+SET DateFormat='YYYY-MM-DD';
+SET TimestampFormat='YYYY-MM-DD hh:mm:ss[.fff]';
+SET vCompletedStatus = 'COMPLETED';
+
+///$tab Section
+Section Access;
+LOAD * INLINE [
+ACCESS, USERID, PAPER_TYPE, OMIT
+ADMIN, DM\MICHAEL, *,
+USER, DM\JIM, COPY,
+USER, DM\JIM, PRINTER,
+USER, DM\DWIGHT, MULTIPURPOSE, order_contact_email
+USER, DM\DWIGHT, KRAFT ROLL, order_contact_email
+USER, DM\ANGELA, CARDSTOCK,
+];
+Section Application;
+
+///$tab Data
+accounts:
+LOAD account_id, account_name, business_size, payment_cycle, account_manager
+FROM [lib://unshackle-live:DataFiles/accounts.parquet] (parquet);
+
+products:
+LOAD *, Upper(paper_type) AS PAPER_TYPE
+FROM [lib://unshackle-live:DataFiles/products.parquet] (parquet);
+
+orders:
+LOAD * FROM [lib://unshackle-live:DataFiles/orders.parquet] (parquet);
+
+shippings:
+LOAD
+    shipping_id,
+    shipping_address,
+    shipping_city,
+    shipping_state,
+    shipping_zip,
+    shipping_region,
+    shipping_latitude,
+    shipping_longitude,
+    shipping_mode,
+    shipping_cost,
+    days_to_ship
+FROM [lib://unshackle-live:DataFiles/shippings.parquet] (parquet);
+
+reviews:
+LOAD review_id, order_id, review, reviewed_at, rating,
+    If(rating >= 4, 'Positive', 'Negative') AS sentiment
+FROM [lib://unshackle-live:DataFiles/reviews.parquet] (parquet);
+
+// Monthly targets: 10% over what was sold, aggregated in the script.
+monthly_targets:
+LOAD MonthStart(purchased_at) AS target_month, Sum(post_discount_revenue) * 1.1 AS revenue_target
+RESIDENT orders
+GROUP BY MonthStart(purchased_at);

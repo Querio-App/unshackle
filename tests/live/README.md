@@ -20,6 +20,7 @@ Every test uses the same data: the fictional Dunder Mifflin paper company in
 | `test_superset_live.py` | Superset 6.1.0 (built with the Postgres driver); datasets with metrics, 5 charts, a dashboard with a native filter, a role, RLS; 9 parity cases | ~40 s |
 | `test_redash_live.py` | Redash 26.9.0, its metadata Postgres and Redis; 4 parameterized queries, a dashboard; 6 parity cases | ~30 s |
 | `test_quicksight_live.py` | Amazon QuickSight in an AWS account (not Docker), Athena over the dataset in S3; the fixture's data source, 3 datasets, analysis and dashboard; 13 parity cases | ~2 min |
+| `test_qlik_live.py` | a Qlik Cloud tenant (not Docker): data files, an app with a load script and Section Access, master items, 2 sheets; 14 parity cases | ~20 s |
 
 The first run pulls images (Lightdash is a ~3.2 GB download, ~15 GB unpacked) and, through
 `npx`, the Lightdash CLI. The Superset image is built locally from `superset/Dockerfile`.
@@ -55,6 +56,8 @@ the next starts, so they share the host ports.
 | `UNSHACKLE_LIVE_LIGHTDASH_VERSION` | `3.23.1` | image tag and CLI version (keep them equal) |
 | `UNSHACKLE_LIVE_LIGHTDASH_CLI` | `npx --yes @lightdash/cli@<version>` | a preinstalled `lightdash` binary |
 | `UNSHACKLE_LIVE_COMPOSE` | `docker-compose`, else `docker compose` | compose command |
+| `QLIK_TENANT_URL` | unset | the Qlik Cloud tenant; the Qlik test is skipped without it |
+| `QLIK_CLIENT_ID`, `QLIK_CLIENT_SECRET` or `QLIK_API_KEY` | unset | Qlik credentials (skills/source-qlik) |
 
 Passwords, secret keys and API keys are generated per run for the throwaway containers
 (the Metabase, Superset and Redash admin passwords are fixed test values); nothing real is
@@ -127,6 +130,26 @@ table, combo and bar tiles, with and without the Status parameter, and four Ossi
 So they check the SQL unshackle generates from the real export, not QuickSight's rendering of
 the visuals. The cost is a few cents of Athena and S3; the content stays inside the QuickSight
 trial.
+
+## Qlik notes
+
+- Qlik Sense has no container image, so the test runs against a Qlik Cloud tenant (a
+  trial works) and only the warehouse runs in Docker. It needs an OAuth
+  machine-to-machine client (Trusted consent method) or an API key whose user can
+  create spaces, data files and apps (TenantAdmin plus a content creator role).
+- `tests/live/qlik/bootstrap.py` creates everything in one new shared space,
+  `unshackle-live` (the tenant must not have one): the five Parquet files as data
+  files, the app "Dunder Mifflin sales" with its script, master items, sheets and a
+  bookmark, then reloads it. Section Access keeps the calling bot user as ADMIN with
+  `*`, so the app stays readable after the reload.
+- Teardown always runs (`try`/`finally`): it deletes the app, the data files and the
+  space, and the test fails if anything is left. To clean up by hand, delete the
+  `unshackle-live` space's app and files, then the space, in the hub or with
+  `DELETE /api/v1/apps/{id}`, `/api/v1/data-files/{id}` and `/api/v1/spaces/{id}`.
+- Source numbers come from Qlik's engine (`GetHyperCubeData` on each chart, a
+  selection for the filtered case, session hypercubes for metrics), not from SQL.
+- `tests/fixtures/qlik/` is the raw extract from a live run, with the tenant, ids and
+  users replaced (see its README).
 
 ## Lightdash notes
 

@@ -175,7 +175,7 @@ def test_crlf_sources_rebuild_idempotently(tmp_path: Path):
     assert again.writes.kept_hand_edits == [] and again.writes.written == []
 
 
-@pytest.mark.parametrize("tool", ["tableau", "powerbi", "lightdash", "looker"])
+@pytest.mark.parametrize("tool", ["tableau", "powerbi", "lightdash", "looker", "qlik"])
 def test_rebuild_twice_is_a_no_op(tool: str, tmp_path: Path):
     store = _seed(tmp_path, tool)
     src = get_source(tool)
@@ -235,7 +235,7 @@ def test_network_errors_are_clean_messages(tmp_path: Path, monkeypatch):
 
 
 def test_cedar_ids_are_canonical(tmp_path: Path):
-    for tool in ("lightdash", "sigma", "omni", "looker"):
+    for tool in ("lightdash", "sigma", "omni", "looker", "qlik"):
         repo = tmp_path / tool
         store = _seed(repo, tool)
         build.apply(get_source(tool).parse(store), repo)
@@ -448,7 +448,7 @@ def test_new_sources_detect_postgres(tmp_path: Path, tool: str):
     assert get_source(tool).parse(_seed(tmp_path, tool)).warehouse == "postgres"
 
 
-@pytest.mark.parametrize("tool", ["metabase", "superset", "powerbi"])
+@pytest.mark.parametrize("tool", ["metabase", "superset", "powerbi", "qlik"])
 def test_optional_filter_binds_are_typed_before_the_null_check(tmp_path: Path, tool: str):
     """`(:p IS NULL OR col = :p)` fails on Postgres with server-side binding (psycopg 3): the type of
     :p can't be determined from `IS NULL`. The comparison comes first so the parameter takes the column's type."""
