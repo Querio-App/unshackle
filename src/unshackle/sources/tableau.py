@@ -645,6 +645,22 @@ def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     return "".join(clean).strip(), "".join(code), "".join(bare), [c for c in comments if c]
 
 
+def _nested_fixed(text: str) -> tuple[str, str, str] | None:
+    """{FIXED [a] : AGG({FIXED [b] : ...})} -> (agg, the inner FIXED's text, its body); None for any other nesting."""
+    m = LOD_PARTS.fullmatch(text)
+    if m is None or m.group(1).upper() != "FIXED":
+        return None
+    body = re.fullmatch(r"\s*(\w+)\s*\((.*)\)\s*", m.group(3), re.S)
+    if body is None or body.group(1).lower() not in TABLEAU_AGGS or TABLEAU_AGGS[body.group(1).lower()][2] is not None:
+        return None
+    inner = body.group(2).strip()
+    spans = lod_spans(inner)
+    im = LOD_PARTS.fullmatch(inner)
+    if spans != [(0, len(inner), False)] or im is None or im.group(1).upper() != "FIXED":
+        return None
+    return body.group(1).lower(), inner, im.group(3)
+
+
 def lod_spans(clean: str) -> list[tuple[int, int, bool]]:
     """Top-level { ... } expressions in a comment-free formula: (start, end, has a nested { }). Braces in
     strings and field names don't count."""
@@ -915,12 +931,17 @@ class _Lod:
 class _Special:
     """A tile measure that is not one aggregate over the sheet's rows: an aggregated LOD."""
 
-    kind: str  # fixed | include | exclude
+    kind: str  # fixed | include | exclude | expr
     outer: str  # aggregation applied in the view (MetricFlow name)
     lod: _Lod | None = None  # fixed: the grain and its column
     col: str = ""
     inner: str = ""  # include / exclude: aggregate SQL over the rows
     dims: list[str] = field(default_factory=list)  # include: SQL of the added dimensions; exclude: excluded field names
+    value: str = ""  # fixed: SQL over the grain's columns (qualified) when it is not just the column, e.g. a calc over it
+    # expr: SQL with a placeholder per aggregate, each computed at its own level: ("row", aggregate SQL over the
+    # sheet's rows) or ("fixed", _Special of a FIXED aggregate)
+    expr: str = ""
+    parts: list[tuple[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -1367,6 +1388,17 @@ class _Parser:
         self.owner[name] = model.key
         model.elements.add(name)
 
+    def _grain_metric(self, lm: _Model, ds: TDatasource, f: TField, agg: str, expr: str, src: str, note: str = "") -> str:
+        """A measure and metric on a FIXED grain's model (once per name); returns the name."""
+        name = self._namer(lm, f.label)
+        if not self._exists(lm, name, ds, f):
+            lm.sm.measures.append(Measure(name, agg, "" if expr == name else expr, f.description, f.label))
+            self.b.metrics.append(Metric(name, label=f.label, description=" ".join(x for x in (f.description, note) if x), measure=name,
+                                         semantic_model=lm.sm.name, source_ref=src))
+            self.metric_sql[name] = AGG_SQL[agg].format(expr)
+            self._register(lm, name)
+        return name
+
     def _base_fields(self, ds: TDatasource) -> None:
         for f in ds.fields.values():
             if f.is_calc or f.param or f.local in INTERNAL_FIELDS or not f.remote:
@@ -1606,7 +1638,7 @@ class _Parser:
                  stack: tuple) -> _Calc | str:
         """LOD expressions in a formula. A formula that is one FIXED LOD becomes a column of the grain's SQL model; FIXED
         LODs inside a formula are replaced by references to their columns (returns the new formula); anything else is TODO."""
-        if any(nested for *_, nested in spans):
+        if any(nested and _nested_fixed(clean[a:b]) is None for a, b, nested in spans):
             return self._todo(ds, f, model, "nested LOD expressions: build the inner one first (a FIXED grain as a SQL model), then the outer one; see skills/translate-metrics")
         kinds = [(m.group(1).upper() if (m := LOD.match(clean[a:b])) else "") for a, b, _ in spans]
         if "" in kinds:
@@ -1655,7 +1687,8 @@ class _Parser:
         if m is None:
             raise ax.FormulaError("not a FIXED LOD")
         dims = [_unesc(d) for d in BRACKETED.findall(m.group(2))]
-        node = parse_formula(m.group(3).strip())
+        nested = _nested_fixed(text)
+        node = parse_formula("1" if nested else m.group(3).strip())
         for name in dims + ax.refs(node):
             g = ds.fields.get(name)
             if g is None:
@@ -1664,17 +1697,35 @@ class _Parser:
                 dep = self._calc(ds, g, stack)
                 if dep.kind not in ("row", "agg") or dep.lod:
                     raise ax.FormulaError(f"[{g.label}] is not a translated row-level field")
+        inner: tuple[_Lod, str] | None = None
+        if nested:
+            inner = self._fixed(ds, nested[1], _name(readable(nested[2], ds.fields))[:40], stack)
         from_sql, cte, joined = self._rows(ds)
         prev, self._joined = self._joined, (ds if joined else None)
         try:
             keys = [(self._row_ref(ds, d), _name(ds.fields[d].label)) for d in dims]
-            cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+            if inner is None:
+                cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+            else:
+                inner_keys = [self._row_ref(ds, d) for d in inner[0].dims]
         finally:
             self._joined = prev
-        if cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
-            raise ax.FormulaError("the expression after ':' is not one aggregate")
         if len({a for _, a in keys}) != len(keys):
             raise ax.FormulaError("two FIXED dimensions have the same name")
+        if inner is not None:
+            # {FIXED [a] : AGG({FIXED [b] : ...})}: Tableau takes the inner value once per distinct (a, b) of the
+            # datasource's rows, then aggregates per a.
+            lod_in, col_in = inner
+            domain = ", ".join([f"{s} as {a}" for s, a in keys] + [f"{k} as lod_key_{j}" for j, k in enumerate(inner_keys, 1)])
+            on = " and ".join(f"d.lod_key_{j} is not distinct from {lod_in.name}.{a}" for j, (_, a) in enumerate(lod_in.keys, 1))
+            from_sql = (f"(\nselect distinct {domain}\nfrom {from_sql}\n) as d\n"
+                        f"left join (\n{lod_in.select()}\n) as {lod_in.name} on {on}")
+            keys = [(f"d.{a}", a) for _, a in keys]
+            agg_sql = AGG_SQL[TABLEAU_AGGS[nested[0]][0]].format(f"{lod_in.name}.{_ident(col_in)}")  # type: ignore[index]
+        elif cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
+            raise ax.FormulaError("the expression after ':' is not one aggregate")
+        else:
+            agg_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
         key = (from_sql, cte, tuple(k for k, _ in keys))
         lod = self.lods.get(key)
         if lod is None:
@@ -1688,7 +1739,6 @@ class _Parser:
             self.lod_names[name] = lod
             if len(dims) == 1:
                 self._lod_model(ds, lod, ds.fields[dims[0]])
-        agg_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
         col = next((a for a, s in lod.cols.items() if s == agg_sql), "")
         if not col:
             used = set(lod.cols) | {a for _, a in keys}
@@ -1739,13 +1789,7 @@ class _Parser:
             return _Calc("lod", sql=col, lod=lod.name, todo=msg)
         src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
         if f.role == "measure" and f.datatype in NUMERIC:
-            name = self._namer(lm, f.label)
-            if not self._exists(lm, name, ds, f):
-                agg = DEFAULT_AGG.get(f.default_agg, "sum")
-                lm.sm.measures.append(Measure(name, agg, "" if col == name else col, f.description, f.label))
-                self.b.metrics.append(Metric(name, label=f.label, description=f.description, measure=name, semantic_model=lm.sm.name, source_ref=src))
-                self.metric_sql[name] = AGG_SQL[agg].format(col)
-                self._register(lm, name)
+            name = self._grain_metric(lm, ds, f, DEFAULT_AGG.get(f.default_agg, "sum"), col, src)
             return _Calc("lod", sql=col, lod=lod.name, metric=name)
         name = _name(f.label)
         if name != lm.sm.name and not self._exists(lm, name, ds, f):
@@ -1758,12 +1802,17 @@ class _Parser:
     def _lod_row(self, ds: TDatasource, f: TField, model: _Model, lod: _Lod, node: ax.Node, sql: str) -> _Calc:
         """A row-level calc over FIXED values of one grain: a dimension of the grain's semantic model."""
         lm = lod.model
-        if lm is None or (f.role == "measure" and f.datatype in NUMERIC):
-            msg = ("a measure computed from FIXED LOD values: Tableau aggregates it per view mark, check whether it weighs rows or LOD groups "
-                   "before making it a metric; tiles that show it as a dimension work" if lm is not None else
-                   "uses a FIXED LOD on several dimensions; notebook tiles join it in their SQL")
+        if lm is None:
+            msg = "uses a FIXED LOD on several dimensions; notebook tiles join it in their SQL"
             self._todo(ds, f, model, f"{msg}; see skills/translate-metrics")
             return _Calc("row", sql=sql, lod=lod.name, todo=msg)
+        if f.role == "measure" and f.datatype in NUMERIC:
+            # Tableau aggregates it once per distinct combination of the view's and the FIXED dimensions, as it does the
+            # FIXED value itself: a measure on the grain's model, one row per FIXED key.
+            keys = ", ".join(a for _, a in lod.keys)
+            name = self._grain_metric(lm, ds, f, DEFAULT_AGG.get(f.default_agg, "sum"), sql, f"{ds.src} datasource: {ds.caption} field: {f.label}",
+                                      f"Tableau aggregates it over the distinct combinations of a view's dimensions and the FIXED dimensions ({keys}), not over rows.")
+            return _Calc("row", sql=sql, lod=lod.name, metric=name)
         name = _name(f.label)
         if name != lm.sm.name and not self._exists(lm, name, ds, f):
             if f.datatype in TIME_TYPES:
@@ -1785,16 +1834,8 @@ class _Parser:
                 msg = "aggregates a FIXED LOD on several dimensions: notebook tiles compute it in their SQL; see skills/translate-metrics"
                 self._todo(ds, f, model, msg, True)
                 return _Calc("agg", lod=lod.name, todo=msg)
-            name = self._namer(lm, f.label)
-            if not self._exists(lm, name, ds, f):
-                lm.sm.measures.append(Measure(name, agg, "" if col == name else col, f.description, f.label))
-                self.b.metrics.append(Metric(
-                    name, label=f.label, measure=name, semantic_model=lm.sm.name, source_ref=src,
-                    description=" ".join(x for x in (f.description, f"Tableau aggregates the FIXED values over the distinct combinations of a "
-                                                                      f"view's dimensions and the FIXED dimensions ({', '.join(a for _, a in lod.keys)}).") if x),
-                ))
-                self.metric_sql[name] = AGG_SQL[agg].format(col)
-                self._register(lm, name)
+            name = self._grain_metric(lm, ds, f, agg, col, src, f"Tableau aggregates the FIXED values over the distinct combinations of a "
+                                                                f"view's dimensions and the FIXED dimensions ({', '.join(a for _, a in lod.keys)}).")
             return _Calc("agg", metric=name, lod=lod.name)
         if mixed:
             msg = ("combines row fields and FIXED LOD values in an aggregate: notebook tiles compute row-level mixes over the rows joined "
@@ -2099,6 +2140,11 @@ class _Parser:
                 lod, col = self.lod_fields[key]
                 return _Special("fixed", DERIV_AGG[d], lod, col)
             return None
+        if calc.kind == "row" and calc.lod not in ("", "mixed") and (d in DERIV_AGG or d == "usr"):
+            # A row calc over one grain's FIXED values, aggregated: Tableau takes one value per distinct combination of the
+            # view's and the FIXED dimensions, as for the FIXED value itself.
+            outer = DERIV_AGG[d] if d in DERIV_AGG else DEFAULT_AGG.get(f.default_agg, "sum")
+            return _Special("fixed", outer, self.lod_names[calc.lod], value=self._grain_sql(ds, lambda: self._row_sql(ds, f)))
         if calc.kind == "agg" and calc.lod:
             try:
                 node: ax.Node | None = parse_formula(self.prepped.get(key) or scan_formula(f.formula or "")[0])
@@ -2107,6 +2153,10 @@ class _Parser:
                 hit, node = None, None
             if hit is not None and isinstance(node, ax.Call):
                 return _Special("fixed", TABLEAU_AGGS[node.name][0], hit[0], hit[1])
+            if node is not None:
+                expr = self._lod_expr(ds, f, node)
+                if expr is not None:
+                    return expr
             if calc.lod == "mixed":
                 return None  # an aggregate over the rows joined to the FIXED grain: _agg_sql
             raise _NoSQL(f"[{f.label}] is not translated yet: {calc.todo}")
@@ -2136,6 +2186,61 @@ class _Parser:
                 raise _NoSQL(f"[{f.label}] excludes unknown field [{x}]")
             locals_.append(g.local)
         return _Special("exclude", outer, inner=inner_sql, dims=locals_)
+
+    def _grain_sql(self, ds: TDatasource, render: Any) -> str:
+        """SQL over a FIXED grain's columns, qualified with the grain's name, without joining the grain to the sheet's rows."""
+        ctx = self._sheet
+        self._sheet = _SheetCtx(ctx.ds if ctx is not None else ds)
+        try:
+            return render()
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"FIXED values not translated for this sheet ({exc})") from None
+        finally:
+            self._sheet = ctx
+
+    def _lod_expr(self, ds: TDatasource, f: TField, node: ax.Node) -> _Special | None:
+        """An aggregate expression with aggregates of FIXED values inside (SUM([Sales]) / SUM([Account Revenue])): each
+        aggregate at its own level (over the sheet's rows, or once per distinct view and FIXED dimensions), then the
+        expression over them per mark. None if it has no such aggregate."""
+        parts: list[tuple[str, Any]] = []
+
+        def part(call: ax.Call) -> ax.Node:
+            if call.name not in TABLEAU_AGGS or len(call.args) != 1 or TABLEAU_AGGS[call.name][2] is not None:
+                raise _NoSQL(f"[{f.label}]: {call.name.upper()}() in an expression with FIXED aggregates; write it in the tile SQL")
+            homes = {self._home(ds, r) for r in ax.refs(call)}
+            agg = TABLEAU_AGGS[call.name][0]
+            if len(homes) == 1 and not homes & {"", "mixed"}:
+                lod = self.lod_names[next(iter(homes))]
+                value = self._grain_sql(ds, lambda: ax.strip_outer(ax.to_sql(call.args[0], lambda r: self._row_ref(ds, r))))
+                parts.append(("fixed", _Special("fixed", agg, lod, value=value)))
+            else:
+                try:
+                    parts.append(("row", AGG_SQL[agg].format(ax.strip_outer(ax.to_sql(call.args[0], lambda r: self._row_ref(ds, r))))))
+                except ax.FormulaError as exc:
+                    raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
+            return ax.Ref(f"{LOD_REF}part_{len(parts) - 1}")
+
+        def walk(n: ax.Node) -> ax.Node:
+            if isinstance(n, ax.Call) and n.name in TABLEAU_AGGS:
+                return part(n)
+            if isinstance(n, ax.Call):
+                return ax.Call(n.name, [walk(a) for a in n.args])
+            if isinstance(n, ax.BinOp):
+                return ax.BinOp(n.op, walk(n.left), walk(n.right))
+            if isinstance(n, ax.Unary):
+                return ax.Unary(n.op, walk(n.operand))
+            if isinstance(n, ax.Ref):
+                raise _NoSQL(f"[{f.label}]: a field outside an aggregate in an expression with FIXED aggregates; write it in the tile SQL")
+            return n
+
+        shape = walk(node)
+        if not any(kind == "fixed" for kind, _ in parts):
+            return None
+        try:
+            expr = ax.strip_outer(ax.to_sql(shape, lambda r: "{" + r[len(LOD_REF) + 5:] + "}"))
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
+        return _Special("expr", "", expr=expr, parts=parts)
 
     def _agg_sql(self, ds: TDatasource, f: TField, calc: _Calc) -> str:
         """An aggregate calc's SQL in this sheet: re-derived when the sheet's columns are qualified or FIXED values are joined."""
@@ -2501,7 +2606,8 @@ class _Parser:
         dims = [c for c in columns if not c[3]]
         specials = [(c, ctx.specials[c[0].instance]) for c in columns if c[3] and c[0].instance in ctx.specials]
         plain = [c for c in columns if c[3] and c[0].instance not in ctx.specials]
-        lods = list(dict.fromkeys(ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None]))
+        fixed_parts = [p for _, sp in specials for kind, p in sp.parts if kind == "fixed"]
+        lods = list(dict.fromkeys(ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None] + [p.lod for p in fixed_parts]))
         ctes = ([("custom_sql", cte)] if cte else []) + [(lod.name, lod.select()) for lod in lods]
         rows = from_sql + "".join(f"\nleft join {lod.name} on {self._lod_on(lod)}" for lod in ctx.row_lods)
         where_sql = ("\nwhere " + "\n  and ".join(where)) if where else ""
@@ -2526,8 +2632,18 @@ class _Parser:
         else:
             dim_items = [item(c).strip() for c in dims]
             joins: list[tuple[str, list[tuple]]] = []
-            if dims or plain:
-                base = ["select " + ", ".join(dim_items + [item(c).strip() for c in plain]), f"from {rows}{where_sql}{group(len(dims))}"]
+            # aggregates over the sheet's rows inside expression specials: hidden columns of the base CTE
+            hidden: dict[tuple[int, int], str] = {}
+            hidden_items: list[str] = []
+            for i, (c, sp) in enumerate(specials, 1):
+                for j, (kind, p) in enumerate(sp.parts):
+                    if kind == "row":
+                        hidden[(i, j)] = f"{c[1]}_part_{j + 1}"
+                        hidden_items.append(f"{p} as {hidden[(i, j)]}")
+            has_base = bool(dims or plain or hidden)
+            if has_base:
+                base = ["select " + ", ".join(dim_items + [item(c).strip() for c in plain] + hidden_items),
+                        f"from {rows}{where_sql}{group(len(dims))}"]
                 if having:
                     base.append("having " + "\n  and ".join(having))
                 if order:
@@ -2538,18 +2654,35 @@ class _Parser:
             elif having or limit:
                 raise _NoSQL("filters on aggregates with an aggregated LOD: add them to the tile SQL")
             source: dict[int, str] = {}
+            picks_sql: dict[int, str] = {}
+
+            def fixed_cte(name: str, sp: _Special, alias: str) -> None:
+                """One value per distinct combination of the sheet's dimensions and the FIXED dimensions (from the filtered
+                rows), the grain joined on the FIXED dimensions, then the view's aggregate per mark."""
+                assert sp.lod is not None
+                keys = self._lod_keys(sp.lod)
+                domain = (f"select distinct {', '.join(dim_items + [f'{k} as lod_key_{j}' for j, k in enumerate(keys, 1)])}\n"
+                          f"from {rows}{where_sql}")
+                on = " and ".join(f"d.lod_key_{j} is not distinct from {sp.lod.name}.{a}" for j, (_, a) in enumerate(sp.lod.keys, 1))
+                value = AGG_SQL[sp.outer].format(sp.value or f"{sp.lod.name}.{_ident(sp.col)}")
+                ctes.append((name, f"select {', '.join([f'd.{d[1]}' for d in dims] + [f'{value} as {alias}'])}\n"
+                                   f"from (\n{domain}\n) as d\nleft join {sp.lod.name} on {on}{group(len(dims))}"))
+                joins.append((name, dims))
+
             for i, (c, sp) in enumerate(specials, 1):
                 name = f"lod_measure_{i}"
                 source[id(c)] = name
                 if sp.kind == "fixed" and sp.lod is not None:
-                    keys = self._lod_keys(sp.lod)
-                    domain = (f"select distinct {', '.join(dim_items + [f'{k} as lod_key_{j}' for j, k in enumerate(keys, 1)])}\n"
-                              f"from {rows}{where_sql}")
-                    on = " and ".join(f"d.lod_key_{j} is not distinct from {sp.lod.name}.{alias}" for j, (_, alias) in enumerate(sp.lod.keys, 1))
-                    value = AGG_SQL[sp.outer].format(f"{sp.lod.name}.{_ident(sp.col)}")
-                    ctes.append((name, f"select {', '.join([f'd.{d[1]}' for d in dims] + [f'{value} as {c[1]}'])}\n"
-                                       f"from (\n{domain}\n) as d\nleft join {sp.lod.name} on {on}{group(len(dims))}"))
-                    joins.append((name, dims))
+                    fixed_cte(name, sp, c[1])
+                elif sp.kind == "expr":
+                    refs: list[str] = []
+                    for j, (kind, p) in enumerate(sp.parts):
+                        if kind == "row":
+                            refs.append(f"base.{hidden[(i, j)]}")
+                        else:
+                            fixed_cte(f"{name}_{j + 1}", p, "value")
+                            refs.append(f"{name}_{j + 1}.value")
+                    picks_sql[id(c)] = re.sub(r"\{(\d+)\}", lambda m: refs[int(m.group(1))], sp.expr)
                 elif sp.kind == "include":
                     inner = (f"select {', '.join(dim_items + [f'{x} as lod_dim_{j}' for j, x in enumerate(sp.dims, 1)] + [f'{sp.inner} as lod_value'])}\n"
                              f"from {rows}{where_sql}{group(len(dims) + len(sp.dims))}")
@@ -2568,16 +2701,16 @@ class _Parser:
                     ctes.append((name, f"select {', '.join([item(d).strip() for d in keep] + [f'{sp.inner} as {c[1]}'])}\n"
                                        f"from {rows}{where_sql}{group(len(keep))}"))
                     joins.append((name, keep))
-            head = "base" if (dims or plain) else joins[0][0]
+            head = "base" if has_base else joins[0][0]
             frm = head
             for name, on_dims in joins:
                 if name == head:
                     continue
-                if on_dims and head == "base":
+                if on_dims and head == "base" and dims:
                     frm += f"\nleft join {name} on " + " and ".join(f"base.{d[1]} is not distinct from {name}.{d[1]}" for d in on_dims)
                 else:
                     frm += f"\ncross join {name}"
-            picks = [f"  {source.get(id(c), head)}.{c[1]}" for c in columns]
+            picks = [f"  {picks_sql[id(c)]} as {c[1]}" if id(c) in picks_sql else f"  {source.get(id(c), head)}.{c[1]}" for c in columns]
             body = "\n".join(["select", ",\n".join(picks), f"from {frm}"] + (["order by " + ", ".join(str(i) for i in range(1, len(dims) + 1))] if dims else []))
         if not ctes:
             return body
