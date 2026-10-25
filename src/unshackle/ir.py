@@ -181,6 +181,7 @@ class DashboardFilter:
     default: Any = None
     kind: Literal["value", "date_range", "date", "number", "unknown"] = "value"
     allowed: str = ""  # the values it takes ("one of 'a', 'b'", "from 0 to 1, step 0.1"), shown in the parameters cell
+    note: str = ""  # how the source dashboard sets it (a filter action, a filter shown on several sheets), a comment in the parameters cell
 
 
 @dataclass
@@ -195,6 +196,8 @@ class Dashboard:
     source_ref: str = ""
     url: str = ""
     views: int | None = None
+    notes: list[str] = field(default_factory=list)  # interactions of the source dashboard (actions, links), as markdown
+    not_migrated: list[str] = field(default_factory=list)  # what of the source dashboard is not in the notebook (listed in the report)
 
 
 @dataclass

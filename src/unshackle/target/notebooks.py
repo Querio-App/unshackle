@@ -2,7 +2,7 @@
 
 Cells, top to bottom: a title, a setup cell (imports and the warehouse engine from
 UNSHACKLE_WAREHOUSE_URL), a `parameters` cell (papermill convention) with the dashboard
-filters, then per tile in layout order a heading, a SQL cell (`<tile>_sql`, run with
+filters, the source dashboard's interactions and what was not migrated, then per tile in layout order a heading, a SQL cell (`<tile>_sql`, run with
 pd.read_sql into `<tile>`) and a chart cell (`<tile>_chart`). Text tiles are markdown
 cells. No outputs are stored, so the file diffs cleanly.
 """
@@ -286,8 +286,17 @@ def build_notebook(d: Dashboard, tool: str) -> dict:
                 f"# TODO(unshackle): dashboard filter {one_line_comment(f.name)} (default {f.default!r}) is not applied to any tile's SQL; "
                 f"add :{one_line_comment(f.name)} where the source dashboard applies it (skills/translate-dashboards)"
             )
-    lines += [f"{params[f.name]} = {f.default!r}" + (f"  # {one_line_comment(f.allowed)}" if f.allowed else "") for f in d.filters]
+    for f in d.filters:
+        lines += [f"# {one_line_comment(f.note)}"] if f.note else []
+        lines.append(f"{params[f.name]} = {f.default!r}" + (f"  # {one_line_comment(f.allowed)}" if f.allowed else ""))
     cells = [_markdown("title", _title(d, tool)), _code("setup", SETUP), _code("parameters", lines, tags=["parameters"])]
+    about = []
+    if d.notes:
+        about += ["## Interactions", "", *[f"- {n}" for n in d.notes], ""]
+    if d.not_migrated:
+        about += ["## Not migrated", "", *[f"- {n}" for n in d.not_migrated], ""]
+    if about:
+        cells.append(_markdown("interactions", "\n".join(about).strip()))
 
     by_id = {t.id: t for t in d.tiles}
     order = list(dict.fromkeys([i for row in d.layout for i in row if i in by_id] + list(by_id)))
