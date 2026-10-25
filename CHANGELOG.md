@@ -15,6 +15,10 @@
 - Superset: `unshackle import superset` reads the export ZIP Superset's UI downloads (or
   the unzipped folder). Chart SQL, roles, row-level security and usage aren't in the
   export; tiles get a TODO and the report lists those gaps.
+- Metabase: date, number and string dashboard filters on query-builder questions bind as
+  notebook parameters (dates as `<slug>_from` / `<slug>_to`, number ranges as `_min` / `_max`),
+  checked against Metabase's own dashboard results in the live test. Relative date defaults,
+  `timestamptz` columns and the time-grouping filter keep a TODO.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.

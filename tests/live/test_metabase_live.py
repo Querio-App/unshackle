@@ -50,15 +50,27 @@ def _extract_build_verify(metabase: dict, stack: Stack, tmp_path: Path) -> None:
         r = http.post(f"/api/card/{ids[name]}/query/csv", data={"format_rows": "false"})
         r.raise_for_status()
         (data / f"{ids[name]}.csv").write_text(r.text)
-    # The manager tile with the dashboard's Status filter set, as Metabase runs it on the dashboard.
+    # The manager tile with dashboard filters set, as Metabase runs it on the dashboard; the notebook gets the same values.
     dash = json.loads((repo / f"migration/raw/metabase/dashboards/{ids['Sales overview']}.json").read_text())
     dc = next(c for c in dash["dashcards"] if c["card_id"] == ids["Revenue by account manager"])
-    mapping = dc["parameter_mappings"][0]
-    params = [{"id": mapping["parameter_id"], "type": "string/=", "value": ["COMPLETED"], "target": mapping["target"]}]
-    r = http.post(f"/api/dashboard/{dash['id']}/dashcard/{dc['id']}/card/{dc['card_id']}/query/csv",
-                  data={"parameters": json.dumps(params), "format_rows": "false"})
-    r.raise_for_status()
-    (data / "managers-completed.csv").write_text(r.text.lstrip("\ufeff"))
+    defs = {p["slug"]: p for p in dash["parameters"]}
+    targets = {next(p["slug"] for p in dash["parameters"] if p["id"] == m["parameter_id"]): m for m in dc["parameter_mappings"]}
+    filtered = {  # file -> (Metabase parameter values, notebook parameters)
+        "managers-completed": ({"status": ["COMPLETED"], "purchased": "2024-01-01~2024-06-30"}, {"status": "COMPLETED"}),
+        "managers-range": ({"purchased": "2024-03-01~2024-09-30", "quantity": [20, 100], "contact": ["AL"]},
+                           {"purchased_from": "2024-03-01", "purchased_to": "2024-09-30", "quantity_min": 20, "quantity_max": 100,
+                            "contact": "AL"}),
+        "managers-open-ended": ({"purchased": "2025-03-01~", "quantity": [None, 50]},
+                                {"purchased_from": "2025-03-02", "purchased_to": None, "quantity_max": 50}),
+    }
+    for file, (values, _) in filtered.items():
+        # The dashboard sends each parameter with its options (case-insensitive Contact); the API treats it as case-sensitive without.
+        params = [{"id": targets[k]["parameter_id"], "type": defs[k]["type"], "value": v, "target": targets[k]["target"],
+                   **({"options": defs[k]["options"]} if defs[k].get("options") else {})} for k, v in values.items()]
+        r = http.post(f"/api/dashboard/{dash['id']}/dashcard/{dc['id']}/card/{dc['card_id']}/query/csv",
+                      data={"parameters": json.dumps(params), "format_rows": "false"})
+        r.raise_for_status()
+        (data / f"{file}.csv").write_text(r.text.lstrip("\ufeff"))
     ossie = yaml.safe_load((repo / "semantic/orders.ossie.yaml").read_text())
     completed = next(m for m in ossie["datasets"][0]["metrics"] if m["name"] == "completed_orders")
     expr = completed["expression"]["dialects"][0]["expression"]
@@ -71,11 +83,11 @@ def _extract_build_verify(metabase: dict, stack: Stack, tmp_path: Path) -> None:
          "target": {"notebook": nb, "tile": "orders_by_status_for_a_region"}, "keys": ["status"], "tolerance": 0},
         {"name": "Total revenue", "source": {"csv": f"migration/parity/data/{ids['Total revenue']}.csv"},
          "target": {"notebook": nb, "tile": "total_revenue"}, "columns": {"Sum of Post Discount Revenue ($)": "sum"}},
-        {"name": "Revenue by account manager, Status = COMPLETED", "source": {"csv": "migration/parity/data/managers-completed.csv"},
-         "target": {"notebook": nb, "tile": "revenue_by_account_manager", "params": {"status": "COMPLETED"}},
-         "keys": ["accounts__via__account_id__account_manager"],
-         "columns": {"Account → Account Manager": "accounts__via__account_id__account_manager",
-                     "Sum of Post Discount Revenue ($)": "sum", "Count": "count"}},
+        *({"name": f"Revenue by account manager, {values}", "source": {"csv": f"migration/parity/data/{file}.csv"},
+           "target": {"notebook": nb, "tile": "revenue_by_account_manager", "params": params},
+           "keys": ["accounts__via__account_id__account_manager"],
+           "columns": {"Account → Account Manager": "accounts__via__account_id__account_manager",
+                       "Sum of Post Discount Revenue ($)": "sum", "Count": "count"}} for file, (values, params) in filtered.items()),
         {"name": "Completed orders metric (Ossie)", "source": {"csv": f"migration/parity/data/{ids['Completed orders']}.csv"},
          "target": {"sql": f"SELECT {expr} AS count FROM public.orders"}, "columns": {"Count": "count"}, "tolerance": 0},
     ]

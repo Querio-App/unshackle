@@ -25,7 +25,7 @@ exactly what Metabase runs. Tested against Metabase v0.64.1 (open source); MBQL 
   (`POST /api/session`) and use a key-less proxy, or upgrade first.
 - unshackle paces itself at 300 requests/minute. Compiling is one
   `POST /api/dataset/native` per query-builder card (plus one per dashboard tile with
-  text filters); it doesn't run queries on the warehouse.
+  filters); it doesn't run queries on the warehouse.
 - The API is AGPL server code; unshackle only calls it over HTTP.
 
 ## Commands
@@ -49,7 +49,7 @@ Raw files under `migration/raw/metabase/`:
 | `cards/<id>.json` | `GET /api/card/{id}` - `type` (question / model / metric), `display`, `dataset_query`, `visualization_settings`, `result_metadata`, `view_count` |
 | `cards/<id>.sql` | `POST /api/dataset/native` (pretty) for query-builder cards |
 | `dashboards/<id>.json` | `GET /api/dashboard/{id}` - dashcards (24-column grid), `parameters`, `tabs`, `view_count` |
-| `dashboards/<id>/<dashcard>.sql` | the card compiled with the dashboard's text filters set to `'unshackle__<slug>'` |
+| `dashboards/<id>/<dashcard>.sql` | the card compiled with the dashboard's filters set to sentinels: text `'unshackle__<slug>'`, numbers `-901234.5` (+ the filter's position; `between` also `901234.5`), dates `1901-02-03~1901-04-05` (year 1901 + position); the time-grouping filter with its default |
 | `databases/<id>.json` | `GET /api/database/{id}/metadata` (connection details removed) |
 | `snippets.json` | `GET /api/native-query-snippet` |
 | `permissions/groups.json`, `graph.json`, `collections.json` | `GET /api/permissions/group`, `/api/permissions/graph`, `/api/collection/graph` |
@@ -71,6 +71,9 @@ Fingerprints, creator/editor details and database connection details are dropped
 | model (native or query builder) | `queries/<name>.sql` (TODO: materialize as a SQL model) + a semantic model named after it, dimensions from `result_metadata` |
 | dashboard | `notebooks/<slug>.ipynb`; cells in grid order (row, then col); tabs become `## Tab` headings |
 | dashboard filter `string/=`, `category`, `id` on a query-builder card field | `:slug` bind, written `(<column> = :slug OR :slug IS NULL)` into Metabase's compiled SQL (empty filter = no filter, as in Metabase); default from the parameter |
+| dashboard filter `string/!=`, `contains`, `does-not-contain`, `starts-with`, `ends-with` | `:slug`: `(<column> <> :slug OR <column> IS NULL OR :slug IS NULL)`; `POSITION(:slug IN <column>) > 0` (`= 1` for starts-with), `RIGHT(<column>, LENGTH(:slug)) = :slug` for ends-with, so `%` and `_` in the value match literally as in Metabase; `LOWER(...)` on both sides when the filter is case-insensitive |
+| dashboard filter `number/=`, `!=`, `>=`, `<=` | `:slug` with the same operator; `number/between` -> `:slug_min` / `:slug_max` (inclusive, either may be empty) |
+| dashboard filter `date/*` (range, single date, month, quarter, relative, all options) on a `date` or `timestamp` column | `:slug_from` / `:slug_to`, inclusive days: `<column> >= :slug_from`, `<column> <= :slug_to` (`CAST(<column> AS date) <= :slug_to` on timestamps, which Metabase compiles as `< to + 1 day`). Defaults: ranges, single dates, `2024-03`, `Q1-2024`; before (`~d`) and after (`d~`) exclude `d`, as in Metabase |
 | dashboard filter on a native template tag | the tile's `{{tag}}` becomes `:slug`; unmapped tags use the card's default |
 | display `bar`, `line`, `area`, `scatter`, `row` (bar, axes swapped), `pie`, `combo` | mark + encodings from `graph.dimensions` / `graph.metrics` (or breakout/aggregation columns when unset); second dimension -> `color` (+ `xOffset` unless stacked); several metrics on line/area/combo -> layers, `axis: right` -> dual axis |
 | `scalar`, `smartscalar`, `progress`, `gauge` | KPI (text) on `scalar.field` or the first metric |
@@ -94,11 +97,20 @@ from `result_metadata` (`lib/desired-column-alias`).
   the same as unshackle's `1.0 * a / nullif(b, 0)`.
 - **Models**: materialize the SQL in `queries/models/<name>.sql` (dbt:
   `models/unshackle/<name>.sql`), then mark the key column as the primary entity.
-- **Date filters** (`date/range`, `date/relative`, `date/all-options`, `date/single`)
-  and `number/*` filters on query-builder cards, and the `temporal-unit` ("Time grouping")
-  filter: Metabase applies them in MBQL; add `:from` / `:to` predicates to the tile SQL.
-- **String filters other than `=`** (`contains`, `starts-with`) and field filters with
-  those widgets: write the predicate (`col ILIKE '%' || :x || '%'`).
+- **Relative date defaults** (`past30days`, `thisyear`) and exclusions
+  (`exclude-days-Mon`): Metabase works them out when the dashboard loads, so the notebook's
+  `<slug>_from` / `<slug>_to` start empty (no filter) with a TODO; set the dates you want.
+- **Date filters on `timestamptz` columns**: Metabase compiles them in the report time
+  zone (`timestamp with time zone '... +00:00'`), and casting to a date would use the
+  warehouse session's. The tile keeps a TODO; write the predicate in that time zone.
+- **Time grouping** (`temporal-unit`) filter: the SQL keeps the default unit (or the
+  card's own), with a TODO. Metabase's week starts on Sunday
+  (`DATE_TRUNC('week', x + INTERVAL '1 day') - INTERVAL '1 day'`); copy what it compiles
+  if the notebook needs other units.
+- **Filters unshackle can't find in the compiled SQL** (on an expression, an aggregation or
+  a later stage): the tile keeps a TODO naming the `:binds` to add.
+- **Field filters** in native SQL with `contains`, `starts-with`, number or date widgets:
+  write the predicate (`POSITION(:x IN col) > 0`).
 - **Optional `[[ ... ]]` clauses without a default**: dropped, which is what Metabase
   runs when the filter is empty. Add `(... = :x OR :x IS NULL)` if the notebook needs the filter.
 - **Charts**: `funnel`, `waterfall`, `map`, `sankey`, `boxplot`,
@@ -145,7 +157,9 @@ columns: {"Purchased At: Month": purchased_at, "Sum of Post Discount Revenue ($)
 ```
 
 CSV headers are display names (with the currency in brackets), so map them with
-`columns:`. The dashcard CSV starts with a byte-order mark; strip it.
+`columns:`. The dashcard CSV starts with a byte-order mark; strip it. Send each dashcard parameter with
+the dashboard's `options`, as the dashboard does: without them a case-insensitive filter
+runs case-sensitive.
 
 ## Gotchas
 

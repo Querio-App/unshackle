@@ -5,7 +5,8 @@ Called by tests/live/test_metabase_live.py once the warehouse is loaded.
 Creates: the admin user, an API key in the Administrators group, the Postgres warehouse
 connection, "Sales" and "Sales/Finance" collections, a snippet, 4 native questions (template
 tags, a field filter, the snippet, a card reference), 3 query-builder questions (one combo),
-1 model, 3 metrics, an "Analysts" group and a two-tab dashboard with two filters.
+1 model, 3 metrics, an "Analysts" group and a two-tab dashboard with text, date, number-range,
+contains and time-grouping filters.
 Everything goes through the HTTP API, so it doubles as a check of the shapes
 unshackle reads. Idempotent only on a fresh instance.
 """
@@ -172,14 +173,26 @@ def create_content(api: Api, db: int, tables: dict) -> dict[str, int]:
     params = [
         {"id": "a1b2c3d4", "name": "Region", "slug": "region", "type": "string/=", "sectionId": "string", "default": ["West"]},
         {"id": "e5f6a7b8", "name": "Status", "slug": "status", "type": "string/=", "sectionId": "string"},
+        {"id": "c9d0e1f2", "name": "Purchased", "slug": "purchased", "type": "date/all-options", "sectionId": "date",
+         "default": "2024-01-01~2024-06-30"},
+        {"id": "a7b8c9d0", "name": "Quantity", "slug": "quantity", "type": "number/between", "sectionId": "number"},
+        {"id": "f1e2d3c4", "name": "Contact", "slug": "contact", "type": "string/contains", "sectionId": "string",
+         "options": {"case-sensitive": False}},
+        {"id": "b3c4d5e6", "name": "Time grouping", "slug": "time_grouping", "type": "temporal-unit", "sectionId": "temporal-unit"},
     ]
-    status = ["dimension", f("orders", "status"), {"stage-number": 0}]
+    dim = lambda t, c: ["dimension", f(t, c), {"stage-number": 0}]  # noqa: E731
+    status = dim("orders", "status")
+    managers = [("e5f6a7b8", status), ("c9d0e1f2", dim("orders", "purchased_at")), ("a7b8c9d0", dim("orders", "quantity")),
+                ("f1e2d3c4", dim("orders", "order_contact_name"))]
+    month = ["dimension", ["field", field_id(tables, "orders", "purchased_at"), {"temporal-unit": "month"}], {"stage-number": 0}]
     dashcards = [
         {"id": -1, "card_id": ids["Total revenue"], "row": 0, "col": 0, "size_x": 6, "size_y": 3},
         {"id": -2, "card_id": ids["Monthly revenue"], "row": 0, "col": 6, "size_x": 18, "size_y": 6,
-         "parameter_mappings": [{"parameter_id": "e5f6a7b8", "card_id": ids["Monthly revenue"], "target": status}]},
+         "parameter_mappings": [{"parameter_id": "e5f6a7b8", "card_id": ids["Monthly revenue"], "target": status},
+                                {"parameter_id": "b3c4d5e6", "card_id": ids["Monthly revenue"], "target": month}]},
         {"id": -3, "card_id": ids["Revenue by account manager"], "row": 6, "col": 0, "size_x": 12, "size_y": 6,
-         "parameter_mappings": [{"parameter_id": "e5f6a7b8", "card_id": ids["Revenue by account manager"], "target": status}]},
+         "parameter_mappings": [{"parameter_id": pid, "card_id": ids["Revenue by account manager"], "target": target}
+                                for pid, target in managers]},
         {"id": -4, "card_id": ids["Orders by status for a region"], "row": 6, "col": 12, "size_x": 12, "size_y": 6,
          "parameter_mappings": [{"parameter_id": "a1b2c3d4", "card_id": ids["Orders by status for a region"],
                                  "target": ["variable", ["template-tag", "region"]]}]},

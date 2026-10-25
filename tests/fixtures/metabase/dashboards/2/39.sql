@@ -22,6 +22,13 @@ WHERE
     OR ("public"."orders"."status" IS NULL)
   )
   AND ("public"."orders"."status" = 'unshackle__status')
+  AND (
+    "public"."orders"."purchased_at" >= timestamp '1903-02-03 00:00:00.000'
+  )
+  AND (
+    "public"."orders"."purchased_at" < timestamp '1903-04-06 00:00:00.000'
+  )
+  AND "public"."orders"."quantity" BETWEEN -901237.5 AND 901237.5
 GROUP BY
   "accounts__via__account_id"."account_manager"
 ORDER BY
