@@ -23,3 +23,5 @@ explore: chk_time_monday {}
 explore: chk_time_sunday {}
 
 explore: chk_filters {}
+
+explore: chk_ossie_ev_f {}

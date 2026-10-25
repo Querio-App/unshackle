@@ -39,6 +39,31 @@ from unshackle.target.semantic import HEADER, _clean, _col, _has_jinja, _mf, _on
 VERSION = "0.2.0.dev0"
 VENDOR = "UNSHACKLE"
 DIALECTS = {"snowflake": "SNOWFLAKE", "bigquery": "BIGQUERY", "databricks": "DATABRICKS"}
+# BigQuery has no MEDIAN aggregate: Looker's exact median (APPROX_QUANTILES above 10,000 values), as it writes it
+BQ_MEDIAN = ("CASE WHEN COUNT({0}) <= 10000 THEN (ARRAY_AGG({0} IGNORE NULLS ORDER BY {0} LIMIT 10000)"
+             "[OFFSET(CAST(FLOOR(COUNT({0}) * 0.5 - 0.0000001) AS INT64))] + ARRAY_AGG({0} IGNORE NULLS ORDER BY {0} LIMIT 10000)"
+             "[OFFSET(CAST(FLOOR(COUNT({0}) * 0.5) AS INT64))]) / 2 ELSE APPROX_QUANTILES({0}, 1000)[OFFSET(500)] END")
+
+
+# reserved in standard SQL or BigQuery: a field with one of these names must be quoted in an expression
+SQL_RESERVED = set("""all and any array as asc at between by case cast collate contains create cross cube current default
+define desc distinct else end enum escape except exclude exists extract false fetch following for from full group grouping
+groups hash having if ignore in inner intersect interval into is join lateral left like limit lookup merge natural new no not
+null nulls of on or order outer over partition preceding qualify range recursive respect right rollup rows select set some
+struct tablesample then to treat true unbounded union unnest using when where window with within""".split())
+
+
+def _quote(dialect: str, name: str) -> str:
+    if name.lower() not in SQL_RESERVED:
+        return name
+    return f"`{name}`" if dialect in ("BIGQUERY", "DATABRICKS") else f'"{name}"'
+
+
+def _trunc(dialect: str, grain: str, col: str) -> str:
+    """A time truncated to a grain: BigQuery's DATE_TRUNC takes (date, PART), so it gets TIMESTAMP_TRUNC."""
+    if dialect == "BIGQUERY":
+        return f"TIMESTAMP_TRUNC(CAST({col} AS TIMESTAMP), {'WEEK(MONDAY)' if grain == 'week' else grain.upper()})"
+    return f"DATE_TRUNC('{grain}', {col})"
 AGGS = {
     "sum": "SUM({})",
     "count": "COUNT({})",
@@ -211,7 +236,7 @@ class _Resolver:
 
     def ref(self, ds: _Dataset, name: str) -> str:
         self.used.add(ds.name)
-        return f"{ds.name}.{name}" if self.qualify else name
+        return f"{ds.name}.{name}" if self.qualify else _quote(ds.dialect, name)
 
     def metric(self, m: Metric, filters: tuple[str, ...] = ()) -> str:
         if m.todo:
@@ -279,7 +304,11 @@ class _Resolver:
         self.used.add(ds.name)
         if filters:
             x = f"CASE WHEN {filters[0] if len(filters) == 1 else ' AND '.join(f'({f})' for f in filters)} THEN {x} END"
+        if meas.agg == "median" and ds.dialect == "BIGQUERY":
+            return BQ_MEDIAN.format(x)
         if meas.agg == "percentile":
+            if ds.dialect == "BIGQUERY":
+                raise _Skip("BigQuery has no PERCENTILE_CONT aggregate (only the window function); write the percentile in SQL")
             fn = "PERCENTILE_DISC" if meas.agg_params.get("use_discrete_percentile") else "PERCENTILE_CONT"
             return f"{fn}({meas.agg_params.get('percentile', 0.5)}) WITHIN GROUP (ORDER BY {x})"
         if meas.agg not in AGGS:
@@ -295,7 +324,7 @@ class _Resolver:
             if ds.name not in self.doc:
                 raise _Skip(f"refers to {entity}__{dim} in dataset {ds.name}, which this model has no relationship to")
             col = self.ref(ds, ds.dims[snake(dim)])
-            return f"DATE_TRUNC('{grain}', {col})" if grain else col
+            return _trunc(ds.dialect, grain, col) if grain else col
 
         out = FILTER_REF.sub(sub, text)
         if "{{" in out or "{%" in out:
