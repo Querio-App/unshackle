@@ -94,6 +94,8 @@ def run(src, store: RawStore, paths: list[Path]) -> list[str]:
             if not found:
                 raise SourceError(f"{path.name}: nothing {src.label} can use here. `unshackle import {src.name}` accepts {src.manual_files}")
             out.update(found)
+            if getattr(src, "with_data", False):  # --with-data: packaged data copied out of the files (Tableau .twbx/.tdsx)
+                out.update(src.import_data(store, path))
     for rel in out:
         try:
             store.path(rel)

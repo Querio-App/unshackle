@@ -22,7 +22,7 @@ from unshackle import build
 from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources import _tableau_data as tdata
-from unshackle.sources import get_source
+from unshackle.sources import _manual, get_source
 from unshackle.sources.tableau import TableauSource, extract_only, read_datasource
 
 FIX = Path(__file__).parent / "fixtures" / "tableau_extract"
@@ -415,3 +415,78 @@ def test_init_keeps_copied_data_out_of_git(tmp_path: Path):
     (fresh / "data" / "tableau").mkdir(parents=True)
     scaffold.init(fresh)
     assert "/data/tableau/" not in (fresh / ".gitignore").read_text()
+
+
+# ------------------------------------------------------------------ `unshackle import --with-data`: packaged files
+
+
+def _downloads(tmp_path: Path, packages) -> list[Path]:
+    """The packages as a user downloads them from Tableau (File > Download > Packaged Workbook / Data Source)."""
+    out = []
+    for name, item in (("Extract Sales.twbx", WB), ("Order Lines.tdsx", LINES), ("Order History.tdsx", HIST)):
+        p = tmp_path / "downloads" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(packages[item])
+        out.append(p)
+    return out
+
+
+def test_import_copies_packaged_data(tmp_path: Path, packages, frames, monkeypatch):
+    duckdb = pytest.importorskip("duckdb")
+    from click.testing import CliRunner
+
+    from unshackle.cli import main
+
+    repo = tmp_path / "repo"
+    res = CliRunner().invoke(main, ["import", "tableau", *map(str, _downloads(tmp_path, packages)), "--repo", str(repo), "--with-data"])
+    assert res.exit_code == 0, res.output
+    store = RawStore(repo, "tableau")
+    assert sorted(store.glob("extracts/*.json")) == ["extracts/Extract Sales.json", "extracts/Order History.json", "extracts/Order Lines.json"]
+    b = get_source("tableau").parse(store)
+    assert sorted(sm.table for sm in b.semantic_models) == [f"tableau_data.{t}" for t in ("accounts", "order_history", "order_lines", "products")]
+    assert not [w for w in b.warnings if "only in Tableau" in w.message or "not copied" in w.message]
+    (load,) = b.queries
+    monkeypatch.chdir(repo)
+    con = duckdb.connect()
+    con.execute(load.sql)
+    tiles = {t.title: t for d in b.dashboards for t in d.tiles if t.sql}
+    o, p = frames["orders"], frames["products"]
+    done = o[o.status == "COMPLETED"]
+    assert {r[0]: r[1] for r in con.sql(tiles["Revenue by Paper Type"].sql).fetchall()} == pytest.approx(
+        done.groupby("paper_type").post_discount_revenue.sum().to_dict())
+    assert {r[0]: r[1] for r in con.sql(tiles["Average Price by Paper Type"].sql).fetchall()} == pytest.approx(
+        p.groupby("paper_type").price.mean().to_dict())
+
+
+def test_import_without_data_says_how_to_copy_it(tmp_path: Path, packages):
+    _manual.run(get_source("tableau"), RawStore(tmp_path, "tableau"), _downloads(tmp_path, packages))
+    b = get_source("tableau").parse(RawStore(tmp_path, "tableau"))
+    only = [w.message for w in b.warnings if "its data is only in Tableau" in w.message]
+    assert len(only) == 4 and all("`unshackle import tableau --with-data`" in m for m in only)
+    assert not RawStore(tmp_path, "tableau").glob("extracts/*.json")
+
+
+def test_import_lists_what_it_could_not_copy(tmp_path: Path, packages):
+    pytest.importorskip("duckdb")
+    pytest.importorskip("tableauhyperapi")
+    broken = tmp_path / "Order Lines.tdsx"  # the extract is missing from the package
+    with zipfile.ZipFile(io.BytesIO(packages[LINES])) as zf:
+        broken.write_bytes(_zip({n: zf.read(n) for n in zf.namelist() if n.endswith(".tds")}))
+    src = get_source("tableau")
+    src.with_data = True
+    _manual.run(src, RawStore(tmp_path, "tableau"), [broken])
+    b = get_source("tableau").parse(RawStore(tmp_path, "tableau"))
+    (w,) = [w for w in b.warnings if "not copied" in w.message]
+    assert w.item == "extracts/Order Lines.json data" and "order_lines.hyper is not in the downloaded package" in w.message
+    assert any("its data is only in Tableau" in w.message for w in b.warnings)
+
+
+def test_import_with_data_needs_a_tool_with_data(tmp_path: Path):
+    from click.testing import CliRunner
+
+    from unshackle.cli import main
+
+    f = tmp_path / "model.lkml"
+    f.write_text("view: x {}")
+    res = CliRunner().invoke(main, ["import", "looker", str(f), "--repo", str(tmp_path), "--with-data"])
+    assert res.exit_code != 0 and "carry no data of their own" in res.output

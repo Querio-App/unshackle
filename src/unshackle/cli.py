@@ -125,14 +125,20 @@ def extract(tool: str, repo: Path, only: tuple[str, ...], with_data: bool = Fals
 @TOOL
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
 @REPO
-def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path) -> None:
+@click.option("--with-data", is_flag=True, help="Also copy data packaged in the files (Tableau .twbx/.tdsx extracts, Excel, CSV) to Parquet.")
+def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path, with_data: bool = False) -> None:
     """Use files downloaded from TOOL by hand (no API access) as migration/raw/<tool>/. Replaces earlier raw files."""
     from unshackle.sources._manual import run as import_files
 
+    src = get_source(tool)
+    if with_data:
+        if not hasattr(src, "import_data"):
+            raise click.ClickException(f"--with-data: {tool} files carry no data of their own to copy")
+        src.with_data = True
     store = RawStore(repo, tool)
     before = len(store.content_files())
     with _voyage("importing"):
-        files = _run(lambda: import_files(get_source(tool), store, list(paths)))
+        files = _run(lambda: import_files(src, store, list(paths)))
         _say(f"{len(files)} raw files imported manually" + (f" (replacing {before} earlier raw files)" if before else ""))
     click.echo(f"next: unshackle build {tool}")
 
