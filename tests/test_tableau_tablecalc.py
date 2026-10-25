@@ -7,7 +7,9 @@ the sheet's order of their members, and the other dimensions partition it. Table
 (down) along Rows, Table (across then down) along both, Rows first; a pane is a cell without the innermost dimension of
 each shelf; Specific Dimensions lists the fields outermost first, and Restart Every partitions by the fields before its
 `level-break`. A crosstab (dimensions on Rows and Columns) is padded first: every row header with every column header,
-NULL where there is no data. Quick table calcs are Tableau formulas: running total RUNNING_SUM(x), difference
+NULL where there is no data, but only when a calculation partitions by a header and moves along another. Dimensions on the
+Marks card come with the headers they occur with: on both sides when they partition, on the side of the headers the
+calculation moves along when it moves along them. Quick table calcs are Tableau formulas: running total RUNNING_SUM(x), difference
 ZN(x) - LOOKUP(ZN(x), -1), percent difference (ZN(x) - LOOKUP(ZN(x), -1)) / ABS(LOOKUP(ZN(x), -1)), percent from
 ZN(x) / LOOKUP(ZN(x), -1), percent of total x / TOTAL(x) (TOTAL recomputes the aggregate over the partition's rows),
 rank and percentile ((modified rank - 1) / (n - 1), 1 alone), moving calculations over a frame of marks.
@@ -412,6 +414,144 @@ def test_window_variants(tiles, con, rows):
     })
 
 
+# ------------------------------------------------------------------ Marks card, aliased and sorted dimensions in crosstabs
+
+MGR, CYC, ST, PT = "account_manager", "payment_cycle", "status", "paper_type"
+DIMS = {MGR: MGR, CYC: CYC, ST: ST, PT: PT, "product_name": "label"}
+
+
+def pad_with(m: pd.DataFrame, row_side: list[str], col_side: list[str]) -> pd.DataFrame:
+    """A crosstab's padded marks: its row headers with its column headers, each side with the Marks card dimensions it
+    carries, matched on the ones both carry."""
+    shared = [d for d in row_side if d in col_side]
+    r, c = m[row_side].drop_duplicates(), m[col_side].drop_duplicates()
+    domain = r.merge(c, on=shared) if shared else r.merge(c, how="cross")
+    return domain.merge(m, on=list(dict.fromkeys(row_side + col_side)), how="left")
+
+
+def size():
+    return lambda g: pd.Series(len(g), index=g.index, dtype=float)
+
+
+def three(m: pd.DataFrame, part: list[str], order: list[str]) -> dict[str, pd.Series]:
+    return {"running_sum_of_revenue": along(m, part, order, running(REV)), "row_index": along(m, part, order, index()),
+            "partition_size": along(m, part, order, size())}
+
+
+@pytest.mark.parametrize("sheet, row_side, col_side, part, order", [
+    # a Marks card dimension the calculation partitions by: the padding is per member (both sides carry it)
+    ("Color Across", [MGR, ST], [CYC, ST], [MGR, ST], [CYC]),
+    ("Color Down", [MGR, ST], [CYC, ST], [CYC, ST], [MGR]),
+    ("Color Pane Down", [MGR, ST], [CYC, ST], [CYC, ST], [MGR]),
+    ("Size Down", [MGR, ST], [CYC, ST], [CYC, ST], [MGR]),
+    ("Detail Across", [MGR, PT], [CYC, PT], [MGR, PT], [CYC]),
+    ("Color Detail Across", [MGR, ST, PT], [CYC, ST, PT], [MGR, ST, PT], [CYC]),
+    # one it moves along: on the side of the headers it moves along
+    ("Color Specific Cycle Status", [MGR], [CYC, ST], [MGR], [CYC, ST]),
+    ("Color Specific Status Restart", [MGR], [CYC, ST], [MGR], [ST, CYC]),  # Restart Every manager
+    ("Color Detail Specific", [MGR, ST], [CYC, PT, ST], [MGR, ST], [CYC, PT]),
+    ("Color Detail Specific Status", [MGR, PT], [CYC, ST, PT], [MGR, PT], [CYC, ST]),
+    ("Detail Addressed Down", [MGR, PT, ST], [CYC, ST], [CYC, ST], [MGR, PT]),
+    # nested headers: every row header with every column header (a pane is padded with the whole shelf, not per pane)
+    ("Sparse Nested Pane Down", [MGR, CYC], [ST], [MGR, ST], [CYC]),
+])
+def test_marks_card_dimensions_pad_with_their_headers(tiles, con, rows, sheet, row_side, col_side, part, order):
+    """Account managers by payment cycle (61 of 70 combinations) with status on colour, paper type on detail or both
+    (536 of 1,050 combinations). The running total carries over a padded mark, INDEX and SIZE count it."""
+    dims = list(dict.fromkeys(row_side + col_side))
+    m = pad_with(marks(rows, dims, revenue=(REV, "sum")), row_side, col_side)
+    assert m[REV].isna().any()
+    check(_run(con, tiles[sheet]), m, {d: d for d in dims}, three(m, part, order))
+
+
+def test_null_marks_card_member_is_padded_too(tiles, con, rows):
+    """Open Status (NULL for completed orders) on colour: the NULL member is padded like the others."""
+    r = rows.assign(open_status=rows[ST].where(rows[ST] != "COMPLETED"))
+    m = pad_with(marks(r, [MGR, CYC, "open_status"], revenue=(REV, "sum")), [MGR, "open_status"], [CYC, "open_status"])
+    assert len(m) == 210 and m.open_status.isna().sum() == 70
+    check(_run(con, tiles["Color Null Across"]), m, {MGR: MGR, CYC: CYC, "open_status": "open_status"}, three(m, [MGR, "open_status"], [CYC]))
+
+
+def test_one_padding_calculation_pads_the_sheet(tiles, con, rows):
+    """A running total across pads the crosstab; INDEX and SIZE along the whole table then count the padded marks too."""
+    m = pad(marks(rows, [MGR, CYC], revenue=(REV, "sum")), [MGR], [CYC])
+    assert len(m) == 70
+    check(_run(con, tiles["Mixed Addressing"]), m, {MGR: MGR, CYC: CYC}, {
+        "running_sum_of_revenue": along(m, [MGR], [CYC], running(REV)),
+        "row_index": along(m, [], [MGR, CYC], index()), "partition_size": along(m, [], [MGR, CYC], size())})
+
+
+def test_running_with_colour_in_a_grid(tiles, con, rows):
+    m = pad_with(marks(rows, [ST, PT, CYC], revenue=(REV, "sum")), [ST, CYC], [PT, CYC])
+    check(_run(con, tiles["Running with Color in Grid"]), m, {ST: ST, PT: PT, CYC: CYC},
+          {"running_sum_of_revenue": along(m, [ST, CYC], [PT], running(REV))})
+
+
+@pytest.mark.parametrize("sheet, dims, part, order", [
+    ("Color Table", [MGR, CYC, ST], [ST], [MGR, CYC]),  # Table (across then down): no header partitions it
+    ("Sparse Grid Table", [MGR, CYC], [], [MGR, CYC]),
+    ("Color Specific All", [MGR, CYC, ST], [], [MGR, CYC, ST]),
+    ("Color Specific Status", [MGR, CYC, ST], [MGR, CYC], [ST]),  # it moves along no header
+    ("Color Cell", [MGR, CYC, ST], [MGR, CYC, ST], []),
+    ("Color No Crosstab", [MGR, ST], [], [MGR, ST]),
+])
+def test_crosstabs_left_unpadded(tiles, con, rows, sheet, dims, part, order):
+    m = marks(rows, dims, revenue=(REV, "sum"))
+    want = three(m, part, order) if order else {"running_sum_of_revenue": m[REV], "row_index": pd.Series(1.0, index=m.index)}
+    check(_run(con, tiles[sheet]), m, {d: d for d in dims}, want)
+
+
+ALIASES = {"Ledger 24lb Paper, 11 x 17 Tabloid, Bright White Wove, 500 Sheets/Ream": "alpha ledger",
+           "Premium 24lb Paper, 8.5 x 11, Ivory Wove, 100 Sheets/Pack": "Beta Premium",
+           "Copy Paper, 20 lbs., 92 Brightness, 500 Sheets/Ream, 40 Cases/Pallet": "Zeta Copy",
+           "Bulk Copy Paper, 92 Brightness, 20lb, 8-1/2 X 11, White, 200,000 Sheets/CT": "Copy Bulk"}
+
+
+@pytest.mark.parametrize("sheet, dims, part", [
+    ("Aliased Down", ["product_name", CYC], [CYC]),  # crosstabs over the products' labels
+    ("Aliased Across", [ST, "product_name"], [ST]),
+    ("Aliased Color", [ST, CYC, "product_name"], [ST, CYC]),  # along the aliased colour: it moves along no header, no padding
+])
+def test_aliased_dimensions_move_in_label_order(tiles, con, rows, sheet, dims, part):
+    """Products with aliases (Default Properties > Aliases) show and order by their labels, ignoring case."""
+    r = rows.assign(label=rows.product_name.map(ALIASES).fillna(rows.product_name))
+    m = marks(r, [DIMS[d] for d in dims], revenue=(REV, "sum"))
+    m["by_label"] = m.label.str.lower()
+    keys = {d: DIMS[d] for d in dims}
+    check(_run(con, tiles[sheet]), m, keys, three(m, part, ["by_label"]))
+    assert m.label.str.lower().sort_values().iloc[0] == "alpha ledger"
+
+
+def test_computed_sorts_order_the_padded_crosstab(tiles, con, rows):
+    """Managers sorted by revenue (descending): the calculation moves down them in that order, each by its revenue over the
+    whole view, padded marks included."""
+    by_mgr = rows.groupby(MGR)[REV].sum()
+    m = pad(marks(rows, [MGR, CYC], revenue=(REV, "sum")), [MGR], [CYC])
+    m["mgr_key"] = -m[MGR].map(by_mgr)
+    df = _run(con, tiles["Sorted Grid Down"])
+    check(df, m, {MGR: MGR, CYC: CYC}, three(m, [CYC], ["mgr_key"]))
+    assert list(dict.fromkeys(df[MGR])) == by_mgr.sort_values(ascending=False).index.tolist()
+    m = pad_with(marks(rows, [MGR, CYC, ST], revenue=(REV, "sum")), [MGR, ST], [CYC, ST])
+    m["mgr_key"] = -m[MGR].map(by_mgr)
+    check(_run(con, tiles["Sorted Grid Color"]), m, {MGR: MGR, CYC: CYC, ST: ST}, three(m, [CYC, ST], ["mgr_key"]))
+
+
+def test_computed_sorts_on_several_dimensions(tiles, con, rows):
+    """Each sorted dimension orders by its aggregate over the whole view (a nested one too: one order across panes)."""
+    m = marks(rows, [MGR, CYC], revenue=(REV, "sum"))
+    m["mgr_key"] = -m[MGR].map(rows.groupby(MGR)[REV].sum())
+    m["cyc_key"] = m[CYC].map(rows.groupby(CYC).quantity.sum())  # payment cycles by quantity, ascending
+    check(_run(con, tiles["Sorted Both Table"]), m, {MGR: MGR, CYC: CYC}, three(m, [], ["mgr_key", "cyc_key"]))
+    m = marks(rows, [ST, PT], revenue=(REV, "sum"))
+    m["st_key"], m["pt_key"] = -m[ST].map(rows.groupby(ST)[REV].sum()), -m[PT].map(rows.groupby(PT)[REV].sum())
+    df = _run(con, tiles["Nested Sorted Down"])
+    check(df, m, {ST: ST, PT: PT}, three(m, [], ["st_key", "pt_key"]))
+    assert df[PT].tolist() == m.sort_values(["st_key", "pt_key"])[PT].tolist()
+    m = marks(rows, [ST, PT, CYC], revenue=(REV, "sum"))
+    m["pt_key"] = m[PT].map(rows.groupby(PT)[REV].sum())  # ascending; status in natural order
+    check(_run(con, tiles["Sorted Nested Grid"]), m, {ST: ST, PT: PT, CYC: CYC}, three(m, [], [ST, "pt_key", CYC]))
+
+
 # ------------------------------------------------------------------ what stays TODO
 
 
@@ -420,7 +560,6 @@ def test_window_variants(tiles, con, rows):
     ("At the Level", ["At the level"]),
     ("Custom Sort Addressing", ["custom sort"]),
     ("Moving Average Null If Incomplete", ["NullIfIncomplete"]),
-    ("Running with Color in Grid", ["pads the crosstab"]),
 ])
 def test_untranslated_table_calcs_stay_todo(tiles, sheet, says):
     t = tiles[sheet]

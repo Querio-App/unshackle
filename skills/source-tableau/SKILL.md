@@ -487,14 +487,22 @@ else Table (across)) becomes `partition by` / `order by`:
 | `CellInPane` | Cell | nothing (each mark alone) |
 | `Field` | Specific Dimensions | `ordering-field` or the `<order field>` list, outermost first; `level-break` is the first field after Restart Every |
 
-The order along the addressed dimensions is the sheet's: their sort (manual, alphabetic, a
-computed sort on a one-dimension sheet), else natural order. Each instance name is one table
+The order along the addressed dimensions is the sheet's: their sort (manual, alphabetic,
+computed), else natural order; aliased dimensions order by their labels. A computed sort on a
+sheet with several dimensions orders each member by its aggregate over the whole view (SUM,
+COUNT, MIN, MAX: a column of the marks CTE; other aggregates stay TODO). Each instance name is one table
 calculation for the whole workbook (Tableau numbers others `...:qk:2`).
 
-A crosstab (discrete dimensions on Rows and on Columns) is padded first: every row header
-with every column header is a mark, NULL where there is no data, so INDEX, LOOKUP and moving
-windows count the empty cells and a running total carries over them. The tile SQL builds the
-marks in a CTE, cross joins the row and column headers (`domain`) and runs the windows over it.
+A crosstab (discrete dimensions on Rows and on Columns) is padded first when a table
+calculation partitions by a header and moves along another (Table across or down, Pane, Specific
+Dimensions with headers on both sides; not Table (across then down), Cell, or Specific
+Dimensions over every header or none). Then every row header with every column header is a
+mark, NULL where there is no data, for all the sheet's table calculations, so INDEX, LOOKUP
+and moving windows count the empty cells and a running total carries over them. Marks card
+dimensions (colour, detail, size) come with the headers they occur with: one the calculation
+partitions by is on both sides (the padding is per member), one it moves along is on the side
+of the headers it moves along. The tile SQL builds the marks in a CTE, joins the row side and
+the column side (`domain`) and runs the windows over it.
 
 | Tableau | SQL over the marks |
 | --- | --- |
@@ -515,8 +523,8 @@ Still TODO, with the formula: nested table calculations (a table calc of another
 the inner one in a CTE of the marks, then the outer window), `PREVIOUS_VALUE` (usually a
 running aggregate), `SCRIPT_*`/`MODEL_*`, At the Level (`level-address`), a custom sort of the
 addressing, Null If Incomplete, relative to a fixed member, sheets with LODs or over related
-tables, crosstabs with Marks card dimensions, aliased or computed-sorted dimensions (Tableau
-pads them first), and totals (Tableau computes the calculations on the total rows too).
+tables, padded crosstabs with a continuous field or a Marks card dimension that one calculation
+moves along and another partitions by, and totals (Tableau computes the calculations on the total rows too).
 
 A running total over time with no other partition can also be a `cumulative`
 metric (see translate-metrics).

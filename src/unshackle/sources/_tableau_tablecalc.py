@@ -14,8 +14,10 @@ default) sets it with `ordering-type`:
   first addressed field after Restart Every (the listed fields before it partition).
 
 Dimensions on the Marks card (colour, detail, ...) partition in every mode but Specific Dimensions. A crosstab (discrete
-dimensions on both Rows and Columns) is padded first: every combination of its row headers and column headers is a
-mark, NULL where the data has none, and the calculation moves over those too.
+dimensions on both Rows and Columns) is padded first when a calculation partitions by a header and moves along another:
+every combination of its row headers and column headers is a mark, NULL where the data has none, and all the sheet's
+calculations move over those too. Marks card dimensions come with the headers they occur with: on both sides when the
+calculation partitions by them (padded per member), on the side of the headers it moves along when it moves along them.
 
 Each instance name is one table calculation for the whole workbook; Tableau numbers further ones (`cum:sum:x:qk:2`).
 Quick table calcs (`type`) are Tableau formulas over the measure: running total RUNNING_<AGG>(x), percent of total
