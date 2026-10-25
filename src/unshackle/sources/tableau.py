@@ -3110,7 +3110,7 @@ class _Parser:
             problems.append(f"blends {len(data_ds)} datasources ({', '.join(data_ds)}): join them in the tile SQL ({SKILL})")
         elif len(models) > 1 and not join_from and not rel_tile:
             problems.append("fields come from several joined tables: write the join in the tile SQL")
-        sql = ""
+        sql = totals_sql = ""
         if problems:
             todos += problems
         elif rel_tile and tile_ds is not None:
@@ -3127,12 +3127,21 @@ class _Parser:
             dims = [c for c in columns if not c[3]]
             columns = dims + [c for c in columns if c[3]]
             totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit))
-            if note:
-                todos.append(note)
             try:
-                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals)
+                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit)
+                if totals:  # Tableau's Automatic totals; Total Using isn't in the file, so they stay a TODO with this SQL
+                    totals_sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals)
+                    if self.dialect in dialect.DIALECTS:
+                        keep = tuple(r.sql for r in (tile_ds.relations.values() if tile_ds else []) if r.kind == "text" and r.sql)
+                        try:
+                            totals_sql = dialect.render(totals_sql, self.dialect, keep)
+                        except dialect.Unsupported:
+                            pass
+                    note += f": {totals_sql}"
             except _NoSQL as exc:
                 todos.append(str(exc))
+            if note:
+                todos.append(note)
             if cte and ("<[Parameters]" in cte or PARAM_REF.search(cte)):
                 todos.append("custom SQL uses Tableau parameters (<[Parameters].[x]>): replace them with :binds from the parameters cell")
         elif not columns and not problems:
@@ -3169,6 +3178,8 @@ class _Parser:
             "cols": (table.findtext("cols") or "").strip(),
             "columns": {c[1]: c[4] for c in columns},
         }
+        if totals_sql:
+            config["totals_sql"] = totals_sql
         title = _text(ws.find("layout-options/title"))
         if title and title != "<Sheet Name>":
             config["title"] = title.replace("<Sheet Name>", name)
@@ -3438,10 +3449,11 @@ class _Parser:
         sets = ta.grouping_sets([r.instance for r in row_d], [r.instance for r in col_d], rows_total, cols_total, subtotals)
         if not sets:
             return [], ""
-        self.b.warn(f"sheet {sheet}", f"totals ({what}): grouping sets in the tile SQL; <dimension>_total is 1 on total rows", "info")
-        if kind == "table":
-            return sets, ""
-        return sets, f"Tableau totals ({what}) are rows of the tile's data (<dimension>_total = 1): draw them or filter them out of the chart"
+        return sets, (f"Tableau totals ({what}) not added: the workbook file doesn't say how they are computed; check Analysis > "
+                      "Totals > Total All Using (and each measure's Total Using) in Tableau. With Automatic, each total is the "
+                      "sheet's aggregate recomputed at the total's level: the tile SQL as grouping sets, <dimension>_total = 1 "
+                      "on total rows (also in source_config totals_sql); with Sum, Average, Minimum or Maximum, that function "
+                      "of the marks instead")
 
     def _analytics(self, wb: _Workbook, sheet: str, table: ET.Element, panes: list[ET.Element], deps: dict, rows: list[_Ref],
                    cols: list[_Ref], columns: list, chosen: dict[str, _Ref], layer_refs: list, sql: str,
@@ -3512,8 +3524,6 @@ class _Parser:
                 problem = f"scope {rl.get('scope')!r} is not one unshackle knows"
             elif not channel:
                 problem = "its axis is not a measure axis of the tile"
-            elif "grouping sets" in sql:
-                problem = "the sheet also has totals, which the line must not count"
             elif param is None and (c is None or not c[3]):
                 problem = f"its measure ({title(value)}) is not a column of the tile"
             elif param is None and split:

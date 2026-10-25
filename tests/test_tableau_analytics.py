@@ -59,8 +59,8 @@ def rows(con):
     return r
 
 
-def _run(con, tile) -> pd.DataFrame:
-    df = con.sql(tile.sql.replace(":min_order_value", "500.0")).df()
+def _run(con, tile, sql: str = "") -> pd.DataFrame:
+    df = con.sql((sql or tile.sql).replace(":min_order_value", "500.0")).df()
     return df.apply(lambda s: s.astype(float) if s.dtype == object and s.map(lambda v: type(v).__name__ == "Decimal").any() else s)
 
 
@@ -148,9 +148,18 @@ def test_what_stays_todo(tiles):
     assert "last 1 period(s) of actual values" in forecast and "ExponentialSmoothing" in forecast
     trend = tiles["Trend"].todo
     assert "logarithmic model of post_discount_revenue over Month of purchased_at" in trend and "method='log'" in trend
-    clean = {"RL Table", "RL Pane Rows", "RL Grid", "RL Median Even", "RL Line", "RL Param", "RL Band",
-             "Totals Sum", "Totals Avg", "Totals Rows Only", "Totals Cols Only"}
+    clean = {"RL Table", "RL Pane Rows", "RL Grid", "RL Median Even", "RL Line", "RL Param", "RL Band"}
     assert {n: t.todo for n, t in tiles.items() if n in clean and t.todo} == {}
+
+
+@pytest.mark.parametrize("sheet", ["Totals Sum", "Totals Avg", "Totals Rows Only", "Totals Cols Only"])
+def test_totals_are_a_todo_with_the_automatic_sql(tiles, sheet):
+    """How totals are computed (Analysis > Totals > Total All Using, or a measure's Total Using) is not in the file: a
+    hand-set Average or Sum gives other numbers than Automatic. The tile SQL has no totals; the TODO holds the Automatic
+    form."""
+    t = tiles[sheet]
+    assert "grouping sets" not in t.sql and "check Analysis > Totals > Total All Using" in t.todo
+    assert t.source_config["totals_sql"] in t.todo and "group by grouping sets (" in t.source_config["totals_sql"]
 
 
 def test_forecast_keeps_the_actual_values(tiles, con, rows):
@@ -185,8 +194,8 @@ def _got(df: pd.DataFrame, dims: list[str], cols: list[str]) -> dict:
     ("Totals Rows Only", ["paper_type", "status"], [["paper_type", "status"], ["status"]]),
     ("Totals Cols Only", ["paper_type", "status"], [["paper_type", "status"], ["paper_type"]]),
 ])
-def test_sum_totals(tiles, con, rows, sheet, dims, sets):
-    df = _run(con, tiles[sheet])
+def test_automatic_sum_totals(tiles, con, rows, sheet, dims, sets):
+    df = _run(con, tiles[sheet], tiles[sheet].source_config["totals_sql"])
     want = _totals(rows, dims, sets, {REV: (REV, "sum")})
     got = _got(df, dims, [REV])
     assert got.keys() == want.keys()
@@ -195,9 +204,9 @@ def test_sum_totals(tiles, con, rows, sheet, dims, sets):
 
 
 def test_totals_recompute_avg_and_countd(tiles, con, rows):
-    """Tableau's automatic totals: the average over the total's rows (not the average of the averages), distinct counts
+    """Tableau's Automatic totals: the average over the total's rows (not the average of the averages), distinct counts
     over the total's rows."""
-    df = _run(con, tiles["Totals Avg"])
+    df = _run(con, tiles["Totals Avg"], tiles["Totals Avg"].source_config["totals_sql"])
     dims = ["payment_cycle", "paper_type"]
     want = _totals(rows, dims, [dims, ["payment_cycle"], []],
                    {f"avg_{REV}": (REV, "mean"), "distinct_count_of_order_id": ("order_id", "nunique")})
@@ -209,7 +218,7 @@ def test_totals_recompute_avg_and_countd(tiles, con, rows):
 
 
 def test_totals_sort_after_their_group(tiles, con):
-    df = _run(con, tiles["Totals Sum"])
+    df = _run(con, tiles["Totals Sum"], tiles["Totals Sum"].source_config["totals_sql"])
     keys = [("~" if r.payment_cycle_total else r.payment_cycle, "~" if r.paper_type_total else r.paper_type, "~" if r.status_total else r.status)
             for r in df.itertuples()]
     assert keys == sorted(keys) and keys[-1] == ("~", "~", "~")
@@ -218,7 +227,7 @@ def test_totals_sort_after_their_group(tiles, con):
 def test_report_lists_each_object(bundle):
     info = [w.item + ": " + w.message for w in bundle.warnings if w.severity == "info"]
     assert "sheet RL Table: reference line: Average of post_discount_revenue per table: column post_discount_revenue_average of the tile SQL, drawn as a rule" in info
-    assert any(i.startswith("sheet Totals Sum: totals (a grand total row, a grand total column, subtotals of payment_cycle)") for i in info)
+    assert not any("totals" in i for i in info)  # totals are TODOs (see above)
 
 
 @pytest.mark.parametrize("warehouse", ["postgres", "redshift", "snowflake", "bigquery", "databricks"])

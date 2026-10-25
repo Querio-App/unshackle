@@ -226,16 +226,15 @@ of its own.
 | a parameter as the value (`value-column='[Parameters].[x]'`) | `:x as x_line`, bound from the parameters cell |
 | `percentage-bands='true'` with `<reference-line-value percentage='50'>` | one column per percentage (`0.5 * avg(...) over ()`) and a shaded band between the first and last |
 | scope `per-table` / `per-pane` / `per-cell` | partition by nothing / every discrete dimension on Rows and Columns except the innermost one of a shelf that ends with a dimension / every discrete dimension on Rows and Columns. Continuous fields (axes) split nothing |
-| `<rows total='true'>` / `<cols total='true'>` / `<subtotals>` | `group by grouping sets (...)`: a grand total row (over the Rows dimensions), a grand total column (over the Columns dimensions), a Total per value of each subtotalled dimension; each recomputes the sheet's aggregate at its level (Tableau's Automatic: AVG over the rows, COUNTD over the rows). `<dimension>_total` is 1 on total rows, which sort after their group. View data writes `All` on them |
+| `<rows total='true'>` / `<cols total='true'>` / `<subtotals>` | TODO: the file doesn't record Total Using (Analysis > Totals > Total All Using, or a measure's Total Using), and a hand-set Sum or Average gives other numbers. The TODO (and `source_config.totals_sql`) holds the Automatic form, `group by grouping sets (...)`: a grand total row (over the Rows dimensions), a grand total column (over the Columns dimensions), a Total per value of each subtotalled dimension, each the sheet's aggregate recomputed at its level (AVG and COUNTD over the rows); `<dimension>_total` is 1 on total rows, which sort after their group. Check the setting, then use it as the tile SQL. View data writes `All` on total rows |
 | `<trendline enabled='true' fit=...>` | TODO naming the model (linear, logarithmic, exponential, polynomial, power) and its options; `transform_regression` in the chart cell |
 | `<forecast-specification enabled='true'>`, `fVal:` columns, Forecast Indicator | the actual values only (`fVal:sum:Sales` is `sum(sales)`), and a TODO with the model's options. With Ignore last N, Tableau also leaves out the last N periods of actuals, which the SQL keeps |
 
 TODO, with what to write: distribution bands (quantiles, percentiles, standard deviation, confidence), lines on sheets
 whose marks are split inside a cell (colour, detail or tooltip dimensions: Tableau computes the line on the cell's
-stacked total), lines on a tile without SQL or off its measure axes, lines together with totals; totals with
+stacked total), lines on a tile without SQL or off its measure axes; totals with
 aggregated LODs, a filter on an aggregate or Top N, Measure Names or continuous fields on the shelves, or dimensions off
-Rows and Columns. "Total Using" other than Automatic is not read from the file: check sheets whose totals were set to
-Sum/Average by hand.
+Rows and Columns (those TODOs have no SQL).
 
 ### Calculation semantics
 
