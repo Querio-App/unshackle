@@ -522,6 +522,18 @@ def _unbracket(s: str | None) -> str:
     return s.replace("]]", "]")
 
 
+def _esc(s: str) -> str:
+    return s.replace("]", "]]")
+
+
+def _qualify(sql: str, from_sql: str) -> str:
+    """A bare column name qualified with the FROM clause's (first) table, so it can't be read as an output column."""
+    if not from_sql or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*|"(?:[^"]|"")+"', sql):
+        return sql
+    m = re.match(r"(\S+)(?:\s+as\s+(\S+))?", from_sql.split("\n")[0].strip())
+    return f"{(m.group(2) or m.group(1).rsplit('.', 1)[-1]) if m else ''}.{sql}".lstrip(".")
+
+
 def _unesc(s: str) -> str:
     return s.replace("]]", "]")
 
@@ -623,6 +635,85 @@ def _member_sql(v: str | None) -> str | None:
         return f"'{v[1:-1]}'"
     if re.fullmatch(r"-?\d+(?:\.\d+)?", v) or v.lower() in ("true", "false"):
         return v.lower() if v.lower() in ("true", "false") else v
+    return "'" + v.replace("'", "''") + "'"
+
+
+SORT_TAGS = {"computed-sort": "computed", "alphabetic-sort": "alphabetic", "manual-sort": "manual", "natural-sort": "natural"}
+
+
+@dataclass
+class SheetSort:
+    """How a sheet orders one dimension's members (Sort in Tableau): `computed` by an aggregate (`using`, a shelf
+    instance), `alphabetic` by the members' labels, `manual` in the listed order (`members`, Tableau member literals),
+    `natural` in the data source's order."""
+
+    column: str  # shelf instance of the sorted dimension, e.g. "none:paper_type:nk"
+    kind: str
+    direction: str = "ASC"
+    using: str = ""
+    members: list[str] = field(default_factory=list)
+
+
+def sheet_sorts(view: ET.Element | None, defaults: list[ET.Element] | None = None) -> dict[str, SheetSort]:
+    """A sheet's sorts by shelf instance: its own (<computed-sort>, <alphabetic-sort>, <manual-sort>, <natural-sort> in
+    <view>), else its datasource's Default Properties > Sort (`defaults`, <default-sorts>)."""
+    out: dict[str, SheetSort] = {}
+    own = [el for el in (view if view is not None else []) if el.tag in SORT_TAGS]
+    for el in [*own, *(defaults or [])]:
+        if el.tag not in SORT_TAGS:
+            continue
+        refs = DS_REF.findall(el.get("column", ""))
+        inst = _unesc(refs[0][1]) if refs else _unbracket(el.get("column"))
+        if not inst or inst in out:
+            continue
+        using = DS_REF.findall(el.get("using", ""))
+        out[inst] = SheetSort(inst, SORT_TAGS[el.tag], (el.get("direction") or "ASC").upper(),
+                              using=_unesc(using[0][1]) if using else _unbracket(el.get("using")),
+                              members=[(b.text or "") for b in el.findall("dictionary/bucket")])
+    return out
+
+
+# Tableau number formats (`default-format`, a sheet's text-format): a type letter (n number, c currency, p percentage)
+# and an Excel-style pattern, positive[;negative]. Only patterns d3-format writes exactly are converted.
+_NUMBER_PATTERN = re.compile(r'(?P<pre>"\$"|\$)?(?P<group>#,##)?0(?:\.(?P<dec>0+))?(?P<pct>%)?')
+
+
+def d3_format(fmt: str) -> str:
+    """A Tableau number format as a d3-format specifier (what Altair/Vega-Lite axes and tooltips take), or "" when
+    d3-format has no exact form for it (scaled units like K/M, literal text, locale formats, dates)."""
+    if not fmt or fmt[0] not in "ncp":
+        return ""
+    pos, _, neg = fmt[1:].partition(";")
+    m = _NUMBER_PATTERN.fullmatch(pos)
+    if m is None or bool(m.group("pct")) != (fmt[0] == "p") or (m.group("pre") and fmt[0] == "p"):
+        return ""
+    sign = ""
+    if neg:
+        if neg == f"({pos})":
+            sign = "("
+        elif neg != f"-{pos}":
+            return ""
+    return f"{sign}{'$' if m.group('pre') else ''}{',' if m.group('group') else ''}.{len(m.group('dec') or '')}{'%' if m.group('pct') else 'f'}"
+
+
+def alias_sql(expr: str, f: TField) -> str | None:
+    """`expr` shown with a field's aliases (Tableau's labels for its members); None when its type has no exact form.
+    Members without an alias, and NULL unless it has one, keep their value; booleans show as True / False."""
+    if f.datatype == "string":
+        whens = []
+        for key, label in f.aliases:
+            lit = _member_sql(key)
+            whens.append(f"when {expr} is null then {_sql_str(label)}" if lit is None else f"when {expr} = {lit} then {_sql_str(label)}")
+        return f"case {' '.join(whens)} else {expr} end"
+    if f.datatype == "boolean":
+        labels = {k.lower(): v for k, v in f.aliases}
+        null = f" when {expr} is null then {_sql_str(labels['%null%'])}" if "%null%" in labels else ""
+        return (f"case when {expr} then {_sql_str(labels.get('true', 'True'))} when not {expr} then "
+                f"{_sql_str(labels.get('false', 'False'))}{null} end")
+    return None
+
+
+def _sql_str(v: str) -> str:
     return "'" + v.replace("'", "''") + "'"
 
 
@@ -1036,6 +1127,8 @@ class TField:
     param: bool = False
     value: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+    aliases: list[tuple[str, str]] = field(default_factory=list)  # <alias key= value=>: (member literal, label)
+    format: str = ""  # Default Properties > Number Format (`default-format`, e.g. 'c"$"#,##0.00;("$"#,##0.00)')
 
     @property
     def label(self) -> str:
@@ -1117,6 +1210,7 @@ class TDatasource:
 
     def object_of(self, relation: str) -> TObject | None:
         return next((o for o in self.objects.values() if relation in o.relations), None)
+    default_sorts: list[ET.Element] = field(default_factory=list)  # Default Properties > Sort (<default-sorts>)
 
 
 @dataclass
@@ -1207,6 +1301,10 @@ class _SheetCtx:
     # relationships: an aggregate calculation over several related tables, per shelf instance: (SQL with a {n} placeholder
     # per aggregate, [(relation, aggregate SQL over that relation's rows)])
     rel_parts: dict[str, tuple[str, list[tuple[str, str]]]] = field(default_factory=dict)
+    sorts: dict[str, SheetSort] = field(default_factory=dict)  # dimension shelf instance -> its sort (sheet_sorts)
+    sort_by: dict[str, tuple[str, str]] = field(default_factory=dict)  # dimension shelf instance -> its computed sort's (derivation, aggregate SQL)
+    labels: dict[str, str] = field(default_factory=dict)  # aliased dimension shelf instance -> its value SQL (grouped on)
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1292,6 +1390,8 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         f.hidden = col.get("hidden") == "true"
         f.default_agg = (col.get("aggregation") or "").lower() or f.default_agg  # Default Properties > Aggregation, set by the author
         f.description = _text(col.find("desc")) or f.description
+        f.format = col.get("default-format") or f.format
+        f.aliases = [(a.get("key", ""), a.get("value", "")) for a in col.findall("aliases/alias")] or f.aliases
         calc = col.find("calculation")
         if calc is not None:
             f.calc_class = calc.get("class", "tableau")
@@ -1323,6 +1423,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         if not f.relation and ds.relations and not f.is_calc:
             f.relation = next(iter(ds.relations))
     ds.filters = el.findall("filter")
+    ds.default_sorts = [s for d in el.findall("default-sorts") for s in d]
     for dp in el.findall("drill-paths/drill-path"):
         ds.hierarchies.append((dp.get("name", ""), [_unbracket(x.text) for x in dp.findall("field") if x.text]))
     for opts in el.findall("date-options") + el.findall("overridable-settings/date-options"):
@@ -1517,6 +1618,7 @@ class _Parser:
             for note in sorted(self.calc_notes.get(ds.uid, ())):
                 for m in (self.ds_models.get(ds.uid) or {}).values():
                     self._describe(m, note)
+            self._display(ds)
         for lod in self.lod_names.values():
             if lod.model is not None:
                 lod.model.sm.sql = lod.sql()
@@ -1585,6 +1687,7 @@ class _Parser:
         ds.objects = dict(target.objects)
         ds.relationships = list(target.relationships)
         ds.hierarchies = ds.hierarchies or list(target.hierarchies)
+        ds.default_sorts = ds.default_sorts or list(target.default_sorts)
         ds.origin = target
         for local, tf in target.fields.items():
             mine = ds.fields.get(local)
@@ -1600,6 +1703,11 @@ class _Parser:
                 mine.extra = mine.extra or tf.extra
                 mine.description = mine.description or tf.description
                 mine.default_agg = mine.default_agg or tf.default_agg
+            if mine is not None and local in ds.inherited:
+                # a published field's aliases are the published datasource's (a workbook's copy has no say);
+                # a number format set in the workbook wins
+                mine.aliases = list(tf.aliases)
+                mine.format = mine.format or tf.format
 
     def _assign_models(self, ds: TDatasource) -> None:
         item = f"{ds.src} datasource {ds.caption}"
@@ -1877,6 +1985,25 @@ class _Parser:
             else:
                 m.sm.dimensions.append(Dimension(name, "categorical", expr, f.description, f.label))
             m.elements.add(name)
+
+    def _display(self, ds: TDatasource) -> None:
+        """Number formats and aliases (Default Properties) on the dimensions, measures and metrics made from the fields."""
+        for f in ds.fields.values():
+            if not (f.format or f.aliases) or f.param:
+                continue
+            fmt = {"format": d3_format(f.format), "source_format": f.format}
+            labels = [{"value": _param_value(k, f.datatype) if k != "%null%" else None, "label": v} for k, v in f.aliases
+                      ] if f.datatype in ("string", "boolean") else []
+            model = self._field_model(ds, f)
+            for el in [*(model.sm.dimensions + model.sm.measures if model is not None else []), *self.b.metrics]:  # type: ignore[operator]
+                mine = (el.source_ref == f"{ds.src} datasource: {ds.caption} field: {f.label}" if isinstance(el, Metric)
+                        else el.label == f.label)
+                if not mine or el.source_format:
+                    continue
+                if f.format:
+                    el.format, el.source_format = fmt["format"], fmt["source_format"]
+                if labels and isinstance(el, Dimension):
+                    el.value_labels = labels
 
     # ------------------------------------------------------------ calculated fields
 
@@ -3053,8 +3180,10 @@ class _Parser:
             todos.append(join_todo)
         qualify_one = False  # one table, its columns qualified (FIXED grains are joined to it)
 
+        sorts = sheet_sorts(view, tile_ds.default_sorts if tile_ds is not None else [])
+
         def build() -> tuple[list[str], list, set[str], list[str], list[str], list[str], list[str], str]:
-            self._sheet = _SheetCtx(tile_ds)
+            self._sheet = _SheetCtx(tile_ds, sorts=sorts)
             self._joined = tile_ds if (join_from or qualify_one or rel_tile) else None
             problems, columns, dropped, notes = [], [], set(), []
             for r, critical in ordered:
@@ -3068,6 +3197,7 @@ class _Parser:
                         dropped.add(r.instance)
                     continue
                 columns.append((r, alias, sql, is_agg, display, etype, unit))
+            notes += self._aliases(columns) + self._sort_aggregates(wb, columns, deps)
             where, having, order, limit = [], [], [], ""
             for flt in view.findall("filter"):
                 res = self._filter(wb, flt, deps, meta)
@@ -3142,16 +3272,28 @@ class _Parser:
                 todos.append(str(exc))
             if note:
                 todos.append(note)
+            todos += self._sheet.notes  # type: ignore[union-attr]
             if cte and ("<[Parameters]" in cte or PARAM_REF.search(cte)):
                 todos.append("custom SQL uses Tableau parameters (<[Parameters].[x]>): replace them with :binds from the parameters cell")
         elif not columns and not problems:
             todos.append("no fields on the sheet's shelves")
         by_inst = {c[0].instance: c for c in columns}
+        styles = {(rule.get("element", ""), _unesc(ref[0][1])): fm.get("value", "")  # the sheet's Format > Numbers
+                  for rule in table.findall("style/style-rule") for fm in rule.findall("format")
+                  if fm.get("attr") == "text-format" and (ref := DS_REF.findall(fm.get("field", "")))}
 
-        def to_encoding(r: _Ref) -> Encoding | None:
+        def number_format(r: _Ref, channel: str) -> str:
+            """The sheet's format for the field (axis, or marks and tooltips), else the field's default; counts have none."""
+            own = styles.get(("axis" if channel in ("x", "y") else "cell", r.instance))
+            if own or r.field is None or r.deriv in ("cnt", "ctd"):
+                return own or ""
+            return r.field.format
+
+        def to_encoding(r: _Ref, channel: str) -> Encoding | None:
             c = by_inst.get(r.instance)
             if c is not None:
-                return Encoding(c[1], c[5], title=c[4], time_unit="" if sql else ALTAIR_UNIT.get(c[6], ""))  # type: ignore[arg-type]
+                return Encoding(c[1], c[5], title=c[4], time_unit="" if sql else ALTAIR_UNIT.get(c[6], ""),  # type: ignore[arg-type]
+                                sort="none" if sql and not c[3] and r.instance in sorts else "", format=d3_format(number_format(r, channel)))
             if r.instance in dropped:
                 return None
             try:
@@ -3159,10 +3301,10 @@ class _Parser:
             except _NoSQL:
                 label = r.field.label if r.field else r.instance
                 alias, display, etype, unit = _name(label), label, "quantitative" if self._is_measure(r) else "nominal", ""
-            return Encoding(alias, etype, title=display, time_unit=ALTAIR_UNIT.get(unit, ""))  # type: ignore[arg-type]
+            return Encoding(alias, etype, title=display, time_unit=ALTAIR_UNIT.get(unit, ""), format=d3_format(number_format(r, channel)))  # type: ignore[arg-type]
 
-        encodings = {ch: e for ch, r in chosen.items() if (e := to_encoding(r)) is not None}
-        layers = [Layer(m, {ch: e}) for m, ch, r in layer_refs if (e := to_encoding(r)) is not None]  # type: ignore[arg-type]
+        encodings = {ch: e for ch, r in chosen.items() if (e := to_encoding(r, ch)) is not None}
+        layers = [Layer(m, {ch: e}) for m, ch, r in layer_refs if (e := to_encoding(r, ch)) is not None]  # type: ignore[arg-type]
         sql, references = self._analytics(wb, name, table, panes, deps, rows, cols, columns, chosen, layer_refs, sql, todos)
         meta["params"] += [k for k, pf in wb.params.items() if k not in meta["params"] and re.search(rf"(?<!:):{_name(pf.label)}\b", sql)]
         for p in meta["params"]:
@@ -3180,6 +3322,9 @@ class _Parser:
         }
         if totals_sql:
             config["totals_sql"] = totals_sql
+        formats = {c[1]: fmt for c in columns if (fmt := number_format(c[0], "text"))}
+        if formats:
+            config["formats"] = formats  # Tableau number formats of the columns (marks, tooltips, tables)
         title = _text(ws.find("layout-options/title"))
         if title and title != "<Sheet Name>":
             config["title"] = title.replace("<Sheet Name>", name)
@@ -3570,6 +3715,105 @@ class _Parser:
             sql = ta.wrap(sql, items, grouped, len([c for c in columns if not c[3]]))
         return sql, refs
 
+    def _aliases(self, columns: list) -> list[str]:
+        """Aliased dimensions show Tableau's labels: the column's SQL becomes the mapping (rows are still grouped on the
+        values, so two members with one label stay two rows, as in Tableau). Returns notes for the ones left as values."""
+        ctx = self._sheet
+        assert ctx is not None
+        notes = []
+        for i, (r, alias, sql, is_agg, display, etype, unit) in enumerate(columns):
+            f = r.field
+            if is_agg or not sql or f is None or not f.aliases or r.deriv not in ("none", ""):
+                continue
+            label = alias_sql(_paren(sql), f)
+            if label is None:
+                notes.append(f"[{f.label}] has aliases (Default Properties > Aliases), which Tableau shows instead of its {f.datatype} values: "
+                             f"map them in the SQL ({', '.join(f'{k} -> {v!r}' for k, v in f.aliases)})")
+                continue
+            ctx.labels[r.instance] = sql
+            columns[i] = (r, alias, label, is_agg, display, "nominal" if f.datatype == "boolean" else etype, unit)
+        return notes
+
+    def _sort_aggregates(self, wb: _Workbook, columns: list, deps: dict[tuple[str, str], ET.Element]) -> list[str]:
+        """SQL of the aggregate each computed sort orders by (Sort > Field), when it is one aggregate over the sheet's rows."""
+        ctx = self._sheet
+        assert ctx is not None
+        notes = []
+        by_inst = {c[0].instance: c for c in columns}
+        for inst, srt in ctx.sorts.items():
+            dim = by_inst.get(inst)
+            if srt.kind != "computed" or dim is None or dim[3]:
+                continue
+            ref = next(iter(self._shelf(wb, f"[{_esc(dim[0].dsname)}].[{_esc(srt.using)}]", deps)), None)
+            used = by_inst.get(srt.using)
+            try:
+                if used is None and ref is not None:
+                    used = (ref, *self._column(ref))
+            except _NoSQL:
+                used = None
+            # an aggregated LOD (no SQL here) is ordered by its value in the tile SQL, when the sheet shows it
+            if used is None or not used[3] or not (used[2] or srt.using in by_inst):
+                notes.append(f"sort of {dim[4]} by {srt.using} ({srt.direction.lower()}) not applied: add it to the tile's order by")
+                continue
+            ctx.sort_by[inst] = (used[0].deriv, used[2])
+        return notes
+
+    def _sort_order(self, dims: list, refer: Any, from_sql: str = "") -> list[str]:
+        """ORDER BY items for the sheet's dimensions, outermost first, each in its sort's order (see _sort_items)."""
+        return [x for items in self._sort_items(dims, refer, from_sql) for x in items]
+
+    def _sort_items(self, dims: list, refer: Any, from_sql: str = "", windows: bool = True) -> list[list[str]]:
+        """ORDER BY items per dimension, each in its sort's order. `refer(i, c)` gives a dimension's (key, label SQL, value
+        SQL): key is its output position or label SQL. A computed sort with other dimensions orders each member by its
+        aggregate over the whole view (a window over the sheet's marks; not with `windows=False`, e.g. totals rows)."""
+        ctx = self._sheet
+        assert ctx is not None
+        items: list[list[str]] = []
+        for i, c in enumerate(dims, 1):
+            key, label, raw = refer(i, c)
+            srt = ctx.sorts.get(c[0].instance)
+            using = ""
+            if srt is not None and srt.kind == "computed":
+                deriv, agg = ctx.sort_by.get(c[0].instance, ("", ""))
+                outer = {"sum": "sum", "cnt": "sum", "min": "min", "max": "max"}.get(deriv, "")
+                if agg and len(dims) == 1:
+                    using = agg
+                elif agg and outer and windows:
+                    using = f"{outer}({agg}) over (partition by {_qualify(raw, from_sql)})"
+                elif agg:
+                    ctx.notes.append(f"sort of {c[4]} by {srt.using} ({srt.direction.lower()}) with other dimensions on the sheet not applied: "
+                                     "order the members by the aggregate over the whole view")
+                if not using:
+                    srt = None
+            string = c[0].instance in ctx.labels or (c[0].field is not None and c[0].field.datatype == "string" and c[0].deriv in ("none", ""))
+            null_label = c[0].instance in ctx.labels and any(k == "%null%" for k, _ in c[0].field.aliases)
+            items.append(self._dim_order(srt, key, label, raw, string, using, null_label))
+        return items
+
+    def _dim_order(self, srt: SheetSort | None, key: str, label: str, raw: str, string: bool, using: str = "",
+                   null_label: bool = False) -> list[str]:
+        """ORDER BY items for one dimension's members in Tableau's order (also usable in a window's ORDER BY, with `key`
+        the label SQL). Natural order (no sort, or data source order) follows the labels, NULL first (also when it has an
+        alias: `null_label`); an alphabetic sort compares the labels as text by character code (uppercase first), NULL as
+        'Null'; a manual sort lists members in order (its direction is ignored), the rest after them in natural order; a
+        computed sort orders by `using`, ties in natural order."""
+        if srt is not None and srt.kind == "alphabetic" and not string:
+            srt = None  # Tableau sorts only text alphabetically; on numbers and dates it changes nothing
+        desc = srt is not None and srt.direction == "DESC" and srt.kind != "manual"
+        nulls = [f"case when {raw} is null then 0 else 1 end"] if null_label else []
+        natural = nulls + [f"{key}{' nulls first' if string else ''}"]
+        if srt is None or srt.kind == "natural":
+            return [f"{x} desc" for x in nulls] + [f"{key} desc{' nulls last' if string else ''}"] if desc else natural
+        if srt.kind == "alphabetic":
+            binary = ' collate "C"' if self.dialect == "postgres" else ""  # Postgres compares text in the database's collation
+            return [f"coalesce({label}, 'Null'){binary}{' desc' if desc else ''}"]
+        if srt.kind == "manual":
+            members = [m for m in srt.members if m != "%all%"]
+            whens = " ".join(f"when {raw} is null then {n}" if (lit := _member_sql(m)) is None else f"when {raw} = {lit} then {n}"
+                             for n, m in enumerate(members, 1))
+            return ([f"case {whens} else {len(members) + 1} end"] if members else []) + natural
+        return [f"{using}{' desc' if desc else ''}", *natural]
+
     def _ds_join(self, ds: TDatasource | None) -> str:
         """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""
         if ds is None or not ds.join_steps or not all(pairs for _, _, pairs in ds.join_steps):
@@ -3635,27 +3879,38 @@ class _Parser:
         def item(c: tuple) -> str:
             return f"  {c[2]}" if c[2] == c[1] else f"  {c[2]} as {c[1]}"
 
+        def value(c: tuple) -> str:  # what an aliased dimension groups on: its values, not its labels
+            return _qualify(ctx.labels[c[0].instance], from_sql) if c[0].instance in ctx.labels else c[2]
+
+        if order and any(c[0].instance in ctx.sorts for c in dims):
+            ctx.notes.append("the Top N filter's order is kept; Tableau shows its rows in the sheet's sort: order the result again")
         if not specials and totals:
             totalled = [c for c in dims if any(c[0].instance not in s for s in totals)]
-            expr = {c[0].instance: c[2] for c in dims}
-            flags = [f"  grouping({c[2]}) as {c[1]}_total" for c in totalled]
+            expr = {c[0].instance: value(c) for c in dims}
+            flags = [f"  grouping({expr[c[0].instance]}) as {c[1]}_total" for c in totalled]
             sets = ", ".join("(" + ", ".join(expr[i] for i in s) + ")" for s in totals)
             flag_pos = {id(c): len(columns) + k for k, c in enumerate(totalled, 1)}
-            lines = ["select", ",\n".join([item(c) for c in columns] + flags), f"from {rows}{where_sql}", f"group by grouping sets ({sets})",
-                     "order by " + ", ".join(f"{flag_pos[id(c)]}, {i}" if id(c) in flag_pos else str(i) for i, c in enumerate(dims, 1))]
+            shown = [f"  case when grouping({expr[c[0].instance]}) = 1 then null else {c[2]} end as {c[1]}"
+                     if c[0].instance in ctx.labels and id(c) in flag_pos else item(c) for c in columns]  # no label on a total row
+            per_dim = self._sort_items(dims, lambda i, c: (str(i), c[2], value(c)), from_sql, windows=False)
+            lines = ["select", ",\n".join(shown + flags), f"from {rows}{where_sql}", f"group by grouping sets ({sets})",
+                     "order by " + ", ".join(x for i, c in enumerate(dims) for x in ([str(flag_pos[id(c)])] if id(c) in flag_pos else []) + per_dim[i])]
             body = "\n".join(lines)
         elif not specials:
-            lines = ["select", ",\n".join(item(c) for c in columns), f"from {rows}{where_sql}{group(len(dims))}"]
+            keys = [value(c) if c[0].instance in ctx.labels else str(i) for i, c in enumerate(dims, 1)]
+            lines = ["select", ",\n".join(item(c) for c in columns), f"from {rows}{where_sql}" + (f"\ngroup by {', '.join(keys)}" if keys else "")]
             if having:
                 lines.append("having " + "\n  and ".join(having))
             if order:
                 lines.append("order by " + ", ".join(order))
             elif dims:
-                lines.append("order by " + ", ".join(str(i) for i in range(1, len(dims) + 1)))
+                lines.append("order by " + ", ".join(self._sort_order(dims, lambda i, c: (str(i), c[2], value(c)), from_sql)))
             if limit:
                 lines.append(f"limit {limit}")
             body = "\n".join(lines)
         else:
+            labeled = {c[0].instance: c for c in dims if c[0].instance in ctx.labels}
+            dims = [(c[0], c[1], ctx.labels[c[0].instance], *c[3:]) if c[0].instance in labeled else c for c in dims]  # values until the end
             dim_items = [item(c).strip() for c in dims]
             joins: list[tuple[str, list[tuple]]] = []
             # aggregates over the sheet's rows inside expression specials: hidden columns of the base CTE
@@ -3736,8 +3991,19 @@ class _Parser:
                     frm += f"\nleft join {name} on " + " and ".join(f"base.{d[1]} is not distinct from {name}.{d[1]}" for d in on_dims)
                 else:
                     frm += f"\ncross join {name}"
-            picks = [f"  {picks_sql[id(c)]} as {c[1]}" if id(c) in picks_sql else f"  {source.get(id(c), head)}.{c[1]}" for c in columns]
-            body = "\n".join(["select", ",\n".join(picks), f"from {frm}"] + (["order by " + ", ".join(str(i) for i in range(1, len(dims) + 1))] if dims else []))
+            exprs = {c[0].instance: picks_sql.get(id(c)) or f"{source.get(id(c), head)}.{c[1]}" for c in columns}
+            labels = {inst: alias_sql(exprs[inst], c[0].field) or exprs[inst] for inst, c in labeled.items()}
+            picks = [f"  {labels.get(c[0].instance) or picks_sql.get(id(c))} as {c[1]}" if c[0].instance in labels or id(c) in picks_sql
+                     else f"  {exprs[c[0].instance]}" for c in columns]
+            for inst, (deriv, _) in list(ctx.sort_by.items()):
+                srt = ctx.sorts[inst]
+                if srt.using in exprs:  # the sorted-by measure is on the sheet: order the marks by its value
+                    ctx.sort_by[inst] = (deriv, exprs[srt.using])
+                else:
+                    del ctx.sort_by[inst]
+                    ctx.notes.append(f"sort by {srt.using} ({srt.direction.lower()}) not applied: add it to the tile's order by")
+            order_by = self._sort_order(dims, lambda i, c: (str(i), labels.get(c[0].instance, exprs[c[0].instance]), exprs[c[0].instance]), head)
+            body = "\n".join(["select", ",\n".join(picks), f"from {frm}"] + (["order by " + ", ".join(order_by)] if dims else []))
         if not ctes:
             return body
         return "with " + ",\n".join(f"{n} as (\n{b}\n)" for n, b in ctes) + "\n" + body

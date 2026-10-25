@@ -34,6 +34,9 @@ CHANNEL_CLASS = {
 }
 FACETS = ("row", "column", "facet")
 SORTABLE = ("x", "y", "color", "xOffset", "theta", "row", "column", "facet")
+# where a channel takes a number format: its axis, its legend, or the channel itself
+FORMAT_ARG = {"x": "axis=alt.Axis(format={})", "y": "axis=alt.Axis(format={})", "color": "legend=alt.Legend(format={})",
+              "size": "legend=alt.Legend(format={})", "text": "format={}"}
 MARK_METHOD = {
     "bar": "mark_bar()",
     "line": "mark_line(point=True)",
@@ -82,7 +85,8 @@ def _encode_args(encodings: dict[str, Encoding]) -> tuple[list[str], list[str]]:
     tooltips = []
     for channel, enc in encodings.items():
         if channel == "tooltip":
-            tooltips.append(_py_str(_shorthand(enc)))
+            fmt = f", format={_py_str(enc.format)}" if enc.format else ""
+            tooltips.append(f"alt.Tooltip({_py_str(_shorthand(enc))}{fmt})" if fmt else _py_str(_shorthand(enc)))
             continue
         cls = CHANNEL_CLASS.get(channel)
         if cls is None:
@@ -90,7 +94,9 @@ def _encode_args(encodings: dict[str, Encoding]) -> tuple[list[str], list[str]]:
             continue
         extra = f", title={_py_str(enc.title)}" if enc.title else ""
         if enc.sort and channel in SORTABLE:
-            extra += f", sort={_py_str(enc.sort)}"
+            extra += ", sort=None" if enc.sort == "none" else f", sort={_py_str(enc.sort)}"  # None: the rows' order
+        if enc.format and channel in FORMAT_ARG:
+            extra += ", " + FORMAT_ARG[channel].format(_py_str(enc.format))
         if channel == "facet":
             extra += ", columns=3"
         args.append(f"{channel}={cls}({_py_str(_shorthand(enc))}{extra})")

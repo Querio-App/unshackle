@@ -170,9 +170,46 @@ every join is a left join on the other table's key. Categorical filters
 `>=`/`<=`, Top N by an aggregate -> `order by ... desc limit N`. A filter on a calc
 that compares with a parameter (`[Revenue] >= [Parameters].[Min Order Value]`)
 becomes `where (post_discount_revenue >= :min_order_value) = true`, bound from the
-parameters cell (see **Parameters** below). Aliases follow Tableau's display names
+parameters cell (see **Parameters** below). Column aliases follow Tableau's display names
 (`Month of Order Date` -> `month_of_order_date`); `source_config.columns` maps each
 alias back to its Tableau name.
+
+### Aliases, sorts and number formats
+
+**Aliases** (`<aliases><alias key='"Copy"' value='Copy Paper' />` on a column, Edit Aliases in
+Tableau) are labels: a sheet showing the dimension selects `case when x = 'Copy' then 'Copy
+Paper' ... else x end` and groups on `x`, so two members with one label stay two rows, as in
+Tableau. Members without an alias keep their value; NULL (`%null%`) keeps NULL unless it has
+an alias; booleans show `True` / `False` unless aliased. Aliases on number or date dimensions
+stay a TODO on the tile. A published datasource's fields take the published aliases (aliases
+in a workbook's copy of them don't apply). In Ossie the dimension carries them as
+`custom_extensions` `value_labels` (`[{"value": "Copy", "label": "Copy Paper"}]`); its values
+are unchanged.
+
+**Sorts** become the tile's `order by`, outer dimensions first; a sorted dimension's chart
+encoding gets `sort=None` so the chart keeps the rows' order. A sheet's sorts are in `<view>`;
+a datasource's Default Properties > Sort (`<default-sorts>`) applies where the sheet has none.
+
+| Tableau sort | `order by` |
+| --- | --- |
+| none, or Data source order (`<natural-sort>`) | the labels (with the warehouse's collation), NULL first (`1 nulls first`); descending reverses it |
+| Alphabetic (`<alphabetic-sort>`) | `coalesce(label, 'Null')`: by character code, uppercase before lowercase, NULL read as `Null` (Postgres: `collate "C"`); on numbers and dates it changes nothing |
+| Manual (`<manual-sort>`) | `case when x = <first> then 1 ... else n end`, then natural order: listed members first, whatever the direction |
+| Field (`<computed-sort using=...>`) | the aggregate (`sum(revenue) desc`), shown on the sheet or not; with other dimensions, per member over the whole view (`sum(sum(x)) over (partition by d)`), the same order in every pane |
+
+A computed sort by an `AVG`, `COUNTD`, `MEDIAN` or calc with other dimensions on the sheet, or
+by a measure unshackle can't write, stays a TODO; so does a sheet sort under a Top N filter (the
+rows keep the Top N order). Tableau's view CSV lists rows in the sheet's sort for one dimension;
+with several, it orders them by its columns, so check nested sorts in the view itself.
+
+**Number formats** (`default-format` on a column, a sheet's Format > Numbers in
+`<style-rule><format attr='text-format'>`) change no values. A tile carries them in
+`source_config.formats` (alias -> Tableau format) and, when d3-format writes them exactly, on
+its encodings: `axis=alt.Axis(format='$,.2f')`, `alt.Tooltip(..., format='.1%')`,
+`alt.Text(..., format=',.0f')`. A sheet's own format wins over the field's; counts
+(`CNT`, `COUNTD`) don't take the field's format. In Ossie, fields and metrics carry
+`format` (d3) and `source_format` (Tableau's) in `custom_extensions`. Scaled units
+(`#,##0,K`), literal text and locale formats (`C1033%`) have no d3 form: format them by hand.
 
 **LODs in tiles** follow Tableau's order of operations. A FIXED grain is a CTE computed
 over all of the datasource's rows (before the sheet's dimension filters):

@@ -94,6 +94,11 @@ def _ext(data: dict[str, Any]) -> list[dict[str, str]]:
     return [{"vendor_name": VENDOR, "data": json.dumps(data, indent=2, default=str)}] if data else []
 
 
+def _display(item: Any) -> dict[str, str]:
+    """How the source formats a field or metric's numbers (Ossie has no format): d3-format, and the source's own string."""
+    return {"format": item.format, "source_format": item.source_format}
+
+
 def _expression(dialect: str, expr: str) -> dict[str, Any]:
     return {"dialects": [{"dialect": dialect, "expression": expr}]}
 
@@ -154,7 +159,7 @@ def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) 
         if d.todo or _has_jinja(d.expr):
             ds.skip("dimension", d, _reason(d.todo or "expression still has template code", d.source_language, d.source_expression or d.expr))
             continue
-        ext = _ext({"time_granularity": d.time_granularity}) if d.type == "time" else []
+        ext = _ext({"time_granularity": d.time_granularity if d.type == "time" else "", **_display(d), "value_labels": d.value_labels})
         ds.dims[snake(d.name)] = ds.add(
             _mf(d.name),
             d.expr or _col(d.name),
@@ -193,7 +198,8 @@ def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) 
             arg = ""
         else:
             expr = m.expr or _col(m.name)
-            arg = expr if CONSTANT.fullmatch(expr) else ds.by_expr.get(_norm(expr)) or ds.add(_mf(m.name), expr, label=m.label, description=m.description)
+            arg = expr if CONSTANT.fullmatch(expr) else ds.by_expr.get(_norm(expr)) or ds.add(
+                _mf(m.name), expr, label=m.label, description=m.description, custom_extensions=_ext(_display(m)))
         ds.measures.setdefault(m.name, (m, arg))
         ds.measures.setdefault(snake(m.name), (m, arg))
     return ds
@@ -428,7 +434,8 @@ def render(bundle: Bundle, layout: Layout) -> dict[str, str]:
                 "name": mname,
                 "expression": _expression(datasets[home].dialect, expr),
                 "description": m.description,
-                "custom_extensions": _ext({"label": (m.label or m.name) if (m.label or m.name) != mname else "", "source_ref": m.source_ref}),
+                "custom_extensions": _ext({"label": (m.label or m.name) if (m.label or m.name) != mname else "", "source_ref": m.source_ref,
+                                           **_display(m)}),
             }
         )
         (datasets[home].metrics if scoped else model_metrics.setdefault(home, [])).append(body)
