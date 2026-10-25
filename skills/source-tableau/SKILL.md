@@ -99,10 +99,12 @@ unshackle build tableau
 | row calc over FIXED values of one grain (`IF [Account Revenue] >= 1000000 THEN "Large" ... END`) | dimension of the `<a>_lod` model |
 | calc with `USERNAME()` / `FULLNAME()` / `USERDOMAIN()` / `ISMEMBEROF('g')` | row filter (`[Owner] = USERNAME()` -> `owner = {{ user.email }}`, `ISMEMBEROF('g')` -> `'g' in ({{ user.groups }})`), always with a TODO; a datasource filter also gets a rule per inner-joined table |
 | worksheet | notebook tile with generated SQL (below) |
-| dashboard | notebook; zones grouped into layout rows by `y` (cell order, `unshackle.layout` metadata); text zones -> markdown cells; quick filter / parameter zones -> parameters cell |
-| worksheets on no dashboard | one extra notebook `<workbook>-sheets` |
+| dashboard | notebook; zones grouped into layout rows by `y` (cell order, `unshackle.layout` metadata); text zones -> markdown cells; filter and parameter controls -> parameters cell (Dashboards below) |
+| dashboard actions | filter action -> `selected_<field>` notebook parameter bound in its target tiles; URL action -> markdown link; highlight, set and parameter actions -> listed under Not migrated (Dashboards below) |
+| story | one notebook, a section per story point (its caption, then the captured sheet or dashboard with the filters the point captured) |
+| worksheets on no dashboard (or story) | one extra notebook `<workbook>-sheets` |
 | group Read / Write on a workbook | Cedar `view` / `edit` on each of its notebooks (`Deny` -> `forbid`) |
-| calc formulas, `<desc>`, parameters, hierarchies (`<drill-path>`), sheet captions, lineage | `knowledge/<workbook>-glossary.md` |
+| calc formulas, `<desc>`, parameters, hierarchies (`<drill-path>`), folders, hidden fields, sheet captions, lineage | `knowledge/<workbook>-glossary.md`; `<desc>` is also the field's description in Ossie and MetricFlow |
 
 Names: snake_case of the caption (`Profit Ratio` -> `profit_ratio`, `Margin %` ->
 `margin_pct`). A caption used in two tables becomes `<model>_<name>`
@@ -330,6 +332,23 @@ set itself (`[ds].[Set]`) shows its members: the set's dimension, on the rows of
 members in the set. A filter on `[io:Set:nk]` keeps `member='true'` (In) or `'false'`
 (Out). Groups are referenced directly (`[ds].[Region (group)]`), bins as
 `[none:Sales (bin):ok]`.
+
+### Dashboards
+
+Each dashboard is a notebook. Its filters become notebook parameters, bound in the tile SQL with a cast
+(`cast(:x as text) is null`), since Postgres can't type a bare `:x is null`:
+
+| Tableau | Notebook |
+| --- | --- |
+| filter control (`<zone type-v2='filter'>`) | one parameter, bound in every sheet the filter applies to: the control's sheet and, for "Apply to worksheets", every sheet whose filter on that field has the same `filter-group`. A list: `(cast(:region as text) is null or region = cast(:region as text))`, default the saved value (`None` when all are selected). A range: `:<name>_from` / `:<name>_to`, both inclusive, defaults the saved range. A saved selection of several values stays as saved, with a TODO on the tile |
+| filter action (`tsc:tsl-filter`) | `selected_<field>` per field it filters on (`_on_<source sheet>` when another action on the dashboard filters a same field), bound in each target sheet's `[Action (...)]` filter. `None` = no marks selected, all rows (Tableau's "show all values" when the selection is cleared). One value at a time; a selected mark sets all of its fields. "All fields" means the dimensions on the source sheet. The Interactions cell says which marks set which parameters |
+| URL action | a markdown link; `{field}` stands for the selected mark's value |
+| go-to-sheet action | a note naming the sheet's notebook |
+| highlight, set and parameter actions; web and image zones; phone and tablet layouts | listed under Not migrated in the notebook and per dashboard in `migration/report.md` |
+| story (`type='storyboard'`) | one notebook: per story point a section with its caption, then the captured sheet or dashboard. Filters the point captured are applied as saved (`p<n>-` tile ids); other captured changes (shelves, sorts, parameter values) are listed under Not migrated |
+
+Action filters left on a sheet by an action that no longer targets it filter nothing and are left out.
+Filter actions saved with marks selected stay TODO.
 
 ## Finishing TODOs
 
@@ -578,8 +597,9 @@ keys: [category, month of order date]
   columns with the same name get a table suffix in Tableau (`[account_id (accounts)]`).
 - Local names vs captions: formulas reference local names (`[Calculation_123]`,
   sometimes `[sales]` with caption `Sales`); unshackle resolves both.
-- Hidden fields are still migrated (they may feed calcs); `hidden: true` columns get
-  `visible: false` in the catalog.
-- Stories and web/image zones are not migrated (warning in the report).
+- Hidden fields (`hidden='true'`) get a metric or dimension only when a sheet, a visible
+  calculation or a data source filter uses them (directly or through other calcs). Their
+  columns stay, with `visible: false` in the catalog; the glossary lists them.
+- Data pane folders (`<folders-common>`, older `<folder>`) are listed in the glossary.
 - REST rate limits are not published; unshackle stays at 120 requests/min. Large sites:
   run `extract --only workbook:<luid>` for the inventory's top workbooks first.

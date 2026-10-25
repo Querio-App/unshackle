@@ -40,6 +40,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from unshackle.http import Client, SourceError, env
 from unshackle.ir import (
@@ -117,10 +118,14 @@ HYPER_ENGINE = {"hyper", "dataengine", "excel-direct", "textscan"}
 APP_CONNECTION = re.compile(r"salesforce|google|servicenow|marketo|eloqua|quickbooks|webdata|odata|sharepoint|onedrive|dropbox|box|drive|sheet|file", re.I)
 COLUMN_TYPE = {"integer": "integer", "real": "number", "string": "string", "date": "date", "datetime": "timestamp", "boolean": "boolean"}
 NUMERIC = {"integer", "real"}
+# a notebook parameter's SQL type: binds are cast, since Postgres can't type `:x is null` on its own
+BIND_TYPE = {"string": "text", "integer": "bigint", "real": "double precision", "boolean": "boolean", "date": "date", "datetime": "timestamp"}
 TIME_TYPES = {"date", "datetime"}
 CAPABILITY_ACTION = {"Read": "view", "Write": "edit"}
 INTERNAL_FIELDS = {"Number of Records", "__tableau_internal_object_id__", ":Measure Names", "Multiple Values", ":Measure Values"}
 
+USER_NS = "http://www.tableausoftware.com/xml/user"
+STORY = "unshackle-story-point"  # marks a filter a story point captured (copied into its worksheet)
 BRACKETED = re.compile(r"\[((?:[^\]]|\]\])*)\]")
 DS_REF = re.compile(r"\[((?:[^\]]|\]\])+)\]\.\[((?:[^\]]|\]\])+)\]")
 PARAM_REF = re.compile(r"\[Parameters\]\.\[((?:[^\]]|\]\])+)\]")
@@ -840,6 +845,43 @@ def _fixed_aggs(expression: str, level: str) -> str:
     return "".join(out) + clean[last:]
 
 
+def _level(inst: str) -> tuple[str, str]:
+    """A field instance (`yr:Order Date:ok`, or a bare field name) -> (derivation, field)."""
+    parts = inst.split(":")
+    return (parts[0].lower(), ":".join(parts[1:-1])) if len(parts) >= 3 else ("none", inst)
+
+
+def _sheet_dims(ws: ET.Element) -> set[tuple[str, str]]:
+    """The dimensions on a worksheet's shelves and marks card (what a selected mark has a value of), as _level()s."""
+    table = ws.find("table")
+    texts = [table.findtext("rows") or "", table.findtext("cols") or ""] if table is not None else []
+    texts += [c.get("column", "") for c in ws.iter() if _local(c.tag) in ("color", "size", "lod", "text", "shape", "tooltip", "path", "wedge-size")]
+    out = set()
+    for text in texts:
+        for m in DS_REF.finditer(text):
+            d, f = _level(_unesc(m.group(2)))
+            if d not in DERIV_AGG and d not in ("usr", "attr", "") and not f.startswith(":") and f != "Number of Records":
+                out.add((d, f))
+    return out
+
+
+def _member_py(v: str | None) -> Any:
+    """Tableau member literal -> the value a notebook parameter holds (dates as ISO text); None for null."""
+    if v is None or v == "%null%":
+        return None
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        return v[1:-1].replace('""', '"')
+    if v.startswith("#") and v.endswith("#"):
+        return v[1:-1]
+    if re.fullmatch(r"-?\d+", v):
+        return int(v)
+    if re.fullmatch(r"-?\d+\.\d+", v):
+        return float(v)
+    if v.lower() in ("true", "false"):
+        return v.lower() == "true"
+    return v
+
+
 def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     """-> (formula without // comments, code with strings blanked, code with strings and [fields] blanked, comments)."""
     clean: list[str] = []
@@ -1314,6 +1356,8 @@ class TDatasource:
     origin: "TDatasource | None" = None  # the published datasource a workbook's sqlproxy stub was linked to
     inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
     hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
+    folders: list[tuple[str, list[str]]] = field(default_factory=list)  # Data pane folders: (folder name, [field local names])
+    unused: set[str] = field(default_factory=set)  # hidden fields no sheet, calculation or filter uses: no metric or dimension
     settings: dict[str, list[str]] = field(default_factory=dict)  # CONNECTION_SETTINGS attribute -> values on its connections
     extract: bool = False  # <extract enabled='true'>: Tableau computes on its extract (Hyper), not on the warehouse
     # Date Properties: <date-options start-of-week='monday' fiscal-year-start='july' /> (in a workbook's copy of a published
@@ -1543,7 +1587,12 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                        "domain": col.get("param-domain-type", ""), "range": dict(rng.attrib) if rng is not None else {}}
     for grp in el.findall("group"):
         local = _unbracket(grp.get("name"))
-        if local and local not in ds.fields:
+        if local and local not in ds.fields and grp.get(f"{{{USER_NS}}}auto-column") == "sheet_link":
+            # what a filter action filters a target sheet on: one level per field (Tableau creates it, hidden, per action)
+            levels = [_unbracket(g.get("level")) for g in grp.iter("groupfilter") if g.get("function") == "level-members" and g.get("level")]
+            ds.fields[local] = TField(local, caption=grp.get("caption") or local, role="dimension", calc_class="action", hidden=True,
+                                      extra={"levels": levels})
+        elif local and local not in ds.fields:
             levels = {_unbracket(g.get("level")) for g in grp.iter("groupfilter") if g.get("level")}
             ds.fields[local] = TField(local, caption=grp.get("caption") or local, datatype="boolean", role="dimension", calc_class="set",
                                       extra={"xml": ET.tostring(grp, encoding="unicode"), **({"of": levels.pop()} if len(levels) == 1 else {})})
@@ -1556,6 +1605,10 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
     ds.default_sorts = [s for d in el.findall("default-sorts") for s in d]
     for dp in el.findall("drill-paths/drill-path"):
         ds.hierarchies.append((dp.get("name", ""), [_unbracket(x.text) for x in dp.findall("field") if x.text]))
+    for folder in el.findall("folder") + el.findall("folders-common/folder"):
+        items = [_unbracket(x.get("name")) for x in folder.findall("folder-item") if x.get("type", "field") == "field" and x.get("name")]
+        if folder.get("name") and items:
+            ds.folders.append((folder.get("name", ""), items))
     for opts in el.findall("date-options") + el.findall("overridable-settings/date-options"):
         ds.week_start = (opts.get("start-of-week") or "").lower() or ds.week_start
         ds.fiscal_start = (opts.get("fiscal-year-start") or "").lower() or ds.fiscal_start
@@ -1713,6 +1766,12 @@ class _Parser:
         self.tds: list[TDatasource] = []
         self._joined: TDatasource | None = None  # tile SQL over a join: qualify physical columns with their relation
         self._sheet: _SheetCtx | None = None  # set while a worksheet's SQL is built
+        self._ws = ""  # the worksheet whose tile is being built
+        self._wb: _Workbook | None = None  # the workbook whose dashboards are being built
+        self._quick: dict[tuple[str, str], str] = {}  # (worksheet, filter column) shown on a dashboard -> notebook parameter
+        self._quick_on: dict[tuple[str, str], list[str]] = {}  # (worksheet, filter column) -> the worksheets its control filters
+        # worksheet -> (the fields a filter action on it filters by, the action's source sheet when another action filters a same field)
+        self._targets: dict[str, list[tuple[set[tuple[str, str]], str]]] = {}
         self.lods: dict[tuple, _Lod] = {}  # (FROM, CTE, FIXED dimension SQL) -> grain
         self.lod_names: dict[str, _Lod] = {}
         self.lod_fields: dict[tuple[str, str], tuple[_Lod, str]] = {}  # FIXED field -> (grain, column)
@@ -1784,11 +1843,12 @@ class _Parser:
         if self.copied_used:
             self._load_step()
         self._count_names(data_sources)
+        self._hidden_unused(data_sources)
         for ds in data_sources:
             self._base_fields(ds)
         for ds in data_sources:
             for f in list(ds.fields.values()):
-                if f.is_calc and not f.param:
+                if f.is_calc and not f.param and f.local not in ds.unused:
                     self._calc(ds, f)
         for ds in data_sources:
             for note in sorted(self.calc_notes.get(ds.uid, ())):
@@ -2207,7 +2267,7 @@ class _Parser:
                 continue
             if m.table is not None and not any(c.name == f.remote for c in m.table.columns):
                 m.table.columns.append(Column(f.remote, COLUMN_TYPE.get(f.datatype, ""), f.description, f.label, f.hidden))
-            if f.remote == m.pk:
+            if f.remote == m.pk or f.local in ds.unused:
                 continue
             src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
             if f.role == "measure" and f.datatype in NUMERIC:
@@ -2250,6 +2310,34 @@ class _Parser:
                     el.value_labels = labels
 
     # ------------------------------------------------------------ calculated fields
+
+    def _hidden_unused(self, data_sources: list[TDatasource]) -> None:
+        """Hidden fields (hidden='true') that no worksheet, visible calculation or data source filter uses, directly or through
+        other calcs: Tableau users don't see them, so they get no metric or dimension (their columns stay, not visible)."""
+        refs: dict[str, set[str]] = {ds.uid: set() for ds in data_sources}
+        for wb in self.workbooks:
+            for ws in wb.root.findall("worksheets/worksheet"):
+                for m in DS_REF.finditer(ET.tostring(ws, encoding="unicode")):
+                    ds = wb.datasources.get(_unesc(m.group(1)))
+                    if ds is not None:
+                        inst = _unesc(m.group(2)).split(":")
+                        refs[ds.uid].add(":".join(inst[1:-1]) if len(inst) >= 3 else inst[0])
+        for ds in sorted(data_sources, key=lambda d: d.origin is None):  # a published datasource after the workbooks that use it
+            used = refs[ds.uid] | {_unbracket(flt.get("column")) for flt in ds.filters}
+            todo = [f for f in ds.fields.values() if f.formula and (not f.hidden or f.local in used)]
+            while todo:
+                f = todo.pop()
+                for name in (_unesc(x) for x in BRACKETED.findall(scan_formula(f.formula or "")[1])):
+                    g = ds.fields.get(name)
+                    if g is not None and name not in used:
+                        used.add(name)
+                        if g.formula:
+                            todo.append(g)
+            if ds.origin is not None:
+                refs.setdefault(ds.origin.uid, set()).update(used)
+            refs[ds.uid] = used
+        for ds in data_sources:
+            ds.unused = {f.local for f in ds.fields.values() if f.hidden and f.calc_class != "action" and f.local not in refs[ds.uid]}
 
     def _calc(self, ds: TDatasource, f: TField, stack: tuple = ()) -> _Calc:
         key = (ds.uid, f.local)
@@ -4411,8 +4499,8 @@ class _Parser:
             c = self.cache.get((r.ds.uid, r.field.local))
             if c is not None and c.kind == "security":
                 return None
-        if label.startswith("Action ("):
-            return ("todo", f"dashboard action filter {label}: interactions are not migrated")
+        if r.field is not None and r.field.calc_class == "action":
+            return self._action_filter(wb, r, flt, deps, meta)
         try:
             _, expr, is_agg, *_ = self._column(r)
             if r.deriv == "io" and r.field is not None and r.field.calc_class == "set":
@@ -4423,6 +4511,9 @@ class _Parser:
             return ("todo", f"filter on [{label}] (an aggregated LOD) not applied; add it to the SQL")
         if r.field is not None:
             meta["filters"][(r.dsname, r.field.local)] = label
+        bound = self._quick_bind(r, flt, expr, is_agg, meta)
+        if bound is not None:
+            return bound
         cls = flt.get("class", "")
         clause = "having" if is_agg else "where"
         if cls == "categorical":
@@ -4530,90 +4621,273 @@ class _Parser:
         kind = "date" if p.datatype in TIME_TYPES else "number" if p.datatype in NUMERIC else "value"
         return DashboardFilter(_name(p.label), "", _param_value(p.value, p.datatype), kind, allowed=_param_domain(p))  # type: ignore[arg-type]
 
+    def _bind_type(self, r: _Ref) -> tuple[str, str]:
+        """(SQL type of a notebook parameter on this field, DashboardFilter kind)."""
+        dt = r.field.datatype if r.field is not None else ""
+        if r.deriv in PART:
+            return "bigint", "number"
+        if r.deriv in TRUNC:
+            return ("date" if dt == "date" else "timestamp"), "date"
+        return BIND_TYPE.get(dt, "text"), "date" if dt in TIME_TYPES else "number" if dt in NUMERIC else "value"
+
+    def _quick_name(self, r: _Ref) -> str:
+        try:
+            return self._column(r)[0]
+        except _NoSQL:
+            return _name(r.field.label if r.field else r.instance)
+
+    def _quick_filters(self, wb: _Workbook, worksheets: dict[str, ET.Element]) -> None:
+        """Filters shown on a dashboard, with the worksheets each one filters: the sheet that owns the control and, when the filter
+        applies to several worksheets, every sheet whose filter on that field has the same filter group. One parameter for all."""
+        self._quick, self._quick_on = {}, {}
+        for z in wb.root.iter("zone"):
+            ws = worksheets.get(z.get("name") or "")
+            if (z.get("type-v2") or z.get("type")) != "filter" or ws is None:
+                continue
+            col = z.get("param", "")
+            refs = self._shelf(wb, col, {})
+            if not refs or refs[0].field is None or refs[0].special:
+                continue
+            name = self._quick_name(refs[0])
+            own = next((f for f in ws.findall("table/view/filter") if f.get("column") == col), None)
+            group = own.get("filter-group") if own is not None else None
+            targets = [z.get("name") or ""]
+            if group:
+                targets += [n for n, w in worksheets.items()
+                            if any(f.get("column") == col and f.get("filter-group") == group for f in w.findall("table/view/filter"))]
+            targets = list(dict.fromkeys(targets))
+            for t in targets:
+                self._quick.setdefault((t, col), name)
+                self._quick_on.setdefault((t, col), targets)
+
+    def _quick_bind(self, r: _Ref, flt: ET.Element, expr: str, is_agg: bool, meta: dict[str, Any]) -> tuple[str, str] | None:
+        """A sheet's filter that a dashboard shows as a control: a notebook parameter (default: the saved selection) bound in its
+        SQL, as `(:x is null or <field> = :x)` or a from/to range. None when the saved selection is not one value or one range."""
+        name = self._quick.get((self._ws, flt.get("column", "")))
+        if name is None or r.field is None or is_agg or flt.get(STORY):  # a story point's filter is its captured state
+            return None
+        typ, kind = self._bind_type(r)
+        sheets = self._quick_on.get((self._ws, flt.get("column", "")), [])
+        note = f"dashboard filter on [{r.field.label}]" + (f", applied to {', '.join(sheets)}" if len(sheets) > 1 else "")
+        x, cls = _paren(expr), flt.get("class", "")
+        binds: list[DashboardFilter] = []
+        if cls == "categorical":
+            gf = flt.find("groupfilter")
+            fn = gf.get("function", "") if gf is not None else ""
+            if fn == "level-members":
+                default = None
+            elif fn == "member" and gf is not None and _member_py(gf.get("member")) is not None:
+                default = _member_py(gf.get("member"))
+            else:
+                return None
+            b = f"cast(:{name} as {typ})"
+            binds.append(DashboardFilter(name, name, default, kind, f"{note}; one value, None = all"))  # type: ignore[arg-type]
+            sql = f"({b} is null or {x} = {b})"
+        elif cls == "quantitative":
+            inc = flt.get("included-values", "in-range")
+            if inc not in ("in-range", "in-range-or-null", "non-null"):
+                return None
+            parts = []
+            for end, tag, op in (("from", "min", ">="), ("to", "max", "<=")):
+                b = f"cast(:{name}_{end} as {typ})"
+                default = _member_py((flt.findtext(tag) or "").strip() or None)
+                binds.append(DashboardFilter(f"{name}_{end}", name, default, kind, f"{note}; range {end}, inclusive, None = open"))  # type: ignore[arg-type]
+                parts.append(f"({b} is null or {x} {op} {b})")
+            if inc == "non-null":
+                parts.append(f"{x} is not null")
+            sql = " and ".join(parts)
+            if inc == "in-range-or-null":
+                sql = f"({sql} or {x} is null)"
+        else:
+            return None
+        meta.setdefault("binds", []).extend(binds)
+        meta.setdefault("bound", set()).add((r.dsname, r.field.local))
+        return ("where", sql)
+
+    def _action_filter(self, wb: _Workbook, r: _Ref, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, str] | None:
+        """A filter action's filter on a target sheet: one notebook parameter per field it filters on, `selected_<field>`
+        (default None: no selection, all rows), bound as `(:x is null or <field> = :x)`."""
+        g = r.field
+        assert g is not None
+        gf = flt.find("groupfilter")
+        everything = gf is not None and (gf.get("function") == "level-members" or (
+            gf.get("function") == "crossjoin" and all(c.get("function") == "level-members" for c in gf.findall("groupfilter"))))
+        if not everything:
+            return ("todo", f"filter action {g.label} was saved with marks selected: set the selected_ parameters to those values")
+        levels = {_level(x) for x in g.extra.get("levels") or []}
+        source = next((src for fields, src in self._targets.get(self._ws, []) if fields == levels), None)
+        if source is None:
+            return None  # left by an action that no longer filters this sheet on these fields; it keeps every row
+        parts, binds = [], []
+        for level in g.extra.get("levels") or []:
+            refs = self._shelf(wb, f"[{r.dsname.replace(']', ']]')}].[{level.replace(']', ']]')}]", deps)
+            if not refs or refs[0].field is None:
+                return ("todo", f"filter action {g.label}: field [{level}] not found")
+            try:
+                alias, sql, is_agg, display, *_ = self._column(refs[0])
+            except _NoSQL as exc:
+                return ("todo", f"filter action {g.label} not applied: {exc}")
+            if is_agg:
+                return ("todo", f"filter action {g.label} on an aggregate ({display}): add it to the SQL")
+            typ, kind = self._bind_type(refs[0])
+            name = f"selected_{alias}" + (f"_on_{source}" if source else "")
+            b = f"cast(:{name} as {typ})"
+            parts.append(f"({b} is null or {_paren(sql)} = {b})")
+            binds.append(DashboardFilter(name, alias, None, kind, f"filter action: the {display} of the selected mark; None = no selection"))  # type: ignore[arg-type]
+        if not parts:
+            return ("todo", f"filter action {g.label}: no fields")
+        meta.setdefault("binds", []).extend(binds)
+        meta.setdefault("actions", []).append((levels, [x.name for x in binds]))
+        return ("where", " and ".join(parts))
+
+    def _actions(self, wb: _Workbook) -> list[dict[str, Any]]:
+        """The workbook's dashboard actions: kind (filter, highlight, url, set, parameter, go to sheet), caption, source
+        dashboard and sheets, target, fields."""
+        out = []
+        root = wb.root.find("actions")
+        for a in root if root is not None else []:
+            tag = _local(a.tag)
+            if tag not in ("action", "nav-action", "edit-group-action", "edit-parameter-action"):
+                continue
+            src = a.find("source")
+            cmd = a.find("command")
+            link = a.find("link")
+            params = {p.get("name", ""): p.get("value", "") for p in (cmd.findall("param") if cmd is not None else a.findall("params/param"))}
+            command = cmd.get("command", "") if cmd is not None else ""
+            expression = link.get("expression", "") if link is not None else ""
+            kind = {"nav-action": "go to sheet", "edit-group-action": "set", "edit-parameter-action": "parameter"}.get(tag) or (
+                "filter" if command == "tsc:tsl-filter" else "highlight" if command == "tsc:brush"
+                else "url" if expression and not expression.startswith("tsl:") else command or "unknown")
+            fields = [_unesc(f) for f in re.findall(r"\]\.\[((?:[^\]]|\]\])+)\]~s0=", unquote(expression))] if kind == "filter" else []
+            if kind == "highlight" and params.get("field-captions"):
+                fields = params["field-captions"].split(",")
+            act = a.find("activation")
+            out.append({
+                "kind": kind, "caption": a.get("caption") or _unbracket(a.get("name")), "url": expression,
+                "dashboard": src.get("dashboard", "") if src is not None else "",
+                "worksheet": src.get("worksheet", "") if src is not None else "",
+                "exclude_source": [x.get("name", "") for x in src.findall("exclude-sheet")] if src is not None else [],
+                "target": params.get("target", ""), "exclude": [x for x in params.get("exclude", "").split(",") if x],
+                "fields": fields, "all_fields": params.get("special-fields") == "all",
+                "on": (act.get("type") if act is not None else "") or "on-select", "auto_clear": act is not None and act.get("auto-clear") == "true",
+            })
+        return out
+
+    @staticmethod
+    def _board_sheets(db: ET.Element | None, worksheets: dict[str, ET.Element]) -> list[str]:
+        zones = db.find("zones") if db is not None else None
+        return list(dict.fromkeys(z.get("name", "") for z in (zones.iter("zone") if zones is not None else [])
+                                  if (z.get("type-v2") or z.get("type") or "") in ("", "viz") and z.get("name") in worksheets))
+
+    @staticmethod
+    def _action_targets(a: dict[str, Any], boards: dict[str, list[str]]) -> list[str]:
+        """The worksheets a filter action filters: the target dashboard's sheets (or the target sheet) but the excluded ones and
+        the sheet the selection is made on."""
+        target = a["target"] or a["dashboard"]
+        sheets = boards.get(target, [target] if target else [])
+        return [s for s in sheets if s not in a["exclude"] and s != a["worksheet"]]
+
+    def _action_notes(self, actions: list[dict[str, Any]], dname: str, sheets: list[str], dashboards: set[str],
+                      metas: dict[str, dict[str, Any]], filters: dict[str, DashboardFilter], d_notes: list[str], gaps: list[str]) -> None:
+        """What each action of the dashboard `dname` does, and how to get it here: notes on its notebook parameters (filter actions),
+        markdown links (URL actions), or a line under Not migrated (highlight, set and parameter actions)."""
+        labels = {k: f.label for ds in self._wb.datasources.values() for k, f in ds.fields.items()} if self._wb else {}
+        for a in actions:
+            if a["dashboard"] != dname and not (not a["dashboard"] and a["worksheet"] in sheets):
+                continue
+            how = {"on-select": "on select", "on-hover": "on hover", "explicit": "from the menu"}.get(a["on"], a["on"])
+            source = a["worksheet"] or ", ".join(s for s in sheets if s not in a["exclude_source"]) or dname
+            title = f"**{a['caption']}** ({a['kind']} action, {how})"
+            if a["kind"] == "filter":
+                if a["target"] and a["target"] != dname and a["target"] in dashboards:
+                    d_notes.append(f"{title}: selecting marks on {source} opens the dashboard {a['target']}, filtered; set its "
+                                   f"`selected_` parameters in that notebook")
+                    continue
+                targets = self._action_targets(a, {dname: sheets})
+                names = list(dict.fromkeys(n for s in targets for levels, group in (metas.get(s) or {}).get("actions", [])
+                                           if any(levels == fs for fs, _ in a.get("sets", [])) for n in group))
+                on = ", ".join(labels.get(f, f) for f in a["fields"]) if a["fields"] else "all shared fields"
+                if not names:
+                    gaps.append(f"{title} from {source} to {', '.join(targets) or a['target']} on {on}: no translated filter for it "
+                                "on the target sheets (see their TODOs)")
+                    continue
+                cleared = "None shows all values, as Tableau does when the selection is cleared" if a["auto_clear"] else \
+                    "None shows all values (Tableau keeps or excludes the values when this selection is cleared)"
+                d_notes.append(f"{title}: selecting marks on {source} filters {', '.join(targets)} on {on}. Here: set "
+                               f"{', '.join(f'`{n}`' for n in names)} in the parameters cell, one value each; {cleared}")
+                for n in names:
+                    if n in filters:
+                        filters[n].note = f"filter action {a['caption']}: the selected mark on {source}; None = no selection (all rows)"
+            elif a["kind"] == "url":
+                url = re.sub(r"<\[?((?:[^\]>]|\]\])+?)\]?(?:~na)?>", lambda m: "{" + _unbracket(m.group(1)) + "}", a["url"])
+                d_notes.append(f"{title}: [{a['caption']}]({url.replace(' ', '%20')})" + (" (`{field}`: the selected mark's value)" if "{" in url else ""))
+            elif a["kind"] == "go to sheet":
+                d_notes.append(f"{title}: selecting marks on {source} opens {a['target'] or 'another sheet'} (its own notebook)")
+            else:
+                on = f" on {', '.join(a['fields'])}" if a["fields"] else ""
+                what = {"highlight": "highlights the related marks; the notebook's charts don't share a selection",
+                        "set": "changes a set's members from the selected marks (no notebook equivalent; see the set's dimension)",
+                        "parameter": "sets a parameter from the selected mark; set it in the parameters cell instead"}.get(
+                    a["kind"], "is not translated")
+                gaps.append(f"{title} on {source}{on}: {what}")
+
     def _dashboards(self, wb: _Workbook) -> None:
         worksheets = {ws.get("name", ""): ws for ws in wb.root.findall("worksheets/worksheet")}
         built: dict[str, tuple[Tile, dict[str, Any]]] = {}
+        self._wb = wb
+        self._quick_filters(wb, worksheets)
 
-        def tile_for(name: str) -> tuple[Tile, dict[str, Any]]:
-            if name not in built:
+        def tile_for(name: str, deltas: list[ET.Element] | None = None) -> tuple[Tile, dict[str, Any]]:
+            key = name if not deltas else f"{name}\x00{''.join(ET.tostring(d, encoding='unicode') for d in deltas)}"
+            if key not in built:
+                ws = worksheets[name]
+                if deltas:  # a story point's filters replace the sheet's filters on the same fields
+                    ws = copy.deepcopy(ws)
+                    view = ws.find("table/view")
+                    if view is not None:
+                        cols = {d.get("column") for d in deltas}
+                        for flt in [f for f in view.findall("filter") if f.get("column") in cols]:
+                            view.remove(flt)
+                        for d in deltas:
+                            view.append(copy.deepcopy(d))
+                            view[-1].set(STORY, "true")
+                self._ws = name
                 try:
-                    built[name] = self._tile(wb, worksheets[name])
+                    built[key] = self._tile(wb, ws)
                 except Exception as exc:  # noqa: BLE001
-                    built[name] = (Tile(slugify(name), name, "unknown", todo=f"worksheet not parsed: {exc}"), {"params": [], "filters": {}})
+                    built[key] = (Tile(slugify(name), name, "unknown", todo=f"worksheet not parsed: {exc}"), {"params": [], "filters": {}})
                 finally:
-                    self._sheet, self._joined = None, None
-            t, m = built[name]
+                    self._sheet, self._joined, self._ws = None, None, ""
+            t, m = built[key]
             return copy.deepcopy(t), m
 
-        placed: set[str] = set()
-        for db in wb.root.findall("dashboards/dashboard"):
-            dname = db.get("name") or "Dashboard"
-            if db.get("type") == "storyboard":
-                self.b.warn(f"{wb.src} story {dname}", "Tableau stories are not migrated; each story point's sheet is migrated on its own", "info")
+        actions = self._actions(wb)
+        boards = {db.get("name") or "Dashboard": db for db in wb.root.findall("dashboards/dashboard") if db.get("type") != "storyboard"}
+        on_board = {name: self._board_sheets(db, worksheets) for name, db in boards.items()}
+        self._targets = {}
+        by_action = []
+        for a in actions:
+            if a["kind"] != "filter":
                 continue
-            zones_el = db.find("zones")
-            zones = list(zones_el.iter("zone")) if zones_el is not None else []
-            tiles: list[Tile] = []
-            grid: list[tuple[str, float, float]] = []
-            filters: dict[str, DashboardFilter] = {}
-            metas: list[tuple[Tile, dict[str, Any]]] = []
-            quick: dict[tuple[str, str], str] = {}
-            for z in zones:
-                t2 = z.get("type-v2") or z.get("type") or ""
-                zname = z.get("name") or ""
-                x, y = _num(z.get("x")), _num(z.get("y"))
-                if t2 in ("", "viz") and zname in worksheets:
-                    if any(t.id == slugify(zname) for t in tiles):
-                        continue
-                    tile, meta = tile_for(zname)
-                    tiles.append(tile)
-                    metas.append((tile, meta))
-                    grid.append((tile.id, x, y))
-                    placed.add(zname)
-                elif t2 == "text":
-                    text = _text(z.find("formatted-text"))
-                    if text:
-                        tile = Tile(f"text-{z.get('id', len(tiles))}", "", "text", "text", text=text, source_type="text")
-                        tiles.append(tile)
-                        grid.append((tile.id, x, y))
-                elif t2 == "filter":
-                    refs = self._shelf(wb, z.get("param"), {})
-                    if refs and refs[0].field is not None:
-                        r = refs[0]
-                        try:
-                            alias, *_ = self._column(r)
-                        except _NoSQL:
-                            alias = _name(r.field.label)
-                        kind = "date_range" if r.field.datatype in TIME_TYPES else "number" if r.field.datatype in NUMERIC and r.deriv == "none" else "value"
-                        fname = _name(r.field.label)
-                        filters.setdefault(fname, DashboardFilter(fname, alias, None, kind))  # type: ignore[arg-type]
-                        quick[(r.dsname, r.field.local)] = fname
-                elif t2 == "paramctrl":
-                    p = wb.params.get(_name_parts(z.get("param", ""))[-1] if z.get("param") else "")
-                    if p is not None:
-                        pf = self._param_filter(p)
-                        filters.setdefault(pf.name, pf)
-                elif t2 in ("web", "bitmap"):
-                    self.b.warn(f"{wb.src} dashboard {dname}", f"{t2} zone not migrated", "info")
-            for tile, meta in metas:
-                for p in meta["params"]:
-                    if p in wb.params:
-                        pf = self._param_filter(wb.params[p])
-                        filters.setdefault(pf.name, pf)
-                wired = [(fname, label) for key, label in meta["filters"].items() if (fname := quick.get(key))]
-                if wired:
-                    note = "; ".join(
-                        f"dashboard filter :{fname} on [{label}] is baked in with the saved selection; use (:{fname} is null or <col> = :{fname}) (skills/translate-dashboards)"
-                        for fname, label in wired
-                    )
-                    tile.todo = f"{tile.todo}; {note}" if tile.todo else note
-            v = self.view_index.get((wb.id, dname)) or {}
-            desc = _text(db.find("layout-options/caption")) or ""
-            self.b.dashboards.append(Dashboard(
-                name=dname, slug=self._slug(wb, dname), description=desc, tiles=tiles, layout=grid_rows(grid),
-                filters=list(filters.values()), datasource=self.b.datasource, source_ref=f"tableau workbook {wb.id} dashboard {dname}",
-                url=self._url(v) or (self.wb_meta.get(wb.id) or {}).get("webpageUrl", ""), views=_views(v) if v else None,
-            ))
+            sources = [a["worksheet"]] if a["worksheet"] else [s for s in on_board.get(a["dashboard"], []) if s not in a["exclude_source"]]
+            # "all fields": the dimensions that make the selected marks on the source sheet
+            fields = [({_level(f) for f in a["fields"]}, a["worksheet"])] if a["fields"] else \
+                [(_sheet_dims(worksheets[s]), s) for s in sources if s in worksheets]
+            a["sets"] = fields
+            by_action.append((a, fields))
+        for i, (a, fields) in enumerate(by_action):
+            mine = {f for fs, _ in fields for _, f in fs}
+            board = a["target"] or a["dashboard"]  # its parameters' notebook
+            shared = any(mine & {f for fs, _ in other for _, f in fs} for j, (o, other) in enumerate(by_action)
+                         if j != i and (o["target"] or o["dashboard"]) == board)
+            for t in self._action_targets(a, on_board):
+                self._targets.setdefault(t, []).extend((fs, _name(src) if shared else "") for fs, src in fields)
+        placed: set[str] = set()
+        for dname, db in boards.items():
+            self.b.dashboards.append(self._dashboard(wb, db, dname, worksheets, tile_for, actions, set(boards), placed))
+        for db in wb.root.findall("dashboards/dashboard"):
+            if db.get("type") == "storyboard":
+                self.b.dashboards.append(self._story(wb, db, worksheets, boards, tile_for, actions, placed))
         stray = [n for n in worksheets if n not in placed]
         if stray:
             tiles, filters = [], {}
@@ -4626,12 +4900,156 @@ class _Parser:
                     if p in wb.params:
                         pf = self._param_filter(wb.params[p])
                         filters.setdefault(pf.name, pf)
+                for bf in meta.get("binds", []):
+                    filters.setdefault(bf.name, copy.copy(bf))
             name = f"{wb.name} sheets"
             self.b.dashboards.append(Dashboard(
                 name=name, slug=self._slug(wb, name), description=f"Worksheets of the Tableau workbook {wb.name} that are not on a dashboard.",
                 tiles=tiles, layout=[[t.id] for t in tiles], filters=list(filters.values()), datasource=self.b.datasource,
                 source_ref=f"tableau workbook {wb.id} worksheets", url=(self.wb_meta.get(wb.id) or {}).get("webpageUrl", ""), views=total,
             ))
+
+    def _dashboard(self, wb: _Workbook, db: ET.Element, dname: str, worksheets: dict[str, ET.Element], tile_for: Any,
+                   actions: list[dict[str, Any]], boards: set[str], placed: set[str], deltas: dict[str, list[ET.Element]] | None = None,
+                   ) -> Dashboard:
+        zones_el = db.find("zones")
+        zones = list(zones_el.iter("zone")) if zones_el is not None else []
+        tiles: list[Tile] = []
+        grid: list[tuple[str, float, float]] = []
+        controls: dict[str, DashboardFilter] = {}  # the dashboard's filter and parameter controls, in zone order
+        metas: dict[str, dict[str, Any]] = {}
+        quick: dict[tuple[str, str], str] = {}
+        gaps: list[str] = []
+        for z in zones:
+            t2 = z.get("type-v2") or z.get("type") or ""
+            zname = z.get("name") or ""
+            x, y = _num(z.get("x")), _num(z.get("y"))
+            if t2 in ("", "viz") and zname in worksheets:
+                if any(t.id == slugify(zname) for t in tiles):
+                    continue
+                tile, meta = tile_for(zname, (deltas or {}).get(zname))
+                tiles.append(tile)
+                metas[zname] = meta
+                grid.append((tile.id, x, y))
+                placed.add(zname)
+            elif t2 == "text":
+                text = _text(z.find("formatted-text"))
+                if text:
+                    tile = Tile(f"text-{z.get('id', len(tiles))}", "", "text", "text", text=text, source_type="text")
+                    tiles.append(tile)
+                    grid.append((tile.id, x, y))
+            elif t2 == "filter":
+                refs = self._shelf(wb, z.get("param"), {})
+                if refs and refs[0].field is not None:
+                    r = refs[0]
+                    kind = "date_range" if r.field.datatype in TIME_TYPES else "number" if r.field.datatype in NUMERIC and r.deriv == "none" else "value"
+                    fname = self._quick.get((zname, z.get("param", ""))) or self._quick_name(r)
+                    controls.setdefault(fname, DashboardFilter(fname, fname, None, kind))  # type: ignore[arg-type]
+                    quick[(r.dsname, r.field.local)] = fname
+            elif t2 == "paramctrl":
+                p = wb.params.get(_name_parts(z.get("param", ""))[-1] if z.get("param") else "")
+                if p is not None:
+                    pf = self._param_filter(p)
+                    controls.setdefault(pf.name, pf)
+            elif t2 in ("web", "bitmap"):
+                gaps.append(f"{'web page' if t2 == 'web' else 'image'} zone" + (f" ({z.get('param')})" if z.get("param") else ""))
+        binds: dict[str, DashboardFilter] = {}
+        for tile in tiles:
+            meta = metas.get(tile.title) or {}
+            for bf in meta.get("binds", []):
+                binds.setdefault(bf.name, copy.copy(bf))
+        filters: dict[str, DashboardFilter] = {}
+        for name, ctl in controls.items():
+            for n in (name, f"{name}_from", f"{name}_to"):
+                if n in binds:
+                    filters[n] = binds.pop(n)
+            if not any(n in filters for n in (name, f"{name}_from", f"{name}_to")):
+                filters[name] = ctl
+        filters.update(binds)
+        for tile in tiles:
+            meta = metas.get(tile.title) or {}
+            for p in meta.get("params", []):
+                if p in wb.params:
+                    pf = self._param_filter(wb.params[p])
+                    filters.setdefault(pf.name, pf)
+            wired = [(fname, label) for key, label in meta.get("filters", {}).items()
+                     if (fname := quick.get(key)) and key not in meta.get("bound", set())]
+            if wired:
+                note = "; ".join(
+                    f"dashboard filter :{fname} on [{label}] keeps the saved selection (not one value or one range); use "
+                    f"(cast(:{fname} as <type>) is null or <col> = :{fname}) or one parameter per value (skills/translate-dashboards)"
+                    for fname, label in wired
+                )
+                tile.todo = f"{tile.todo}; {note}" if tile.todo else note
+        notes: list[str] = []
+        self._action_notes(actions, dname, [t.title for t in tiles if t.title in metas], boards, metas, filters, notes, gaps)
+        for dl in db.findall("devicelayouts/devicelayout"):
+            gaps.append(f"{dl.get('name', 'device')} layout: the notebook follows the default layout")
+        v = self.view_index.get((wb.id, dname)) or {}
+        desc = _text(db.find("layout-options/caption")) or ""
+        return Dashboard(
+            name=dname, slug=self._slug(wb, dname), description=desc, tiles=tiles, layout=grid_rows(grid),
+            filters=list(filters.values()), datasource=self.b.datasource, source_ref=f"tableau workbook {wb.id} dashboard {dname}",
+            url=self._url(v) or (self.wb_meta.get(wb.id) or {}).get("webpageUrl", ""), views=_views(v) if v else None,
+            notes=notes, not_migrated=gaps,
+        )
+
+    def _story(self, wb: _Workbook, db: ET.Element, worksheets: dict[str, ET.Element], boards: dict[str, ET.Element], tile_for: Any,
+               actions: list[dict[str, Any]], placed: set[str]) -> Dashboard:
+        """A story: one notebook with a section per story point (its caption, then the captured sheet or dashboard's tiles, with
+        the filters the story point captured)."""
+        sname = db.get("name") or "Story"
+        tiles: list[Tile] = []
+        layout: list[list[str]] = []
+        filters: dict[str, DashboardFilter] = {}
+        notes: list[str] = []
+        gaps: list[str] = []
+        for n, sp in enumerate(db.iter("story-point"), 1):
+            sheet, caption = sp.get("captured-sheet", ""), sp.get("caption") or ""
+            head = Tile(f"story-point-{n}", f"{n}. {caption or sheet}", "text", "text", source_type="story-point",
+                        text=f"Story point {n} of {sname}: Tableau sheet *{sheet}*." + (f"\n\n> {caption}" if caption else ""))
+            tiles.append(head)
+            layout.append([head.id])
+            deltas: dict[str, list[ET.Element]] = {}
+            for ws in sp.findall("capturedDeltas/worksheet"):
+                deltas[ws.get("name", "")] = ws.findall("filter")
+                other = sorted({_local(c.tag) for c in ws if _local(c.tag) != "filter"})
+                if other:
+                    gaps.append(f"story point {n} ({sheet}): captured {', '.join(other)} changes on {ws.get('name')}")
+            for p in sp.findall("capturedDeltas/datasource/column"):
+                gaps.append(f"story point {n} ({sheet}): sets parameter {_unbracket(p.get('name'))} to {p.get('value', '')}; set it in the parameters cell")
+            if sheet in boards:
+                d = self._dashboard(wb, boards[sheet], sheet, worksheets, tile_for, actions, set(boards), placed, deltas)
+                self.slugs.discard(d.slug)
+                self.wb_slugs[wb.id].remove(d.slug)
+                part, rows, more = d.tiles, d.layout, d.filters
+                notes += [f"Story point {n}: {x}" for x in d.notes]
+                gaps += [f"story point {n} ({sheet}): {x}" for x in d.not_migrated if not x.endswith("layout: the notebook follows the default layout")]
+            elif sheet in worksheets:
+                tile, meta = tile_for(sheet, deltas.get(sheet))
+                placed.add(sheet)
+                part, rows = [tile], [[tile.id]]
+                more = [self._param_filter(wb.params[p]) for p in meta["params"] if p in wb.params] + [copy.copy(b) for b in meta.get("binds", [])]
+            else:
+                gaps.append(f"story point {n}: sheet {sheet} not found")
+                continue
+            ids = {t.id: f"p{n}-{t.id}" for t in part}
+            for t in part:
+                t.id = ids[t.id]
+            tiles += part
+            layout += [[ids[i] for i in row if i in ids] for row in rows]
+            for f in more:
+                if f.name in filters and filters[f.name].default != f.default:
+                    gaps.append(f"story point {n}: :{f.name} defaults to {f.default!r} there, {filters[f.name].default!r} in an earlier point")
+                filters.setdefault(f.name, f)
+        title = _text(db.find("layout-options/title")) or ""
+        v = self.view_index.get((wb.id, sname)) or {}
+        return Dashboard(
+            name=sname, slug=self._slug(wb, sname), description=title, tiles=tiles, layout=layout, filters=list(filters.values()),
+            datasource=self.b.datasource, source_ref=f"tableau workbook {wb.id} story {sname}",
+            url=self._url(v) or (self.wb_meta.get(wb.id) or {}).get("webpageUrl", ""), views=_views(v) if v else None,
+            notes=notes, not_migrated=gaps,
+        )
 
     def _url(self, v: dict[str, Any]) -> str:
         server, content = self.site.get("server", ""), v.get("contentUrl", "")
@@ -4660,6 +5078,17 @@ class _Parser:
             described.append(f"- **{name}** ({ds.caption}): hierarchy {' > '.join(labels)}")
         return calcs, described
 
+    def _pane_lines(self, ds: TDatasource) -> tuple[list[str], list[str]]:
+        """The Data pane's folders and hidden fields, for the glossary."""
+        def label(local: str) -> str:
+            return ds.fields[local].label if local in ds.fields else local
+
+        folders = [f"- **{name}** ({ds.caption}): {', '.join(label(x) for x in items)}" for name, items in ds.folders]
+        hidden = [f"- **{f.label}** ({ds.caption}): " + ("not used by any sheet, calculation or filter, so no metric or dimension was made"
+                                                         if f.local in ds.unused else "used by sheets or calculations")
+                  for f in ds.fields.values() if f.hidden and f.calc_class != "action" and not f.param]
+        return folders, hidden
+
     def _knowledge(self, wb: _Workbook) -> None:
         lines = [f"Tableau workbook **{wb.name}**" + (f" in project {wb.project}" if wb.project else "") + "."]
         if wb.description:
@@ -4679,6 +5108,12 @@ class _Parser:
             lines += ["", "## Calculated fields", "", *calcs]
         if described:
             lines += ["", "## Field descriptions", "", *described]
+        folders = [x for ds in wb.datasources.values() for x in self._pane_lines(ds)[0]]
+        hidden = [x for ds in wb.datasources.values() for x in self._pane_lines(ds)[1]]
+        if folders:
+            lines += ["", "## Folders", "", *folders]
+        if hidden:
+            lines += ["", "## Hidden fields", "", "Hidden in Tableau's Data pane.", "", *hidden]
         for ds in wb.datasources.values():
             if ds.settings:
                 lines += ["", f"## Connection settings of {ds.caption}", *self._settings_lines(ds)]
@@ -4698,7 +5133,7 @@ class _Parser:
             lines += ["", f"Custom SQL `{t.get('name', '')}`:", "", "```sql", (t.get("query") or "").strip(), "```"]
         if len(lines) > 1:
             self.b.knowledge.append(KnowledgeItem(
-                f"{wb.name} glossary", "\n".join(lines), description=f"Calculated fields, parameters, field descriptions and sheet captions from the Tableau workbook {wb.name}",
+                f"{wb.name} glossary", "\n".join(lines), description=f"Calculated fields, parameters, field descriptions, folders and sheet captions from the Tableau workbook {wb.name}",
                 datasource=self.b.datasource, source_ref=wb.src,
             ))
 
@@ -4712,6 +5147,11 @@ class _Parser:
                 lines += ["", *calcs]
             if described:
                 lines += ["", *described]
+            folders, hidden = self._pane_lines(ds)
+            if folders:
+                lines += ["", "Folders:", "", *folders]
+            if hidden:
+                lines += ["", "Hidden fields:", "", *hidden]
         self.b.knowledge.append(KnowledgeItem("Tableau published datasources", "\n".join(lines),
                                               description="Tables, calculated fields and descriptions of Tableau published datasources",
                                               datasource=self.b.datasource, source_ref="tableau datasources"))

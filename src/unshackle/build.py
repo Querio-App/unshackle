@@ -270,6 +270,11 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
             lines.append(f"- {len(writes.kept_hand_edits)} files kept because someone edited them by hand:")
             lines += [f"  - `{r}`" for r in writes.kept_hand_edits]
         lines.append("")
+    gaps = [(b.tool, d) for b in stored.values() for d in b.dashboards if d.not_migrated]
+    if gaps:
+        lines += [f"## Not migrated from dashboards ({len(gaps)})", ""]
+        for tool, d in gaps:
+            lines += [f"### {d.name} ({tool})", "", *[f"- {x}" for x in d.not_migrated], ""]
     todos = scan_todos(repo, all_generated(repo)) if not dry_run else []
     lines += [f"## Still to translate ({len(todos)})", ""]
     if todos:

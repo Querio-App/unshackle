@@ -41,14 +41,15 @@ revenue_sql = """
 select date_trunc('month', order_date)::date as month, sum(amount) as revenue
 from analytics.fct_orders
 where order_date >= :date_from and order_date < :date_to
-  and (:region is null or region = :region)
+  and (cast(:region as text) is null or region = cast(:region as text))
 group by 1
 """
 revenue = pd.read_sql(text(revenue_sql), engine, params={'region': region, 'date_from': date_from, 'date_to': date_to})
 ```
 
   Split a date range into `<name>_from` / `<name>_to` parameters. Use
-  `(:x is null or col = :x)` for optional filters (default `None` = all). `::type`
+  `(cast(:x as text) is null or col = cast(:x as text))` for optional filters (default
+  `None` = all): cast the bind, since Postgres can't type a bare `:x is null`. `::type`
   casts are safe (only single-colon names are binds). Multi-select lists depend on
   the driver; test them, otherwise note the limitation in a TODO.
 - Write in the customer's warehouse dialect (`sqlglot.transpile(sql, read=..., write=...)`).
