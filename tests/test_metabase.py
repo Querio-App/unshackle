@@ -11,7 +11,7 @@ from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources.metabase import MetabaseSource, _bind_filter, _clause, _date_bounds, _native, _stages
 
-FIXTURES = Path(__file__).parent / "fixtures" / "metabase"  # extracted from Metabase v0.64.1 (tests/live/test_metabase_live.py)
+FIXTURES = Path(__file__).parent / "fixtures" / "metabase"  # extracted from Metabase v0.64.1
 STATUS = '("public"."orders"."status" = :status OR :status IS NULL)'
 
 

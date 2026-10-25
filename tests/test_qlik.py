@@ -25,7 +25,7 @@ from unshackle.sources.qlik import (
 FIXTURES = Path(__file__).parent / "fixtures" / "qlik"  # a real Qlik Cloud extract (tests/live/test_qlik_live.py); see README
 APP = "00000000-0000-4000-8000-000000000001"
 RAW = Path("migration/raw/qlik")
-DATA = Path(__file__).parent / "live" / "data" / "dunder_mifflin"
+DATA = Path(__file__).parent / "data" / "dunder_mifflin"
 
 
 def repo_with_fixtures(tmp_path: Path) -> Path:

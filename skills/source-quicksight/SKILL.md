@@ -13,9 +13,7 @@ with `ExportFormat: QUICKSIGHT_JSON`, `IncludeAllDependencies`, `IncludePermissi
 has no API that compiles a visual's SQL, so unshackle **generates tile SQL** from the
 dataset definition (joins, calculated fields) and the visual's field wells and filters.
 
-The parser is tested against a real asset bundle exported from a live account
-(`tests/fixtures/quicksight/`, produced by `tests/live/test_quicksight_live.py`), and reads
-only members that exist in botocore's QuickSight API model.
+The parser reads only members that exist in botocore's QuickSight API model.
 
 ## Access
 

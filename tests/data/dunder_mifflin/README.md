@@ -1,6 +1,7 @@
 # Dunder Mifflin
 
-Fictional data for a fictional paper company, used by the live tests (`tests/live/`).
+Fictional data for a fictional paper company, used by the offline tests to run generated SQL
+(DuckDB reads the Parquet files directly).
 Names, addresses, emails, orders and reviews are all made up.
 
 | Table | Rows | Key |
@@ -14,9 +15,5 @@ Names, addresses, emails, orders and reviews are all made up.
 `orders` joins `accounts` on `account_id`, `products` on `product_id` and `shippings`
 on `shipping_id` (some orders have no shipping row); `reviews` joins `orders` on
 `order_id`. Orders run from January 2024 to October 2026.
-
-The harness (`harness.Stack.load_data`) loads every `*.parquet` here into Postgres as
-`public.<file name>`, with column types from the Parquet schema, then adds the primary
-and foreign keys listed in `harness.KEYS`.
 
 Licensed under the repository's Apache 2.0 license.

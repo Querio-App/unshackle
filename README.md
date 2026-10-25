@@ -14,29 +14,14 @@ metrics, queries, dashboards, and permissions when the source provides them.
 Every tool can be extracted through its API. To import downloaded files instead, see
 [No API access? Import files](#no-api-access-import-files).
 
-| Tool | How it's tested |
-| --- | --- |
-| Tableau | **Live:** a Tableau Cloud site; 7 parity checks against Tableau's own view data |
-| Metabase | **Live:** Metabase in Docker; 5 parity checks against Metabase's own results |
-| Lightdash | **Live:** Lightdash in Docker; 6 parity checks |
-| Apache Superset | **Live:** Superset in Docker; 9 parity checks |
-| Redash | **Live:** Redash in Docker; 6 parity checks |
-| Amazon QuickSight | **Live:** a QuickSight account; the migrated SQL is checked on Athena (QuickSight has no API for chart data) |
-| Qlik Sense | **Live:** a Qlik Cloud tenant; 14 parity checks against Qlik's engine |
-| Looker | **Real projects:** 18 open-source LookML projects; no live instance |
-| Power BI | **Real projects:** published Power BI projects; no live instance |
-| Omni | Saved exports |
-| Hex | Saved exports |
-| ThoughtSpot | Saved exports |
-| Sigma | Saved exports |
+Tableau, Power BI, Looker, Qlik Sense, Amazon QuickSight, Metabase, Lightdash, Apache
+Superset, Redash, Omni, Hex, ThoughtSpot and Sigma.
 
-- **Live** means the tool runs for real with a fictional dataset, unshackle extracts and
-  builds it, and `unshackle verify` checks that the migrated SQL returns the same numbers.
-- **Real projects** means parsing is tested on real-world definitions, but not against a
-  running instance.
-- **Saved exports** means parsing is tested on files shaped like the tool's exports. If you
-  use one of these tools, an anonymized export (a "Fixture submission" issue) is the most
-  useful thing you can contribute.
+Each source is tested offline on saved exports in `tests/fixtures/`: exports over a
+fictional dataset, and for Looker and Power BI, open-source projects people built. The
+generated SQL runs in DuckDB on that dataset. If you use one of these tools, an
+anonymized export (a "Fixture submission" issue) is the most useful thing you can
+contribute.
 
 ## Try it without connecting a BI tool
 
@@ -139,8 +124,7 @@ for the case format and process.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Source parsers are tested from saved
-exports in `tests/fixtures/`, so most translation work doesn't need a live BI
-account. Please report security issues privately; see [SECURITY.md](SECURITY.md).
+exports in `tests/fixtures/`, so translation work doesn't need a BI account. Please report security issues privately; see [SECURITY.md](SECURITY.md).
 
 ## The name
 

@@ -1,8 +1,0 @@
-name: dunder_mifflin
-version: "1.0.0"
-config-version: 2
-profile: dunder_mifflin
-model-paths: ["models"]
-models:
-  dunder_mifflin:
-    +materialized: view

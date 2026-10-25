@@ -20,7 +20,7 @@ from unshackle.raw import RawStore
 from unshackle.sources import get_source
 
 FIX = Path(__file__).parent / "fixtures" / "tableau_lod"
-DATA = Path(__file__).parent / "live" / "data" / "dunder_mifflin"
+DATA = Path(__file__).parent / "data" / "dunder_mifflin"
 
 
 @pytest.fixture

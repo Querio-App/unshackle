@@ -406,7 +406,7 @@ CHECK_TILES = [*TILES, "liquid_default", "liquid_set", *NESTED_TILES]
 def _check_rows(name: str) -> list[dict]:
     path = FIX / f"check_{name}.json"
     if not path.exists():
-        pytest.skip(f"check_{name}.json not captured yet (tests/live/looker/bigquery_checks.py)")
+        pytest.skip(f"check_{name}.json not captured yet")
     rows = json.loads(path.read_text())
     if rows and "looker_error" in rows[0]:  # BigQuery rejected the SQL
         pytest.fail(f"check_{name}: {rows[0]['looker_error']}")
@@ -444,19 +444,14 @@ def test_bigquery_filters_return_lookers_counts():
 
 # ---------------------------------------------------------------- round 3: Liquid real projects use, quoting, hour timeframes
 
-def _evidence_links():
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("evidence_links", Path(__file__).parent / "live/looker/evidence_links.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.CASES
+def _r3_cases():
+    return json.loads((FIX / "r3_cases.json").read_text())  # each case's query: fields, sorts, filters
 
 
 @pytest.fixture(scope="module")
 def tiles3(tmp_path_factory) -> dict:
     """Round 3's captured queries as tiles of a LookML dashboard on BigQuery."""
-    cases = _evidence_links()
+    cases = _r3_cases()
     names = ["dialect", "liquid_none", "liquid_values", "date_start_month", "date_start_relative", "filter_field_sql",
              "filter_quoted", "filter_apostrophe", "hour_timeframes"]
     repo = tmp_path_factory.mktemp("r3")

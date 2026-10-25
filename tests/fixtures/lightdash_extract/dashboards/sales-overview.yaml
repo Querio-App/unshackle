@@ -9,7 +9,7 @@ tiles:
   type: markdown
   properties:
     title: About
-    content: Synthetic Dunder Mifflin data for the unshackle live test.
+    content: Synthetic Dunder Mifflin data.
     hideFrame: false
   tabSlug: null
 - x: 0

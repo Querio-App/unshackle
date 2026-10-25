@@ -228,9 +228,9 @@ def test_extract_only_limits_to_dashboard_charts(tmp_path: Path):
 
 
 def test_live_capture_one_to_one_join_keyed_on_joined_table(tmp_path: Path):
-    """Captured from self-hosted Lightdash 3.23.1 (tests/live): orders joins shippings one-to-one on
+    """Extracted from self-hosted Lightdash 3.23.1: orders joins shippings one-to-one on
     shippings.order_id, which is not shippings' primary key. The relationship must still reach the output."""
-    shutil.copytree(FIXTURES.parents[1] / "live" / "fixtures" / "lightdash", tmp_path / "migration" / "raw" / "lightdash")
+    shutil.copytree(FIXTURES.parent / "lightdash_extract", tmp_path / "migration" / "raw" / "lightdash")
     b = LightdashSource().parse(RawStore(tmp_path, "lightdash"))
     models = {m.name: m for m in b.semantic_models}
     assert [(e.name, e.type, e.expr) for e in models["shippings"].entities] == [("shippings", "primary", "shipping_id"), ("orders", "foreign", "order_id")]
