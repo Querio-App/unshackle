@@ -418,11 +418,28 @@ Each dashboard is a notebook. Its filters become notebook parameters, bound in t
 | filter action (`tsc:tsl-filter`) | `selected_<field>` per field it filters on (`_on_<source sheet>` when another action on the dashboard filters a same field), bound in each target sheet's `[Action (...)]` filter. `None` = no marks selected, all rows. What Tableau does when the selection is cleared is not read: it may exclude all values, so its dashboard can open empty where the notebook shows data (a note on the parameter and in the report). One value at a time; a selected mark sets all of its fields. "All fields" means the dimensions on the source sheet. The Interactions cell says which marks set which parameters |
 | URL action | a markdown link; `{field}` stands for the selected mark's value |
 | go-to-sheet action | a note naming the sheet's notebook |
-| highlight, set and parameter actions; web and image zones; phone and tablet layouts | listed under Not migrated in the notebook and per dashboard in `migration/report.md` |
+| highlight, set and parameter actions; web and image zones; highlight controls; zones of other types; a zone naming a sheet the workbook doesn't have; phone and tablet layouts | listed under Not migrated in the notebook and per dashboard in `migration/report.md` (containers, spacers, the title and legends have nothing to migrate) |
 | story (`type='storyboard'`) | one notebook: per story point a section with its caption, then the captured sheet or dashboard. Filters the point captured are applied as saved (`p<n>-` tile ids); other captured changes (shelves, sorts, parameter values) are listed under Not migrated |
 
 Action filters left on a sheet by an action that no longer targets it filter nothing and are left out.
 Filter actions saved with marks selected stay TODO.
+
+### What the report says was skipped or failed
+
+- **A part unshackle fails on** doesn't stop the build: a workbook, data source, calculation, worksheet, dashboard
+  or story that raises is left out (a calculation becomes a TODO with its formula, a worksheet a tile with a TODO, a
+  dashboard's sheets go to the workbook's other sheets) and the report's warnings name it
+  (`workbooks/<id>.twb dashboard Overview: not migrated: unshackle failed on it (...)`). Report those as bugs.
+- **Not read from the source** in `migration/report.md` counts, by kind, the XML elements and attributes unshackle
+  doesn't read (`sources/_tableau_xml.py` lists what it reads), with the first place each was seen. Kinds marked
+  "not read" may change the numbers or the chart: check them on the sheet named (for example
+  `<aggregation value='false'> in <view>`, Analysis > Aggregate Measures off, or `<trendline> attribute exclude-color`).
+  Elements missing a required attribute (a column without a name) are skipped and counted there too. Formatting,
+  layout, window state, file bookkeeping and database column metadata are counted as left out on purpose.
+- **Still to translate** starts with the TODOs counted by kind (tile without SQL, table calculation, level of detail,
+  parameter, filter...), so the biggest groups are clear before the list.
+- Two calculations with one name in a semantic model (merged data sources, or one caption twice): the first keeps
+  the name; a different formula under it is a warning, and a tile using the second one gets a TODO, not the first one's SQL.
 
 ## Finishing TODOs
 

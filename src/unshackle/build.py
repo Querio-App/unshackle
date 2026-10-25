@@ -15,6 +15,25 @@ from unshackle.target.writer import Target, UnsafePath, WriteResult, load_last_r
 TODO_RE = re.compile(r"TODO\(unshackle\):?\s*(.*)")
 SCAN_SUFFIXES = {".yml", ".yaml", ".py", ".sql", ".md", ".cedar", ".ipynb"}
 DBTIGNORE = "*.ossie.yaml"
+# what a TODO is about, from its text: the first kind whose pattern matches (migration/report.md counts them)
+TODO_KINDS = [
+    ("tile without SQL", r"no SQL recovered|worksheet not parsed|no fields on the sheet"),
+    ("unknown field", r"unknown field"),
+    ("table calculation", r"table calc|\b(INDEX|RANK\w*|WINDOW_\w+|RUNNING_\w+|LOOKUP|FIRST|LAST|TOTAL)\(\)"),
+    ("level of detail", r"\bLOD\b|\b(FIXED|INCLUDE|EXCLUDE)\b"),
+    ("dates (week start, fiscal year)", r"week start|fiscal year|ISO-8601"),
+    ("default time dimension", r"default time dimension|agg_time_dimension|default_time_dimension"),
+    ("parameter", r"parameter"),
+    ("analytics (reference, trend, forecast)", r"reference line|reference band|trend line|forecast"),
+    ("several data sources", r"blend|another datasource|cross-database"),
+    ("filter", r"filter"),
+    ("sort", r"\bsort"),
+    ("tooltip", r"tooltip"),
+    ("chart", r"Altair|facet|chart|\bmark|axis"),
+    ("permissions", r"row filter|permission|polic(y|ies)|user attribute|USERNAME|ISMEMBEROF"),
+    ("data copied from the source", r"copied from"),
+    ("calculation", r"formula|function|calculation|translated|derivation|ATTR\(\)"),
+]
 
 
 @dataclass
@@ -201,6 +220,10 @@ def _json_line(line: str) -> str:
     return value if isinstance(value, str) else line
 
 
+def todo_kind(msg: str) -> str:
+    return next((kind for kind, pat in TODO_KINDS if re.search(pat, msg, re.I)), "other")
+
+
 def scan_todos(repo: Path, rels: list[str]) -> list[tuple[str, int, str]]:
     found = []
     for rel in rels:
@@ -278,7 +301,12 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
     todos = scan_todos(repo, all_generated(repo)) if not dry_run else []
     lines += [f"## Still to translate ({len(todos)})", ""]
     if todos:
-        lines += ["| File | Line | What's left |", "| --- | --- | --- |"]
+        kinds: dict[str, list[str]] = {}
+        for rel, _, msg in todos:
+            kinds.setdefault(todo_kind(msg), []).append(rel)
+        lines += ["| Kind | TODOs | Files |", "| --- | --- | --- |"]
+        lines += [f"| {k} | {len(rels)} | {len(set(rels))} |" for k, rels in sorted(kinds.items(), key=lambda x: (-len(x[1]), x[0]))]
+        lines += ["", "| File | Line | What's left |", "| --- | --- | --- |"]
         lines += [f"| `{rel}` | {n} | {msg.replace('|', '/')[:200]} |" for rel, n, msg in todos]
     else:
         lines.append("Nothing marked TODO(unshackle).")
@@ -287,6 +315,20 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
     if warnings:
         lines += [f"## Warnings ({len(warnings)})", "", "| Tool | Severity | Item | Message |", "| --- | --- | --- | --- |"]
         lines += [f"| {t} | {w.severity} | {w.item} | {w.message.replace('|', '/')} |" for t, w in warnings]
+        lines.append("")
+    skipped = [(b.tool, x) for b in stored.values() for x in b.skipped]
+    if skipped:
+        unread = sum(1 for _, x in skipped if x.why == "not read")
+        lines += [
+            f"## Not read from the source ({len(skipped)} kinds, {unread} not read)",
+            "",
+            "Elements and attributes of the exported files that unshackle doesn't read, counted by kind. Those marked "
+            "\"not read\" may change what the source shows: check them. The others are left out on purpose.",
+            "",
+            "| Tool | What | Count | Why | First seen in |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        lines += [f"| {t} | `{x.kind}` | {x.count} | {x.why} | {x.where.replace('|', '/')} |" for t, x in skipped]
         lines.append("")
     if (repo / "dbt_project.yml").exists() and any(b.metrics for b in stored.values()):
         has_spine = any("time_spine" in p.read_text(errors="ignore") for p in (repo / "models").rglob("*.yml")) if (repo / "models").exists() else False
