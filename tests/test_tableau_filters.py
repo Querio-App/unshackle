@@ -209,7 +209,7 @@ def test_excluding_values_keeps_nulls(con, rows, tiles):
 def top(rows: list[dict], member, n: int, value, bottom: bool = False) -> set:
     """Tableau's top N: exactly n members; a tie goes to the members that come first in ascending order."""
     totals = {m: v for m, *_, v in by(rows, [member], value)}
-    ranked = sorted(totals, key=lambda m: ((totals[m] if bottom else -totals[m]), (m is None, m or "")))
+    ranked = sorted(totals, key=lambda m: ((totals[m] if bottom else -totals[m]), (m is None, m or "")))  # no NULL totals here
     return set(ranked[:n])
 
 
@@ -241,7 +241,7 @@ def test_top_n(con, rows, tiles):
     counts = {m: v for m, v in by(rows, [M], ACCOUNTS)}
     assert sorted(counts.values(), reverse=True)[3:6] == [13, 13, 13] and len(top(rows, M, 5, ACCOUNTS)) == 5
     assert top(rows, M, 4, REV) != top(completed, M, 4, REV)
-    assert "row_number() over (order by sum(orders.post_discount_revenue) desc, accounts.account_manager)" in tiles["top4_dimfilter"].sql
+    assert "row_number() over (order by sum(orders.post_discount_revenue) desc nulls last, accounts.account_manager)" in tiles["top4_dimfilter"].sql
 
 
 def test_conditions_and_wildcards(con, rows, tiles):
@@ -293,6 +293,21 @@ def test_range_bounds_on_a_members_value(con, rows, tiles):
 def test_integer_bounds_on_integer_values_compare_as_written(tmp_path):
     rules = {rf.name: rf.predicate for rf in _parse(tmp_path).row_filters}
     assert rules["orders_filtered_quantity_extract"] == "quantity >= 2"
+
+
+def test_a_null_aggregate_ranks_below_every_value(con, rows, tmp_path):
+    """The NULL Discount Tier has no discounts, so its SUM is NULL: a top N leaves it for last, a bottom N takes it first."""
+    sums = {k: v for k, v in [(tier(r), r["discount_percentage"]) for r in rows] if v is not None}
+    assert None not in sums  # no row of the NULL tier has a discount
+    for end, want in (("top", {"High"}), ("bottom", {None})):
+        edit = lambda x, end=end: x.replace(  # noqa: E731
+            "<groupfilter count='2' end='top' function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true'>"
+            "<groupfilter direction='DESC' expression=\"COUNTD([order_id])\"",
+            f"<groupfilter count='1' end='{end}' function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true'>"
+            "<groupfilter direction='DESC' expression=\"SUM([discount_percentage])\"")
+        tile = _tiles(_parse(tmp_path / end, edit))["top2_tier_null"]
+        assert "SUM([discount_percentage])" not in tile.todo and "sum(orders.discount_percentage)" in tile.sql
+        assert {r[0] for r in run(con, tile)} == want, end
 
 
 # ------------------------------------------------------------------ extract and data source filters

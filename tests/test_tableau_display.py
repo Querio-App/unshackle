@@ -249,7 +249,7 @@ def test_top_n_rows_follow_the_sheet_sort(tmp_path: Path):
         "          <alphabetic-sort column='[federated.display0demo].[none:paper_type:nk]' direction='DESC' />\n",
         "          <alphabetic-sort column='[federated.display0demo].[none:paper_type:nk]' direction='DESC' />\n" + top))
     tile = next(t for d in b.dashboards for t in d.tiles if t.title == "Alpha Desc")
-    assert "row_number() over (order by sum(orders.post_discount_revenue) desc, products.paper_type)" in tile.sql
+    assert "row_number() over (order by sum(orders.post_discount_revenue) desc nulls last, products.paper_type)" in tile.sql
     assert "where filter_rank <= 3" in tile.sql and tile.sql.endswith('collate "C" desc') and not tile.todo
 
 

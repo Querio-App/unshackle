@@ -158,7 +158,7 @@ def test_parse_dashboards_and_tiles(tmp_path: Path):
     assert bar.encodings["tooltip"].field == "profit_ratio"
     assert "sum(profit) / nullif(sum(sales), 0) as profit_ratio" in bar.sql
     # Top 10 by profit: exactly 10 customers (ties go to the first names), kept as a member list
-    assert "row_number() over (order by sum(profit) desc, customer_name) as filter_rank" in bar.sql and not bar.todo
+    assert "row_number() over (order by sum(profit) desc nulls last, customer_name) as filter_rank" in bar.sql and not bar.todo
     assert "where filter_rank <= 10" in bar.sql and "where (customer_name in (select member from filter_1)" in bar.sql
 
     geo = t["sales-map"]

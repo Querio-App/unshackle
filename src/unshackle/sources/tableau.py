@@ -4417,7 +4417,7 @@ class _Parser:
         for i, (expr, ms, before) in enumerate(members, 1):
             name, x = f"filter_{i}", _paren(expr)
             pre = before + ms.preds
-            inner = (f"select {expr} as member" + (f", row_number() over (order by {ms.top[0]} {ms.top[1]}, {x}) as filter_rank" if ms.top else "")
+            inner = (f"select {expr} as member" + (f", row_number() over (order by {ms.top[0]} {ms.top[1]} {'nulls last' if ms.top[1] == 'desc' else 'nulls first'}, {x}) as filter_rank" if ms.top else "")
                      + f"\nfrom {rows}" + ("\nwhere " + "\n  and ".join(pre) if pre else "") + "\ngroup by 1"
                      + ("\nhaving " + " and ".join(ms.having) if ms.having else ""))
             ctes.append((name, f"select member from (\n{inner}\n) as ranked\nwhere filter_rank <= {ms.top[2]}" if ms.top else inner))
@@ -4685,7 +4685,8 @@ class _Parser:
 
     def _groupfilter(self, wb: _Workbook | None, ds: TDatasource | None, gf: ET.Element, expr: str) -> _MemberSet:
         """A categorical filter's <groupfilter> tree on the member SQL `expr`. Tableau keeps NULL rows when it excludes values,
-        unless NULL is one of them; a top N keeps exactly N members (ties go to the first members in ascending order)."""
+        unless NULL is one of them; a top N keeps exactly N members (ties go to the first members in ascending order; a NULL
+        aggregate ranks below every value)."""
         fn = gf.get("function", "")
         kids = gf.findall("groupfilter")
         if fn == "level-members":
