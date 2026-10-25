@@ -51,7 +51,7 @@ def _con(null_cycle: bool = False):
     duckdb = pytest.importorskip("duckdb")
     c = duckdb.connect()
     c.execute("create schema public")
-    for t in ("orders", "accounts", "products"):
+    for t in ("orders", "accounts", "products", "shippings"):
         c.execute(f"create table public.{t} as select * from '{DATA / f'{t}.parquet'}'")
     if null_cycle:
         c.execute(f"update public.accounts set payment_cycle = {NULL_CYCLE}")
@@ -92,7 +92,7 @@ def test_configured_type_applies_when_the_export_names_none(tmp_path: Path):
 
 
 @pytest.mark.parametrize("warehouse", sorted(SQLGLOT))
-@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params"])
+@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships"])
 def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, warehouse: str):
     sqlglot = pytest.importorskip("sqlglot")
     b = _parse(tmp_path, fixture, warehouse)
@@ -106,7 +106,7 @@ def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, war
     assert not [t.todo for d in b.dashboards for t in d.tiles if f"{warehouse}:" in (t.todo or "")]
 
 
-@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params"])
+@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships"])
 @pytest.mark.parametrize("null_cycle", [False, True])
 def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_cycle: bool):
     sqlglot = pytest.importorskip("sqlglot")
@@ -166,6 +166,12 @@ def test_render_per_dialect():
     bigquery = dialect.render(sql.replace(", median(q) as m", ""), "bigquery")
     assert "date_trunc(x, week(monday)) as w" in bigquery and "(extract(dayofweek from x) - 1) as dow" in bigquery
     assert "(mod(extract(dayofweek from x) + 5, 7) + 1) as iso" in bigquery and "extract(isoweek from x) as wk" in bigquery
+
+
+def test_union_is_distinct_on_bigquery():
+    sql = "select a from x\nunion\nselect a from y union all select a from z"
+    assert dialect.render(sql, "bigquery") == "select a from x\nunion distinct\nselect a from y union all select a from z"
+    assert dialect.render(sql, "postgres") == sql
 
 
 def test_render_leaves_custom_sql_alone():

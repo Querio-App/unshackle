@@ -48,6 +48,7 @@ class Entity:
     type: Literal["primary", "foreign", "unique", "natural"] = "primary"
     expr: str = ""
     join_type: str = ""  # foreign entities from a source join: how the source joins (inner, left, ...)
+    extensions: dict[str, Any] = field(default_factory=dict)  # foreign entities: more about the source's relationship (custom_extensions)
 
 
 @dataclass

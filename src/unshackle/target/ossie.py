@@ -124,6 +124,7 @@ class _Dataset:
     dims: dict[str, str] = field(default_factory=dict)
     entities: dict[str, tuple[str, str]] = field(default_factory=dict)
     joins: dict[str, str] = field(default_factory=dict)  # foreign entity -> the source's join type
+    rel_ext: dict[str, dict[str, Any]] = field(default_factory=dict)  # foreign entity -> more about the source's relationship
     measures: dict[str, tuple[Measure, str]] = field(default_factory=dict)
     metrics: list[dict[str, Any]] = field(default_factory=list)
     pending: list[dict[str, Any]] = field(default_factory=list)
@@ -178,6 +179,8 @@ def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) 
         ds.entities.setdefault(e.name, (e.type, key))
         if e.join_type:
             ds.joins.setdefault(e.name, e.join_type)
+        if e.extensions:
+            ds.rel_ext.setdefault(e.name, e.extensions)
     for m in model.measures:
         if not m.todo and _has_jinja(m.expr) and _is_cross(m.expr):
             # an expression over dimensions of related datasets: resolved per metric (model-scoped)
@@ -332,19 +335,20 @@ class _Resolver:
         return out
 
 
-def _relationships(datasets: dict[str, _Dataset]) -> list[tuple[_Dataset, _Dataset, str, str, str]]:
-    """(from, to, from field, to field, source join type): foreign/unique entity -> the dataset with that primary (or unique) key."""
+def _relationships(datasets: dict[str, _Dataset]) -> list[tuple[_Dataset, _Dataset, str, str, str, dict[str, Any]]]:
+    """(from, to, from field, to field, source join type, more about the source relationship): foreign/unique entity -> the
+    dataset with that primary (or unique) key."""
     out = []
     for ds in datasets.values():
         for ent, (etype, col) in ds.entities.items():
             allowed = {"foreign": ("primary", "unique"), "unique": ("primary",)}.get(etype, ())
             to = next((d for d in datasets.values() if d is not ds and d.entities.get(ent, ("",))[0] in allowed), None)
             if to is not None:
-                out.append((ds, to, col, to.key(ent), ds.joins.get(ent, "")))
+                out.append((ds, to, col, to.key(ent), ds.joins.get(ent, ""), ds.rel_ext.get(ent, {})))
     return out
 
 
-def _reachable(home: _Dataset, rels: list[tuple[_Dataset, _Dataset, str, str, str]]) -> list[_Dataset]:
+def _reachable(home: _Dataset, rels: list[tuple[_Dataset, _Dataset, str, str, str, dict[str, Any]]]) -> list[_Dataset]:
     order = [home]
     for ds in order:
         for frm, to, *_ in rels:
@@ -449,10 +453,10 @@ def render(bundle: Bundle, layout: Layout) -> dict[str, str]:
                             "to": to.name,
                             "from_columns": [fc],
                             "to_columns": [tc],
-                            "custom_extensions": _ext({"join_type": join}),
+                            "custom_extensions": _ext({"join_type": join, **ext}),
                         }
                     )
-                    for frm, to, fc, tc, join in rels
+                    for frm, to, fc, tc, join, ext in rels
                     if frm in members and to in members
                 ],
                 "metrics": model_metrics.get(name, []),
