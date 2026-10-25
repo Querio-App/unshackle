@@ -53,6 +53,7 @@ from unshackle.ir import (
     Measure,
     Metric,
     Permission,
+    Reference,
     RowFilter,
     SemanticModel,
     Table,
@@ -64,6 +65,7 @@ from unshackle.ir import (
 from unshackle.raw import RawStore
 from unshackle.sources import _aggexpr as ax
 from unshackle.sources import _dialect as dialect
+from unshackle.sources import _tableau_analytics as ta
 from unshackle.sources import _tableau_calc as tc
 from unshackle.sources._semyaml import grid_rows
 from unshackle.sources import _manual
@@ -1217,6 +1219,7 @@ class _Ref:
     suffix: str = ""
     special: str = ""
     table_calc: str = ""
+    forecast: str = ""  # forecast-column-type of a column-instance Tableau's forecast adds to
 
 
 class _NoSQL(Exception):
@@ -2637,6 +2640,11 @@ class _Parser:
                         fname = _unbracket(col)
                     if ci.find("table-calc") is not None and not ref.table_calc:
                         ref.table_calc = "table-calc"
+                    forecast = ci.get("forecast-column-type") or ""
+                    if forecast == "forecast-value":  # the measure with Tableau's forecast appended: its actual values
+                        ref.table_calc, ref.forecast = "", forecast
+                    elif forecast:  # Forecast Indicator and the like: only exist in Tableau's forecast
+                        ref.special, ref.forecast = "forecast", forecast
                 if fname in ("Number of Records",) or fname.startswith("__tableau_internal_object_id__"):
                     ref.special = "records"
                 ref.deriv, ref.suffix = prefix, suffix
@@ -2926,6 +2934,8 @@ class _Parser:
             e = pane.find("encodings")
             for child in (e if e is not None else []):
                 for ref in self._shelf(wb, child.get("column"), deps):
+                    if ref.special == "forecast":
+                        continue
                     lst = enc.setdefault(_local(child.tag), [])
                     if all(x.instance != ref.instance for x in lst):
                         lst.append(ref)
@@ -3116,8 +3126,11 @@ class _Parser:
                 from_sql = f"{from_sql} as {_ident(model.rel.name)}"
             dims = [c for c in columns if not c[3]]
             columns = dims + [c for c in columns if c[3]]
+            totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit))
+            if note:
+                todos.append(note)
             try:
-                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit)
+                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals)
             except _NoSQL as exc:
                 todos.append(str(exc))
             if cte and ("<[Parameters]" in cte or PARAM_REF.search(cte)):
@@ -3141,6 +3154,7 @@ class _Parser:
 
         encodings = {ch: e for ch, r in chosen.items() if (e := to_encoding(r)) is not None}
         layers = [Layer(m, {ch: e}) for m, ch, r in layer_refs if (e := to_encoding(r)) is not None]  # type: ignore[arg-type]
+        sql, references = self._analytics(wb, name, table, panes, deps, rows, cols, columns, chosen, layer_refs, sql, todos)
         meta["params"] += [k for k, pf in wb.params.items() if k not in meta["params"] and re.search(rf"(?<!:):{_name(pf.label)}\b", sql)]
         for p in meta["params"]:
             pf = wb.params.get(p)
@@ -3172,7 +3186,7 @@ class _Parser:
         self._joined = None
         self._sheet = None
         tile = Tile(tid, name, kind, mark, sql, encodings, source_type=mark_cls, source_config=config,  # type: ignore[arg-type]
-                    todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose)  # type: ignore[arg-type]
+                    todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose, references=references)  # type: ignore[arg-type]
         meta["aliases"] = aliases
         return tile, meta
 
@@ -3389,6 +3403,163 @@ class _Parser:
             rels.add("Number of Records")  # with relationships, each logical table has its own count
         return sorted({o.caption if (o := ds.object_of(t)) is not None else t for t in rels})
 
+    def _totals_wanted(self, table: ET.Element, rows: list[_Ref], cols: list[_Ref]) -> tuple[bool, bool, set[str], str]:
+        """(grand total row, grand total column, subtotalled dimension instances, a description; "" when none)."""
+        rows_el, cols_el = table.find("rows"), table.find("cols")
+        rows_total = rows_el is not None and rows_el.get("total") == "true"
+        cols_total = cols_el is not None and cols_el.get("total") == "true"
+        subtotals = {_unesc(m.group(2)) for c in table.findall("subtotals/column") for m in DS_REF.finditer(c.text or "")}
+        names = [r.field.label if r.field else r.instance for r in rows + cols if r.instance in subtotals and not self._is_measure(r)]
+        what = ", ".join(x for x, on in (("a grand total row", rows_total), ("a grand total column", cols_total),
+                                         (f"subtotals of {', '.join(names)}", bool(names))) if on)
+        return rows_total, cols_total, subtotals, what
+
+    def _totals(self, sheet: str, kind: str, table: ET.Element, rows: list[_Ref], cols: list[_Ref], columns: list,
+                filtered: bool) -> tuple[list[list[str]], str]:
+        """Grouping sets for the sheet's totals (sources/_tableau_analytics.py), or a TODO when the SQL can't hold them."""
+        rows_total, cols_total, subtotals, what = self._totals_wanted(table, rows, cols)
+        if not what:
+            return [], ""
+        row_d = [r for r in rows if not self._is_measure(r)]
+        col_d = [r for r in cols if not self._is_measure(r)]
+        shelf = {r.instance for r in row_d + col_d}
+        problem = ""
+        if self._sheet is not None and self._sheet.specials:
+            problem = "aggregated LODs"
+        elif filtered:
+            problem = "a filter on an aggregate or a Top N (whether Tableau totals the shown marks or all rows is not settled)"
+        elif any(r.special or r.suffix == "qk" for r in row_d + col_d):
+            problem = "Measure Names or a continuous field on the shelves"
+        elif {c[0].instance for c in columns if not c[3]} != shelf:
+            problem = "dimensions off Rows and Columns (colour, detail, tooltip), which totals don't group by"
+        if problem:
+            return [], (f"Tableau totals ({what}) not added: the sheet has {problem}; add them as grouping sets of the tile "
+                        f"query, each the sheet's aggregate at the total's level ({SKILL})")
+        sets = ta.grouping_sets([r.instance for r in row_d], [r.instance for r in col_d], rows_total, cols_total, subtotals)
+        if not sets:
+            return [], ""
+        self.b.warn(f"sheet {sheet}", f"totals ({what}): grouping sets in the tile SQL; <dimension>_total is 1 on total rows", "info")
+        if kind == "table":
+            return sets, ""
+        return sets, f"Tableau totals ({what}) are rows of the tile's data (<dimension>_total = 1): draw them or filter them out of the chart"
+
+    def _analytics(self, wb: _Workbook, sheet: str, table: ET.Element, panes: list[ET.Element], deps: dict, rows: list[_Ref],
+                   cols: list[_Ref], columns: list, chosen: dict[str, _Ref], layer_refs: list, sql: str,
+                   todos: list[str]) -> tuple[str, list[Reference]]:
+        """The analytics pane: forecasts and trend lines become TODOs; reference lines become window columns over the tile's
+        rows (sources/_tableau_analytics.py) and Reference layers, or TODOs."""
+        by_inst = {c[0].instance: c for c in columns}
+        shelf = rows + cols
+
+        def title(r: _Ref | None) -> str:
+            if r is None:
+                return "?"
+            c = by_inst.get(r.instance)
+            return c[4] if c else (r.field.label if r.field else r.instance)
+
+        fs = table.find("forecast-specification")
+        if fs is not None and fs.get("enabled") != "false":
+            measures = list(dict.fromkeys(title(r) for r in shelf if r.forecast == "forecast-value"))
+            dates = [title(r) for r in shelf if self._is_temporal(r)]
+            todos.append(ta.forecast_todo(fs, measures, dates))
+        for pane in panes:
+            tl = pane.find("trendline")
+            if tl is not None and tl.get("enabled") != "false":
+                todos.append(ta.trend_todo(tl, title(chosen.get("x")), title(chosen.get("y"))))
+        what = self._totals_wanted(table, rows, cols)[3]
+        if what and not sql and not any(t.startswith("Tableau totals") for t in todos):
+            todos.append(f"Tableau totals ({what}) not added: the tile has no SQL yet; add them as grouping sets of the tile "
+                         f"query, each the sheet's aggregate at the total's level ({SKILL})")
+        lines = ta.reference_lines(panes)
+        if not lines:
+            return sql, []
+        header = [r for r in shelf if not self._is_measure(r) and not r.special and r.suffix != "qk"]
+        inner = {sh[-1].instance for sh in (rows, cols) if sh and any(sh[-1] is h for h in header)}  # lays the marks out in a pane
+        parts = {"table": [], "pane": [r for r in header if r.instance not in inner], "cell": header}
+        split = [c[4] for c in columns if not c[3] and c[0].instance not in {r.instance for r in shelf}]
+        taken = {c[1] for c in columns}
+        items: list[str] = []
+        grouped: list[tuple[str, str, list[str]]] = []
+        refs: list[Reference] = []
+
+        def alias(text: str) -> str:
+            a, n = _name(text), 2
+            while a in taken:
+                a, n = f"{_name(text)}_{n}", n + 1
+            taken.add(a)
+            return a
+
+        for rl in lines:
+            formula = rl.get("formula") or ""
+            comp = ta.COMPUTATION.get(formula, formula)
+            scope = ta.SCOPE.get(rl.get("scope") or "per-table", "")
+            value = next(iter(self._shelf(wb, rl.get("value-column"), deps)), None)
+            axis = next(iter(self._shelf(wb, rl.get("axis-column"), deps)), None)
+            c = by_inst.get(value.instance) if value is not None else None
+            param = value.field if value is not None and value.special == "parameter" else None
+            desc = f"reference line: {'parameter ' + param.label if param else comp + ' of ' + title(value)} per {scope or rl.get('scope')}"
+            channel = next((ch for ch, r in chosen.items() if ch in ("x", "y") and axis is not None and r.instance == axis.instance), "")
+            channel = channel or next((ch for _, ch, r in layer_refs if axis is not None and r.instance == axis.instance), "")
+            percents = [x.get("percentage") or "" for x in rl.findall("reference-line-value")]
+            band = rl.get("percentage-bands") == "true"
+            problem = ""
+            if not sql:
+                problem = "the tile has no SQL yet"
+            elif formula in ta.DISTRIBUTIONS or rl.get("tile-count") or (percents and not band) or "" in percents:
+                opts = ", ".join(f"{k}={v}" for k, v in sorted(rl.attrib.items()) if k not in ("axis-column", "value-column", "id", "z-order"))
+                problem = f"a {ta.DISTRIBUTIONS.get(formula, formula)} distribution band ({opts}) has no SQL form here"
+            elif not scope:
+                problem = f"scope {rl.get('scope')!r} is not one unshackle knows"
+            elif not channel:
+                problem = "its axis is not a measure axis of the tile"
+            elif "grouping sets" in sql:
+                problem = "the sheet also has totals, which the line must not count"
+            elif param is None and (c is None or not c[3]):
+                problem = f"its measure ({title(value)}) is not a column of the tile"
+            elif param is None and split:
+                problem = (f"marks are split inside each cell by {', '.join(split)}: Tableau computes the line on each cell's "
+                           "total (the stacked mark), not on the split marks")
+            elif param is None and formula not in ta.WINDOW and not (formula == "total" and c[0].deriv in ta.TOTAL_OF_MARKS):
+                problem = (f"{comp} recomputes {title(value)} over the scope's rows" if formula == "total"
+                           else f"formula {formula!r} is not one unshackle knows")
+            elif param is None and formula == "total" and re.search(r"\nlimit \d+$", sql):
+                problem = "Total with a Top N filter"
+            if problem:
+                todos.append(f"Tableau {desc} not translated: {problem}; add it as a window column over the tile's rows "
+                             f"and a rule layer in the chart ({SKILL})")
+                continue
+            if param is not None:
+                expr, name = f":{_name(param.label)}", alias(f"{param.label} line")
+            else:
+                fn = ta.WINDOW.get(formula) or ta.TOTAL_OF_MARKS[c[0].deriv]
+                by = [by_inst[r.instance][1] for r in parts[scope]]
+                over = ", ".join(f"tile.{k}" for k in by)
+                over = f"partition by {over}" if over else ""
+                if fn != "median":
+                    expr = f"{fn}(tile.{c[1]}) over ({over})"
+                elif self.dialect == "bigquery":  # its percentile is a window function only
+                    expr = f"percentile_cont(cast(tile.{c[1]} as double precision), 0.5) over ({over})"
+                else:  # no window median in Postgres: the median per partition in its own CTE, joined back
+                    grouped.append((f"reference_{len(grouped) + 1}", f"median(cast({c[1]} as double precision))", by))  # a float, as Tableau's
+                    expr = f"{grouped[-1][0]}.value"
+                name = alias(f"{c[1]} {formula}" + ("" if scope == "table" else f" per {scope}"))
+            if band and percents:
+                cols_ = [alias(f"{name} {p} pct") for p in percents]
+                taken.discard(name)
+                items += [f"{float(p) / 100:g} * {expr} as {a}" for p, a in zip(percents, cols_)]
+                refs += [Reference(a, channel, scope, ta.label(rl, comp, p)) for p, a in zip(percents, cols_)]  # type: ignore[arg-type]
+                if len(cols_) > 1:
+                    refs.append(Reference(cols_[0], channel, scope, band_to=cols_[-1]))  # type: ignore[arg-type]
+                where = ", ".join(cols_)
+            else:
+                items.append(f"{expr} as {name}")
+                refs.append(Reference(name, channel, scope, ta.label(rl, "" if param is not None else comp)))  # type: ignore[arg-type]
+                where = name
+            self.b.warn(f"sheet {sheet}", f"{desc}: column {where} of the tile SQL, drawn as a rule", "info")
+        if items:
+            sql = ta.wrap(sql, items, grouped, len([c for c in columns if not c[3]]))
+        return sql, refs
+
     def _ds_join(self, ds: TDatasource | None) -> str:
         """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""
         if ds is None or not ds.join_steps or not all(pairs for _, _, pairs in ds.join_steps):
@@ -3432,8 +3603,11 @@ class _Parser:
         """A FIXED LOD is computed over the joined rows, so a sheet that shows one keeps the join."""
         return r.field is not None and r.field.is_calc and bool((c := self.cache.get((ds.uid, r.field.local))) and c.lod)
 
-    def _tile_sql(self, columns: list, from_sql: str, cte: str, where: list[str], having: list[str], order: list[str], limit: str) -> str:
-        """SELECT for a sheet. Aggregated LODs are computed in their own CTEs at the sheet's grain and joined on its dimensions."""
+    def _tile_sql(self, columns: list, from_sql: str, cte: str, where: list[str], having: list[str], order: list[str], limit: str,
+                  totals: list[list[str]] | None = None) -> str:
+        """SELECT for a sheet. Aggregated LODs are computed in their own CTEs at the sheet's grain and joined on its dimensions.
+        `totals`: grouping sets (dimension instances) for the sheet's totals; each totalled dimension gets a `<alias>_total`
+        column (1 on its total rows), and total rows sort after their group."""
         ctx = self._sheet
         assert ctx is not None
         dims = [c for c in columns if not c[3]]
@@ -3451,7 +3625,16 @@ class _Parser:
         def item(c: tuple) -> str:
             return f"  {c[2]}" if c[2] == c[1] else f"  {c[2]} as {c[1]}"
 
-        if not specials:
+        if not specials and totals:
+            totalled = [c for c in dims if any(c[0].instance not in s for s in totals)]
+            expr = {c[0].instance: c[2] for c in dims}
+            flags = [f"  grouping({c[2]}) as {c[1]}_total" for c in totalled]
+            sets = ", ".join("(" + ", ".join(expr[i] for i in s) + ")" for s in totals)
+            flag_pos = {id(c): len(columns) + k for k, c in enumerate(totalled, 1)}
+            lines = ["select", ",\n".join([item(c) for c in columns] + flags), f"from {rows}{where_sql}", f"group by grouping sets ({sets})",
+                     "order by " + ", ".join(f"{flag_pos[id(c)]}, {i}" if id(c) in flag_pos else str(i) for i, c in enumerate(dims, 1))]
+            body = "\n".join(lines)
+        elif not specials:
             lines = ["select", ",\n".join(item(c) for c in columns), f"from {rows}{where_sql}{group(len(dims))}"]
             if having:
                 lines.append("having " + "\n  and ".join(having))

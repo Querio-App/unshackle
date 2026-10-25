@@ -215,6 +215,28 @@ In the semantic layer, a calc over one grain's FIXED values is a metric on that 
 model (`large_account_orders` on `account_id_lod`), and a nested FIXED is a `_lod` model
 of its own.
 
+### Analytics pane: reference lines, totals, trend lines, forecasts
+
+`sources/_tableau_analytics.py`. Each translated object is listed in the report's warnings (info); the rest are TODOs.
+
+| Tableau | Tile |
+| --- | --- |
+| `<reference-line formula='average\|median\|min\|max\|sum'>` on a pane | a column of the tile SQL: that function of the marks within the line's scope, over the tile's rows (`avg(tile.sales) over (partition by tile.region)`; a median per scope in its own CTE joined back, BigQuery `percentile_cont(x, 0.5) over`); an Altair rule layer (a tick per cell for cell scope) with its label |
+| `formula='total'` | the aggregate recomputed over the scope's rows: from the marks for SUM, COUNT, MIN, MAX; TODO for the others (AVG, COUNTD, calcs) |
+| a parameter as the value (`value-column='[Parameters].[x]'`) | `:x as x_line`, bound from the parameters cell |
+| `percentage-bands='true'` with `<reference-line-value percentage='50'>` | one column per percentage (`0.5 * avg(...) over ()`) and a shaded band between the first and last |
+| scope `per-table` / `per-pane` / `per-cell` | partition by nothing / every discrete dimension on Rows and Columns except the innermost one of a shelf that ends with a dimension / every discrete dimension on Rows and Columns. Continuous fields (axes) split nothing |
+| `<rows total='true'>` / `<cols total='true'>` / `<subtotals>` | `group by grouping sets (...)`: a grand total row (over the Rows dimensions), a grand total column (over the Columns dimensions), a Total per value of each subtotalled dimension; each recomputes the sheet's aggregate at its level (Tableau's Automatic: AVG over the rows, COUNTD over the rows). `<dimension>_total` is 1 on total rows, which sort after their group. View data writes `All` on them |
+| `<trendline enabled='true' fit=...>` | TODO naming the model (linear, logarithmic, exponential, polynomial, power) and its options; `transform_regression` in the chart cell |
+| `<forecast-specification enabled='true'>`, `fVal:` columns, Forecast Indicator | the actual values only (`fVal:sum:Sales` is `sum(sales)`), and a TODO with the model's options. With Ignore last N, Tableau also leaves out the last N periods of actuals, which the SQL keeps |
+
+TODO, with what to write: distribution bands (quantiles, percentiles, standard deviation, confidence), lines on sheets
+whose marks are split inside a cell (colour, detail or tooltip dimensions: Tableau computes the line on the cell's
+stacked total), lines on a tile without SQL or off its measure axes, lines together with totals; totals with
+aggregated LODs, a filter on an aggregate or Top N, Measure Names or continuous fields on the shelves, or dimensions off
+Rows and Columns. "Total Using" other than Automatic is not read from the file: check sheets whose totals were set to
+Sum/Average by hand.
+
 ### Calculation semantics
 
 Tableau formulas render with Tableau's rules (`sources/_tableau_calc.py`, its function table
