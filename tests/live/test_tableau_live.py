@@ -2,11 +2,13 @@
 
 1. warehouse up and the dataset loaded (harness.Stack.load_data): the migrated SQL runs there
 2. bootstrap (tests/live/tableau/bootstrap.py): one project with a published data source (.tdsx with a
-   .hyper extract of the same data), a workbook with four sheets and a dashboard, a group with permissions
+   .hyper extract of the same data), a workbook with four sheets and a dashboard, a workbook of FIXED, INCLUDE
+   and EXCLUDE LODs (12 sheets and a dashboard), a group with permissions
 3. `unshackle init / extract / build tableau` in a temp repo
 4. parity: Tableau's own numbers (the view CSVs `extract` saved from GET /views/{id}/data, the same with
    a parameter set through vf_<parameter>, and VizQL Data Service queries on the published data source)
-   against the migrated notebook tiles and the generated Ossie expressions; `unshackle verify`
+   against the migrated notebook tiles and the generated Ossie expressions; `unshackle verify`. LOD sheets
+   with no faithful translation must stay TODO
 5. the project and the group are deleted, even when a step fails, and the deletion is checked
 
 Needs Docker, docker-compose and a site: TABLEAU_SERVER_URL, TABLEAU_SITE, TABLEAU_PAT_NAME and
@@ -23,6 +25,9 @@ from pathlib import Path
 import pytest
 import yaml
 from harness import ENABLED, SKIP_REASON, Stack, bootstrap_module, run_unshackle, write_case, write_csv
+
+from unshackle.ir import snake
+from unshackle.run import notebook_queries
 
 SITE_VARS = ("TABLEAU_SERVER_URL", "TABLEAU_PAT_NAME", "TABLEAU_PAT_SECRET")
 pytestmark = [
@@ -75,13 +80,21 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
     repo = tmp_path / "repo"
     raw = repo / "migration/raw/tableau"
     run_unshackle(repo, "init")
-    print(run_unshackle(repo, "extract", "tableau", "--only", f"workbook:{ids['workbook']}"))
+    print(run_unshackle(repo, "extract", "tableau", "--only", f"workbook:{ids['workbook']}", "--only", f"workbook:{ids['lod_workbook']}"))
     assert json.loads((raw / "_errors.json").read_text()) == []
     assert (raw / f"datasources/{ids['datasource']}.tds").exists()  # the published data source behind the sqlproxy
     print(run_unshackle(repo, "build", "tableau"))
     nb = "notebooks/sales-overview.ipynb"
     assert (repo / nb).exists()
-    assert sorted(p.name for p in (repo / "semantic").glob("*.ossie.yaml")) == ["accounts.ossie.yaml", "orders.ossie.yaml", "products.ossie.yaml"]
+    lod_nb = "notebooks/lod-checks.ipynb"
+    assert (repo / lod_nb).exists()
+    assert sorted(p.name for p in (repo / "semantic").glob("*.ossie.yaml")) == [  # the FIXED grains are SQL models
+        "account_id_lod.ossie.yaml", "account_name_lod.ossie.yaml", "accounts.ossie.yaml", "orders.ossie.yaml", "products.ossie.yaml"]
+    _, tile_sql = notebook_queries(repo / lod_nb)
+    # Tableau counts each of these once per distinct combination of the view's and the FIXED dimensions (its
+    # view data shows it); the translation doesn't do that yet, so they must stay TODO rather than give a number.
+    for tile in ("revenue_share_by_status", "large_account_orders_by_payment_cycle", "cycle_avg_account_revenue"):
+        assert not tile_sql[tile], tile
 
     views = ids["views"]
     data = repo / "migration/parity/data"
@@ -108,6 +121,7 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
         site.close()
 
     ossie = yaml.safe_load((repo / "semantic/orders.ossie.yaml").read_text())
+    grain = yaml.safe_load((repo / "semantic/account_id_lod.ossie.yaml").read_text())
     joined = "public.orders"  # every order has its account and product, so the inner joins keep all rows
     view_csv = lambda name: f"migration/raw/tableau/views/{views[name]}.csv"  # noqa: E731 - saved by `unshackle extract`
     cases = [
@@ -129,7 +143,27 @@ def _extract_build_verify(tableau, ids: dict, stack: Stack, tmp_path: Path) -> N
         {"name": "Average Order Value by Order Month (Ossie: ratio metric, DATETRUNC dimension)", "source": {"csv": by_month},
          "target": {"sql": _ossie_sql(ossie, {"order_month": "order_month", "average_order_value": "average_order_value"}, joined)},
          "keys": ["order_month"]},
+        {"name": "Average Account Revenue (Ossie: AVG metric on the FIXED [account_id] grain)",
+         "source": {"csv": view_csv("Average Account Revenue")},
+         "target": {"sql": _ossie_sql(grain, {"avg_account_revenue": "avg_account_revenue"},
+                                      f"({grain['datasets'][0]['source']}) as account_id_lod", False)}},
     ]
+    # The LOD workbook: every sheet with tile SQL, against Tableau's view data. Keys are the sheet's dimensions.
+    lod_keys = {
+        "Revenue by Account Tier": ["account_tier"],  # a bucket of a FIXED value, as a dimension
+        "Average Account Revenue": [],  # AVG({FIXED ...})
+        "Account Revenue by Payment Cycle": ["payment_cycle"],  # an aggregated FIXED value
+        "Order Size by Paper Type": ["paper_type"],  # AVG({INCLUDE ...})
+        "Cycle Revenue by Paper Type": ["paper_type", "payment_cycle"],  # EXCLUDE
+        "New Accounts by Month": ["month_of_first_order_date"],  # a FIXED date as a dimension
+        "Top Account per Paper Type": ["paper_type"],  # FIXED on two dimensions
+        "Share of Account Revenue by Status": ["status"],  # a row field over a FIXED value
+        "Account Revenue by Payment Cycle (Completed)": ["payment_cycle"],  # FIXED ignores the dimension filter
+    }
+    for name, keys in lod_keys.items():
+        tile = snake(name)
+        cases.append({"name": f"LOD: {name}", "source": {"csv": view_csv(name)}, "target": {"notebook": lod_nb, "tile": tile},
+                      **({"keys": keys} if keys else {})})
     for i, case in enumerate(cases):
         write_case(repo, f"case-{i}", case)
     out = run_unshackle(repo, "verify", env={"UNSHACKLE_WAREHOUSE_URL": stack.warehouse_url}, check=False)

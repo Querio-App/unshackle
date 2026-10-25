@@ -1,0 +1,26 @@
+[
+  {
+    "contentUrl": "DunderMifflinOrders_17928575308750",
+    "createdAt": "2026-10-24T15:58:50Z",
+    "encryptExtracts": "false",
+    "hasExtracts": true,
+    "hasSemanticLayerConnection": false,
+    "id": "00000000-0000-4000-8000-000000000001",
+    "isCertified": false,
+    "name": "Dunder Mifflin Orders",
+    "owner": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "user@example.com"
+    },
+    "project": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "unshackle-live"
+    },
+    "size": "1",
+    "tags": {},
+    "type": "postgres",
+    "updatedAt": "2026-10-24T15:58:51Z",
+    "useRemoteQueryAgent": false,
+    "webpageUrl": "https://example.online.tableau.com/#/site/example/datasources/33034252"
+  }
+]

@@ -160,8 +160,12 @@ layer the TODO holds the grain's SQL: save it as a SQL model with a composite ke
 relate it by hand), nested LODs (build the inner one first), a FIXED inside a larger
 aggregate expression (`SUM([Sales]) / SUM([Account Revenue])`: in the tile, compute
 `SUM([Account Revenue])` per mark as above and divide), and aggregates of calculations
-over FIXED values (`SUM(IF [Account Revenue] > 0 THEN 1 END)`): check in Tableau whether
-it counts rows or LOD groups before writing it. In dbt projects MetricFlow also needs a
+over FIXED values (`SUM(IF [Account Revenue] > 0 THEN 1 END)`). For all of these, Tableau
+takes each FIXED value once per distinct combination of the sheet's dimensions and the
+FIXED dimensions, not once per row: the calc over the FIXED value, a FIXED in a ratio, and
+a FIXED nested in another FIXED alike (checked against Tableau Cloud's own numbers,
+`tests/fixtures/tableau_live_lod`). Counting rows instead can be off by an order of
+magnitude. In dbt projects MetricFlow also needs a
 time dimension on the `_lod` model before its measures load.
 
 **INCLUDE / EXCLUDE LOD** depend on the view's dimensions, so they are never metrics;

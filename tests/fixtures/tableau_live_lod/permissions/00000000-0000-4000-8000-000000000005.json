@@ -1,0 +1,58 @@
+{
+  "permissions": {
+    "granteeCapabilities": [
+      {
+        "capabilities": {
+          "capability": [
+            {
+              "mode": "Allow",
+              "name": "ShareView"
+            },
+            {
+              "mode": "Allow",
+              "name": "ViewUnderlyingData"
+            },
+            {
+              "mode": "Allow",
+              "name": "Connect"
+            },
+            {
+              "mode": "Allow",
+              "name": "Filter"
+            },
+            {
+              "mode": "Allow",
+              "name": "ExportData"
+            },
+            {
+              "mode": "Allow",
+              "name": "AddComment"
+            },
+            {
+              "mode": "Allow",
+              "name": "ViewComments"
+            },
+            {
+              "mode": "Allow",
+              "name": "ExportImage"
+            },
+            {
+              "mode": "Allow",
+              "name": "Read"
+            }
+          ]
+        },
+        "group": {
+          "id": "00000000-0000-4000-8000-000000000020"
+        }
+      }
+    ],
+    "workbook": {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "name": "Dunder Mifflin LOD",
+      "owner": {
+        "id": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  }
+}
