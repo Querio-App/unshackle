@@ -3539,7 +3539,7 @@ class _Parser:
                              f"and a rule layer in the chart ({SKILL})")
                 continue
             if param is not None:
-                expr, name = f":{_name(param.label)}", alias(f"{param.label} line")
+                expr, name = param_bind(param), alias(f"{param.label} line")
             else:
                 fn = ta.WINDOW.get(formula) or ta.TOTAL_OF_MARKS[c[0].deriv]
                 by = [by_inst[r.instance][1] for r in parts[scope]]
