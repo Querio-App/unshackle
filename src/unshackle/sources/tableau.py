@@ -13,6 +13,8 @@ Raw layout under migration/raw/tableau/:
                              upstream tables and custom SQL for the workbook
     views/<id>.csv           GET .../views/{id}/data for the top-N most viewed views (parity)
     permissions/<id>.json    GET .../workbooks/{id}/permissions
+    extracts/<id>.json       `extract --with-data`: tables of data that lives only in Tableau (extracts, Excel, CSV)
+                             copied to Parquet under the repo's data folder (sources/_tableau_data.py)
     _errors.json             [{"item", "error"}] anything extract could not fetch
 
 parse() reads the XML only (never the network). Deterministic: tables and columns
@@ -61,9 +63,11 @@ from unshackle.ir import (
     VerifiedQuery,
     slugify,
     snake,
+    warehouse_type,
 )
 from unshackle.raw import RawStore
 from unshackle.sources import _aggexpr as ax
+from unshackle.sources import _tableau_data as tdata
 from unshackle.sources import _dialect as dialect
 from unshackle.sources import _tableau_analytics as ta
 from unshackle.sources import _tableau_calc as tc
@@ -107,6 +111,10 @@ KNOWN_DERIV = set(DERIV_AGG) | set(TRUNC) | set(PART) | {"none", "usr", "attr", 
 MARKS = {"bar": ("chart", "bar"), "line": ("chart", "line"), "area": ("chart", "area"), "circle": ("chart", "point"), "shape": ("chart", "point"), "pie": ("chart", "arc"), "ganttbar": ("chart", "bar")}
 MAP_MARKS = {"multipolygon", "polygon", "map", "filledmap", "density"}
 FILE_CONNECTIONS = {"excel-direct", "textscan", "hyper", "dataengine", "ogrdirect", "stat-direct", "google-sheets", "excel", "msaccess"}
+# connections Tableau answers in Hyper even without <extract>: Hyper files, and live Excel and text files (from a hidden extract)
+HYPER_ENGINE = {"hyper", "dataengine", "excel-direct", "textscan"}
+# connectors to files in cloud storage and to applications: no warehouse table holds what Tableau reads
+APP_CONNECTION = re.compile(r"salesforce|google|servicenow|marketo|eloqua|quickbooks|webdata|odata|sharepoint|onedrive|dropbox|box|drive|sheet|file", re.I)
 COLUMN_TYPE = {"integer": "integer", "real": "number", "string": "string", "date": "date", "datetime": "timestamp", "boolean": "boolean"}
 NUMERIC = {"integer", "real"}
 TIME_TYPES = {"date", "datetime"}
@@ -199,6 +207,7 @@ class TableauSource(Source):
         top_views: int = 20,
         page_size: int = 100,
         metadata_batch: int = 10,
+        with_data: bool = False,
     ):
         self._client = client
         self._server = server_url
@@ -207,6 +216,8 @@ class TableauSource(Source):
         self.top_views = top_views
         self.page_size = page_size
         self.metadata_batch = metadata_batch
+        self.with_data = with_data  # extract: copy data that lives only in Tableau (extracts, Excel, CSV) to Parquet
+        self._data_names: set[str] = set()
         self._token: str | None = None
         self.site_id = ""
         self.site_content_url = ""
@@ -292,6 +303,30 @@ class TableauSource(Source):
         resp = self.client().get(self._api(path), params={"includeExtract": "false"}, headers={"Accept": "*/*"})
         return unpack(resp.content, ext)
 
+    def _copy_data(self, store: RawStore, kind: str, item: dict[str, Any], xml: bytes, errors: list[dict[str, str]]) -> None:
+        """--with-data: the data sources of a workbook or published data source whose data lives only in Tableau ->
+        Parquet under the repo's data folder (sources/_tableau_data.py), listed in extracts/<id>.json."""
+        from unshackle.target.layout import Layout
+
+        name = item.get("name", item["id"])
+        if not _data_sources(xml, name):
+            return
+        label = f"{kind} {name} ({item['id']})"
+        try:
+            package = self.client().get(self._api(f"/{kind}s/{item['id']}/content"), params={"includeExtract": "true"}, headers={"Accept": "*/*"}).content
+            # the package's own .tds/.twb names the files inside it (the plain download names the server's copies)
+            sources = _data_sources(unpack(package, ".tds" if kind == "datasource" else ".twb"), name)
+        except (SourceError, zipfile.BadZipFile) as exc:
+            errors.append({"item": f"{label} data", "error": f"download with includeExtract=true: {str(exc)[:400]}"})
+            return
+        rel_root = Layout.load(store.repo_root).rel("data", "tableau")
+        tables, errs = tdata.write_tables(package, [s[:4] for s in sources], store.repo_root / rel_root, rel_root, self._data_names)
+        origin = {s[0]: "extract" if s[4] else "connection" for s in sources}
+        for t in tables:
+            t["from"] = origin[t["datasource"]]
+        store.put_json(f"extracts/{item['id']}.json", {"item": label, "tables": tables, "errors": errs})
+        errors += [{"item": f"{label} data", "error": e} for e in errs]
+
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
         errors: list[dict[str, str]] = []
@@ -313,9 +348,19 @@ class TableauSource(Source):
             wid = (v.get("workbook") or {}).get("id", "")
             inv.add("view", f"view:{v['id']}", v.get("name", v["id"]), parent=wb_names.get(wid, wid), views=_views(v),
                     url=self._view_url(v.get("contentUrl", "")))
+        only_here = []
         for d in datasources:
+            typ = d.get("type", "")
+            local = typ in FILE_CONNECTIONS or bool(APP_CONNECTION.search(typ) and not warehouse_type(typ))
+            only_here += [d.get("name", d["id"])] if local else []
             inv.add("datasource", f"datasource:{d['id']}", d.get("name", d["id"]), parent=(d.get("project") or {}).get("name", ""),
-                    extra={"type": d.get("type", ""), "has_extracts": d.get("hasExtracts", False)})
+                    extra={"type": typ, "has_extracts": d.get("hasExtracts", False), "data_only_in_tableau": local})
+        if only_here:
+            inv.notes.append(
+                f"{len(only_here)} published data sources hold their data only in Tableau (an extract or file, no warehouse table): "
+                f"{', '.join(sorted(only_here)[:10])}{' ...' if len(only_here) > 10 else ''}. `unshackle extract tableau --with-data` "
+                "copies their data to Parquet; workbooks' own data sources are checked when they are extracted."
+            )
         inv.notes.append("Views are totalViewCount from the REST API (lifetime); workbook views are the sum of their views.")
         inv.notes.append(
             "Extract also calls the Metadata API; on Tableau Server enable it with `tsm maintenance metadata-services enable`."
@@ -339,6 +384,8 @@ class TableauSource(Source):
             self._signout()
 
     def _extract(self, store: RawStore, only: set[str] | None, errors: list[dict[str, str]]) -> None:
+        if self.with_data:
+            tdata.check_installed()
         self.client()
         store.put_json("_site.json", {"server": self.server(), "site_id": self.site_id, "content_url": self.site_content_url, "api_version": self.version()})
         workbooks = self._list("/workbooks", "workbooks", "workbook", errors)
@@ -361,6 +408,8 @@ class TableauSource(Source):
             try:
                 twb = self._content(f"/workbooks/{w['id']}/content", ".twb")
                 store.put_bytes(f"workbooks/{w['id']}.twb", twb)
+                if self.with_data:
+                    self._copy_data(store, "workbook", w, twb, errors)
                 extracted.append(w["id"])
                 proxies |= set(re.findall(rb"class='sqlproxy'[^>]*?dbname='([^']+)'", twb)) | set(re.findall(rb"dbname='([^']+)'[^>]*?class='sqlproxy'", twb))
             except (SourceError, zipfile.BadZipFile) as exc:
@@ -375,7 +424,10 @@ class TableauSource(Source):
             if ids is not None and d["id"] not in ids and d.get("contentUrl") not in proxy_names:
                 continue
             try:
-                store.put_bytes(f"datasources/{d['id']}.tds", self._content(f"/datasources/{d['id']}/content", ".tds"))
+                tds = self._content(f"/datasources/{d['id']}/content", ".tds")
+                store.put_bytes(f"datasources/{d['id']}.tds", tds)
+                if self.with_data:
+                    self._copy_data(store, "datasource", d, tds, errors)
             except (SourceError, zipfile.BadZipFile) as exc:
                 errors.append({"item": f"datasource {d.get('name', d['id'])} ({d['id']})", "error": f"download: {str(exc)[:400]}"})
         if extracted:
@@ -498,6 +550,24 @@ def _views(v: dict[str, Any]) -> int:
         return int((v.get("usage") or {}).get("totalViewCount") or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _data_sources(xml: bytes, name: str) -> list[tuple[str, ET.Element, ET.Element, str, bool]]:
+    """The data sources of a .tds/.twb whose data lives only in Tableau: (key in extracts/<id>.json, XML, the
+    connection holding the data, a name for its tables, read from the extract)."""
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return []
+    out = []
+    for el in [root] if _local(root.tag) == "datasource" else root.findall("datasources/datasource"):
+        ds = read_datasource(el, "", "", caption=name if el is root else "")
+        if ds.name == "Parameters" or not extract_only(ds):
+            continue
+        conn = el.find("extract/connection") if ds.extract_ds is not None else el.find("connection")
+        if conn is not None:
+            out.append(("" if el is root else ds.name, el, conn, name if el is root else ds.caption, ds.extract_ds is not None))
+    return out
 
 
 def unpack(data: bytes, ext: str) -> bytes:
@@ -1211,6 +1281,10 @@ class TDatasource:
     def object_of(self, relation: str) -> TObject | None:
         return next((o for o in self.objects.values() if relation in o.relations), None)
     default_sorts: list[ET.Element] = field(default_factory=list)  # Default Properties > Sort (<default-sorts>)
+    # <extract enabled='true'>: Tableau answers from it. Its connection read as a data source (relations, columns),
+    # and what its settings change (row limits, filters, incremental refresh, last refresh)
+    extract_ds: "TDatasource | None" = None
+    extract_notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1359,6 +1433,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                 connection_class=(cattrs.get("class", "") if cattrs is not None else ""),
             )
             ds.relations.setdefault(r.name, r)
+            ds.extract = ds.extract or r.connection_class in HYPER_ENGINE
         for mr in conn.iter("metadata-record"):
             if mr.get("class") != "column":
                 continue
@@ -1431,6 +1506,12 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         ds.fiscal_start = (opts.get("fiscal-year-start") or "").lower() or ds.fiscal_start
     ds.calendar = (el.findtext("overridable-settings/default-calendar-type") or el.findtext("default-calendar-type") or "").strip()
     ds.locale = locale or next((v for c in el.iter() if (v := c.get("author-locale") or c.get("locale"))), "")
+    ext = el.find("extract")
+    if ext is not None and ext.get("enabled", "true") != "false" and ext.find("connection") is not None:
+        wrap = ET.Element("datasource", {"name": name})
+        wrap.append(ext.find("connection"))
+        ds.extract_ds = read_datasource(wrap, f"{uid}#extract", src, workbook)
+        ds.extract_notes = _extract_notes(ext)
     _read_object_graph(el, ds)
     return ds
 
@@ -1476,6 +1557,35 @@ def _field_pairs(expr: ET.Element | None) -> list[tuple[str, str]]:
         a, b = (_unbracket(k.get("op")) for k in kids)
         return [(a, b)]
     return []
+
+
+def _extract_notes(ext: ET.Element) -> list[str]:
+    """What an extract's settings change about the rows Tableau reads."""
+    notes = []
+    count, units = ext.get("count", "-1"), ext.get("units", "records")
+    if count not in ("", "-1"):
+        notes.append(f"a row limit (count {count}, units {units})")
+    for f in ext.iter("filter"):
+        notes.append(f"a {f.get('class', '')} extract filter on {_unbracket(f.get('column'))}".replace("a  ", "a "))
+    conn = ext.find("connection")
+    refresh = conn.find("refresh") if conn is not None else None
+    if refresh is not None and refresh.get("incremental-updates") == "true":
+        notes.append(f"incremental refresh on {_unbracket(refresh.get('increment-key')) or '?'}")
+    if conn is not None and conn.get("update-time"):
+        notes.append(f"last refreshed {conn.get('update-time')}")
+    return notes
+
+
+def extract_only(ds: TDatasource) -> str:
+    """Why a data source's data lives only in Tableau (a file, an application connector, an extract with no connection
+    behind it), or "" when a warehouse holds it."""
+    classes = sorted({ds.connection_class, *(r.connection_class for r in ds.relations.values())} - {"", "federated", "sqlproxy"})
+    files = [c for c in classes if c in FILE_CONNECTIONS or (APP_CONNECTION.search(c) and not warehouse_type(c))]
+    if files:
+        return f"connects to {', '.join(files)}" + (" through an extract" if ds.extract_ds is not None else "")
+    if ds.extract_ds is not None and not classes:
+        return "is an extract with no connection behind it"
+    return ""
 
 
 def _leaf_relations(rel: ET.Element | None, ds: TDatasource) -> list[ET.Element]:
@@ -1554,6 +1664,13 @@ class _Parser:
         self.inline: dict[str, tuple[_Lod, str]] = {}  # FIXED LOD inside a formula, by its placeholder reference
         self.prepped: dict[tuple[str, str], str] = {}  # formula with its FIXED LODs replaced by placeholder references
         self.view_lods: dict[tuple[str, str], tuple[str, list[str], str, str | None]] = {}  # INCLUDE/EXCLUDE: (kind, dims, inner, outer agg)
+        # data copied to Parquet by `extract --with-data` (extracts/<id>.json): (raw file stem, data source key) -> relation -> table
+        self.copied: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        for rel in self.store.glob("extracts/*.json"):
+            for t in (self._json(rel) or {}).get("tables") or []:
+                if isinstance(t, dict) and t.get("table") and t.get("parquet"):
+                    self.copied.setdefault((Path(rel).stem, t.get("datasource", "")), {})[t.get("relation", "")] = t
+        self.copied_used: dict[str, dict[str, Any]] = {}
 
     def _json(self, rel: str) -> Any:
         if not self.store.exists(rel):
@@ -1599,6 +1716,8 @@ class _Parser:
             self.workbooks.append(wb)
         data_sources = list(self.tds) + [ds for wb in self.workbooks for ds in wb.datasources.values()]
         for ds in data_sources:
+            self._local_data(ds)
+        for ds in data_sources:
             self._link_published(ds)
         self.b.detect_warehouse(
             c for ds in data_sources for c in [ds.connection_class, *(r.connection_class for r in ds.relations.values())]
@@ -1607,6 +1726,8 @@ class _Parser:
         self.dialect = self.store.warehouse(self.b.datasource) or self.b.warehouse  # unshackle.toml wins over the export
         for ds in data_sources:
             self._assign_models(ds)
+        if self.copied_used:
+            self._load_step()
         self._count_names(data_sources)
         for ds in data_sources:
             self._base_fields(ds)
@@ -1709,10 +1830,78 @@ class _Parser:
                 mine.aliases = list(tf.aliases)
                 mine.format = mine.format or tf.format
 
+    def _local_data(self, ds: TDatasource) -> None:
+        """A data source whose data lives only in Tableau reads its Parquet copy (`extract --with-data`), from the extract
+        when it has one (what Tableau answers from), else from its files. One on a warehouse with an extract: say what
+        the extract changes."""
+        item = f"{ds.src} datasource {ds.caption}"
+        reason = extract_only(ds)
+        if not reason:
+            if ds.extract_ds is not None and ds.relations:
+                notes = [n for n in ds.extract_notes if not n.startswith("last refreshed")]
+                self.b.warn(item, "Tableau answers from this data source's extract" + (f" ({'; '.join(ds.extract_notes)})" if ds.extract_notes else "")
+                            + ", the migrated SQL from the warehouse: rows changed since the last refresh, and the extract's filters, row "
+                            "limit or aggregation (Extract settings: Aggregate data for visible dimensions) make the numbers differ. Add its "
+                            "filters to the models and tiles, or drop the extract settings in Tableau and compare again", "warn" if notes else "info")
+            return
+        copied = self.copied.get((Path(ds.src).stem, ds.name if ds.workbook else ""))
+        if not copied:
+            return  # _assign_models warns
+        from_extract = ds.extract_ds is not None and any(t.get("from") == "extract" for t in copied.values())
+        if from_extract:
+            assert ds.extract_ds is not None
+            ds.relations, ds.joins, ds.join_steps = dict(ds.extract_ds.relations), [], []
+            ds.objects, ds.relationships = dict(ds.extract_ds.objects), list(ds.extract_ds.relationships)  # the live tables' graph is gone
+            first = next(iter(ds.relations), "")
+            for local, ef in ds.extract_ds.fields.items():
+                f = ds.fields.setdefault(local, TField(local))
+                f.remote, f.relation, f.datatype = ef.remote or f.remote, ef.relation or first, f.datatype or ef.datatype
+            for f in ds.fields.values():
+                if not f.is_calc and f.relation not in ds.relations:
+                    f.relation = first  # a column the extract left out (hidden, unused): no copy has it
+        done, missing = [], []
+        for r in ds.relations.values():
+            t = copied.get(r.name)
+            if t is None:
+                missing.append(r.name)
+                continue
+            r.schema, r.table, r.database, r.kind, r.connection_class = tdata.SCHEMA, t["table"], "", "table", "duckdb"
+            self.copied_used[t["table"]] = t
+            done.append(f"{tdata.SCHEMA}.{t['table']} ({t['parquet']}, {t.get('rows', '?')} rows)")
+            for note in t.get("notes") or []:
+                self.b.warn(f"{item} table {tdata.SCHEMA}.{t['table']}", note)
+        if ds.connection_class in FILE_CONNECTIONS:
+            ds.connection_class = "duckdb"
+        source = "extract" if from_extract or any(t.get("class") in ("hyper", "dataengine") for t in copied.values()) else "files"
+        msg = f"{reason}: its data was copied from the Tableau {source} to Parquet; the models read {', '.join(done)}"
+        if from_extract:
+            msg += (". The copy holds the extract's rows, so its filters, row limit and aggregation are already applied"
+                    + (f" ({'; '.join(ds.extract_notes)})" if ds.extract_notes else ""))
+        self.b.warn(item, msg, "info")
+        if missing:
+            self.b.warn(item, f"no copy of {', '.join(missing)} (see extract errors); point those models at a warehouse table holding that data")
+
+    def _load_step(self) -> None:
+        tables = list(self.copied_used.values())
+        self.b.queries.append(VerifiedQuery(
+            "Tableau data", tdata.load_sql(tables),
+            "Tables copied from Tableau extracts and files (data that no warehouse holds), as DuckDB views over their Parquet files",
+            datasource=self.b.datasource, source_ref="migration/raw/tableau/extracts/",
+            todo=(f"choose where the {len(tables)} tables copied from Tableau live. DuckDB: run this file from the repo root (the models "
+                  f"read {tdata.SCHEMA}.<table>). Another warehouse: load each Parquet file into {tdata.SCHEMA}.<table> (Snowflake "
+                  "COPY INTO, BigQuery `bq load`, Redshift COPY, Databricks COPY INTO, or a dbt seed / dbt-duckdb external source), "
+                  "replace this file with that load step and set the warehouse type in unshackle.toml. Decide how they are refreshed "
+                  "(Tableau refreshed the extract). The Parquet files hold the data itself, so `unshackle init` lists their folder in "
+                  ".gitignore; remove that line only if the data belongs in Git"),
+        ))
+
     def _assign_models(self, ds: TDatasource) -> None:
         item = f"{ds.src} datasource {ds.caption}"
-        if ds.connection_class in FILE_CONNECTIONS or any(r.connection_class in FILE_CONNECTIONS for r in ds.relations.values()):
-            self.b.warn(item, "connects to a file/extract, not a warehouse; point the semantic model at the warehouse table holding this data")
+        reason = extract_only(ds)
+        if reason and ds.origin is None:  # a workbook's copy of a published data source: the published one says it
+            self.b.warn(item, f"{reason}: its data is only in Tableau, no warehouse table holds it. Copy it to Parquet with "
+                        "`unshackle extract tableau --with-data` and build again, or point the semantic model at a warehouse table "
+                        "holding this data")
         self._connection_settings(ds, item)
         mine: dict[str, _Model] = {}
         for r in ds.relations.values():
