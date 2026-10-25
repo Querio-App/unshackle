@@ -93,7 +93,7 @@ def test_configured_type_applies_when_the_export_names_none(tmp_path: Path):
 
 
 @pytest.mark.parametrize("warehouse", sorted(SQLGLOT))
-@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_extract", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc", "tableau_context"])
+@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_extract", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc", "tableau_context", "tableau_reserved"])
 def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, warehouse: str):
     sqlglot = pytest.importorskip("sqlglot")
     b = _parse(tmp_path, fixture, warehouse)
@@ -107,7 +107,7 @@ def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, war
     assert not [t.todo for d in b.dashboards for t in d.tiles if f"{warehouse}:" in (t.todo or "")]
 
 
-@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc", "tableau_context"])
+@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc", "tableau_context", "tableau_reserved"])
 @pytest.mark.parametrize("null_cycle", [False, True])
 def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_cycle: bool):
     sqlglot = pytest.importorskip("sqlglot")
@@ -147,6 +147,54 @@ def test_null_keys_join_like_tableau(tmp_path: Path):
         assert got == pytest.approx(expected["Cycle Revenue by Paper Type"], rel=1e-9)
         avg = con.sql(tiles["Account Revenue by Payment Cycle"]).df().fillna({"payment_cycle": "<null>"})
         assert dict(zip(avg.payment_cycle, avg.avg_account_revenue)) == pytest.approx(expected["Account Revenue by Payment Cycle"], rel=1e-9)
+
+
+def test_reserved_word_names_are_quoted(tmp_path: Path):
+    """Fields captioned Group, Order, User, Select, Where and Limit keep those names as columns, written quoted in the SQL:
+    plain tiles, a FIXED LOD, table calculations (one dimension, and a padded crosstab), a blend and relationships."""
+    con = _con()
+    rows = con.sql("select upper(p.paper_type) as g, lower(a.account_manager) as u, o.quantity as q, o.post_discount_revenue as r "
+                   "from public.orders o join public.accounts a using (account_id) join public.products p using (product_id)").df()
+    accounts = con.sql("select lower(account_manager) as u, account_id from public.accounts").df()
+    related = con.sql("select lower(a.account_manager) as u, o.quantity as q from public.orders o join public.accounts a using (account_id)").df()
+    per_group = rows.groupby("g").r.sum()
+    per_cell = rows.groupby(["u", "g"]).r.sum()
+    groups = sorted(rows.g.unique())
+    running = {}  # RUNNING_SUM along Group (Table across) per User, over every User x Group mark
+    for u in sorted(rows.u.unique()):
+        total = 0.0
+        for g in groups:
+            total += float(per_cell.get((u, g), 0.0))
+            running[(u, g)] = total
+    expected = {
+        "Revenue by Group": {(g,): v for g, v in per_group.items()},
+        "Quantity by User and Group": {k: float(v) for k, v in rows.groupby(["u", "g"]).q.sum().items()},
+        # MAX of {FIXED [Group] : SUM(revenue)} per user: the largest revenue of the groups the user's orders fall in
+        "Order by User": {(u,): per_group[sorted(set(gs))].max() for u, gs in rows.groupby("u").g},
+        "Price by Group": {(g,): v for g, v in (per_group / rows.groupby("g").q.sum()).items()},
+        "Running Revenue by Group": {(g,): v for g, v in per_group.items()},  # one mark per partition
+        "Running Revenue by User and Group": running,
+        "Related Quantity by User": {(u,): float(v) for u, v in related.groupby("u").q.sum().items()}
+                                    | {(u,): None for u in set(accounts.u) - set(related.u)},
+    }
+    b = _parse(tmp_path, "tableau_reserved")
+    tiles = {t.title: t for d in b.dashboards for t in d.tiles}
+    assert not [(t.title, t.todo) for t in tiles.values() if t.todo]
+    assert list(tiles["Quantity by User and Group"].source_config["columns"]) == ["user", "group", "quantity"]
+    assert list(tiles["Price by Group"].source_config["columns"]) == ["group", "select"]
+    assert list(tiles["Quantity and Limit by User"].source_config["columns"]) == ["user", "quantity", "limit"]
+    assert 'as "group"' in tiles["Revenue by Group"].sql and 'group_lod."order"' in tiles["Order by User"].sql
+    assert 'd."user" is not distinct from m."user"' in tiles["Running Revenue by User and Group"].sql
+    assert 'marks."user" is not distinct from measures_orders."user"' in tiles["Related Quantity by User"].sql
+    model = next(sm for sm in b.semantic_models if sm.name == "group_lod")
+    assert model.sql.startswith('select (upper(products.paper_type)) as "group", sum(orders.post_discount_revenue) as "order"')
+    for title, want in expected.items():
+        got = {tuple(r[:-1]): None if r[-1] is None else float(r[-1]) for r in con.sql(tiles[title].sql).fetchall()}
+        assert got == pytest.approx({k: None if v is None else float(v) for k, v in want.items()}, rel=1e-9), title
+    # blend: SUM(quantity) per User of the primary, COUNTD(account_id) of the secondary at the link (all its accounts)
+    limit = accounts.groupby("u").account_id.nunique()
+    got = {r[0]: (float(r[1]), r[2]) for r in con.sql(tiles["Quantity and Limit by User"].sql).fetchall()}
+    assert got == {u: (float(q), limit[u]) for u, q in rows.groupby("u").q.sum().items()}
 
 
 def test_render_per_dialect():

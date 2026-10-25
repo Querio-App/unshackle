@@ -661,7 +661,9 @@ Redshift literals double their backslashes; BigQuery casts to `datetime` and Dat
 `timestamp_ntz`. A tile BigQuery has no form for (`MEDIAN`) keeps its SQL with a TODO, as do
 `LOG` with a base on Redshift, `MAKEDATETIME` on Databricks and backreferences in
 `REGEXP_REPLACE` on Databricks and Redshift. Custom SQL is
-left as written. Other warehouse types (SQL Server, Oracle, MySQL) get a warning: translate
+left as written. A field whose name is a word reserved in any of these warehouses (a
+calculation captioned `Group` becomes the column `group`) keeps that name and is written
+quoted (`"group"`, backticks in BigQuery and Databricks). Other warehouse types (SQL Server, Oracle, MySQL) get a warning: translate
 the SQL by hand.
 
 **Initial SQL and connection options**: a connection's `one-time-sql` (Initial SQL) and

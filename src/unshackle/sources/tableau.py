@@ -681,7 +681,7 @@ def _name(s: str) -> str:
 
 
 def _ident(name: str) -> str:
-    return name if IDENT_RE.match(name) else '"' + name.replace('"', '""') + '"'
+    return name if IDENT_RE.match(name) and name.lower() not in dialect.RESERVED else '"' + name.replace('"', '""') + '"'
 
 
 def _paren(sql: str) -> str:
@@ -1546,8 +1546,8 @@ class _Lod:
     where: str = ""  # the datasource's extract and data source filters, which Tableau applies before FIXED LODs
 
     def select(self) -> str:
-        items = [sql if sql == alias else f"{sql} as {alias}" for sql, alias in self.keys]
-        items += [f"{sql} as {alias}" for alias, sql in self.cols.items()]
+        items = [sql if sql == _ident(alias) else f"{sql} as {_ident(alias)}" for sql, alias in self.keys]
+        items += [f"{sql} as {_ident(alias)}" for alias, sql in self.cols.items()]
         where = f"where {self.where}\n" if self.where else ""
         return (f"select {', '.join(items)}\nfrom {self.from_sql}\n{where}"
                 f"group by {', '.join(str(i) for i in range(1, len(self.keys) + 1))}")
@@ -3105,11 +3105,11 @@ class _Parser:
             # {FIXED [a] : AGG({FIXED [b] : ...})}: Tableau takes the inner value once per distinct (a, b) of the
             # datasource's rows, then aggregates per a.
             lod_in, col_in = inner
-            domain = ", ".join([f"{s} as {a}" for s, a in keys] + [f"{k} as lod_key_{j}" for j, k in enumerate(inner_keys, 1)])
-            on = " and ".join(f"d.lod_key_{j} is not distinct from {lod_in.name}.{a}" for j, (_, a) in enumerate(lod_in.keys, 1))
+            domain = ", ".join([f"{s} as {_ident(a)}" for s, a in keys] + [f"{k} as lod_key_{j}" for j, k in enumerate(inner_keys, 1)])
+            on = " and ".join(f"d.lod_key_{j} is not distinct from {lod_in.name}.{_ident(a)}" for j, (_, a) in enumerate(lod_in.keys, 1))
             from_sql = (f"(\nselect distinct {domain}\nfrom {from_sql}{f' where {where}' if where else ''}\n) as d\n"
                         f"left join (\n{lod_in.select()}\n) as {lod_in.name} on {on}")
-            keys = [(f"d.{a}", a) for _, a in keys]
+            keys = [(f"d.{_ident(a)}", a) for _, a in keys]
             where = ""
             agg_sql = AGG_SQL[TABLEAU_AGGS[nested[0]][0]].format(f"{lod_in.name}.{_ident(col_in)}")  # type: ignore[index]
         elif cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
@@ -4319,7 +4319,7 @@ class _Parser:
             if split is None:
                 rel = home(c)
                 groups.setdefault(rel, []).append((c[2], c[1]))
-                picks[c[1]] = f"{cte(rel)}.{c[1]}"
+                picks[c[1]] = f"{cte(rel)}.{_ident(c[1])}"
                 continue
             expr, parts = split
             refs = []
@@ -4353,8 +4353,8 @@ class _Parser:
             ctes.append((cte(rel), self._rel_measure(ds, rel, dim_cols, aggs, rows)))
             if rel in shown:
                 marks.append(cte(rel))
-        labels = {c[1]: alias_sql(f"marks.{c[1]}", c[0].field) or f"marks.{c[1]}" for c in labeled.values()}
-        exprs = {c[0].instance: picks.get(c[1]) or f"marks.{c[1]}" for c in columns}
+        labels = {c[1]: alias_sql(f"marks.{_ident(c[1])}", c[0].field) or f"marks.{_ident(c[1])}" for c in labeled.values()}
+        exprs = {c[0].instance: picks.get(c[1]) or f"marks.{_ident(c[1])}" for c in columns}
         for inst, (deriv, _) in list(ctx.sort_by.items()):
             srt = ctx.sorts[inst]
             if srt.using in exprs:  # the sorted-by measure is on the sheet: order the marks by its value
@@ -4362,7 +4362,7 @@ class _Parser:
             else:
                 del ctx.sort_by[inst]
                 ctx.notes.append(f"sort by {srt.using} ({srt.direction.lower()}) not applied: add it to the tile's order by")
-        order_by = self._sort_order(dims, lambda i, c: (str(i), labels.get(c[1], f"marks.{c[1]}"), f"marks.{c[1]}"), "marks")
+        order_by = self._sort_order(dims, lambda i, c: (str(i), labels.get(c[1], f"marks.{_ident(c[1])}"), f"marks.{_ident(c[1])}"), "marks")
         return self._join_aggregates(ctes, marks, [cte(rel) for rel in groups], [c[1] for c in dims],
                                      [picks[c[1]] for c in columns if c[3]], [c[1] for c in columns if c[3]], labels, order_by, final)
 
@@ -4372,7 +4372,7 @@ class _Parser:
         tree = self._rel_tree(ds, rels[0], set(rels))
         joins = "".join(f"\ninner join {self._rel_from(ds, b)} on {self._rel_on(a, b, cols)}" for a, b, cols in tree)
         where = "\nwhere " + "\n  and ".join(f.sql for f in filters) if filters else ""
-        return f"select distinct {', '.join(f'{sql} as {a}' for sql, a, _ in dims)}\nfrom {self._rel_from(ds, rels[0])}{joins}{where}"
+        return f"select distinct {', '.join(f'{sql} as {_ident(a)}' for sql, a, _ in dims)}\nfrom {self._rel_from(ds, rels[0])}{joins}{where}"
 
     def _rel_measure(self, ds: TDatasource, rel: str, dims: list[tuple[str, str, str]], aggs: list[tuple[str, str]],
                      filters: list[_RelFilter], having: str = "") -> str:
@@ -4384,7 +4384,7 @@ class _Parser:
         for f in far:
             if rel in f.tables:
                 raise _NoSQL(f"filter on [{f.label}] reads several related tables ({', '.join(sorted(f.tables))}); write it in the tile SQL ({SKILL})")
-        items = [f"{sql} as {a}" if h == rel else f"rel_dims.{a}" for sql, a, h in dims] + [f"{sql} as {a}" for sql, a in aggs]
+        items = [f"{sql} as {_ident(a)}" if h == rel else f"rel_dims.{_ident(a)}" for sql, a, h in dims] + [f"{sql} as {_ident(a)}" for sql, a in aggs]
         frm = self._rel_from(ds, rel)
         reach = {h for _, _, h in dims if h != rel} | {t for f in far for t in f.tables}
         if reach:
@@ -4392,7 +4392,7 @@ class _Parser:
             keys = list(dict.fromkeys(fc for a, _, cols in tree if a == rel for fc, _ in cols))
             joins = "".join(f"\nleft join {self._rel_from(ds, b)} on {self._rel_on(a, b, cols)}" for a, b, cols in tree)
             where = "\nwhere " + "\n  and ".join(f.sql for f in far) if far else ""
-            inner = (f"select distinct {', '.join([f'{_ident(rel)}.{_ident(k)} as rel_key_{i}' for i, k in enumerate(keys, 1)] + [f'{sql} as {a}' for sql, a, h in dims if h != rel])}\n"
+            inner = (f"select distinct {', '.join([f'{_ident(rel)}.{_ident(k)} as rel_key_{i}' for i, k in enumerate(keys, 1)] + [f'{sql} as {_ident(a)}' for sql, a, h in dims if h != rel])}\n"
                      f"from {frm}{joins}{where}")
             on = " and ".join(f"{_ident(rel)}.{_ident(k)} is not distinct from rel_dims.rel_key_{i}" for i, k in enumerate(keys, 1))
             frm += f"\ninner join (\n{inner}\n) as rel_dims on {on}"
@@ -4505,14 +4505,14 @@ class _Parser:
         items (default: the dimensions); `where`: conditions on the joined marks. Used for relationships (one CTE per related table)."""
         ctes = list(ctes)
         if dims:
-            ctes.append(("marks", "\nunion\n".join(f"select {', '.join(dims)} from {n}" for n in marks_from)))
-            frm = "marks" + "".join(f"\nleft join {m} on " + " and ".join(f"marks.{a} is not distinct from {m}.{a}" for a in dims) for m in measures)
+            ctes.append(("marks", "\nunion\n".join(f"select {', '.join(_ident(a) for a in dims)} from {n}" for n in marks_from)))
+            frm = "marks" + "".join(f"\nleft join {m} on " + " and ".join(f"marks.{_ident(a)} is not distinct from {m}.{_ident(a)}" for a in dims) for m in measures)
             tail = "\norder by " + ", ".join(order or [str(i) for i in range(1, len(dims) + 1)])
         else:
             frm, tail = "\ncross join ".join(measures), ""
         if where:
             tail = "\nwhere " + "\n  and ".join(where) + tail
-        items = [f"{(labels or {})[d]} as {d}" if d in (labels or {}) else f"marks.{d}" for d in dims] + [f"{v} as {a}" for v, a in zip(values, aliases)]
+        items = [f"{(labels or {})[d]} as {_ident(d)}" if d in (labels or {}) else f"marks.{_ident(d)}" for d in dims] + [f"{v} as {_ident(a)}" for v, a in zip(values, aliases)]
         body = "select\n" + ",\n".join(f"  {x}" for x in items) + f"\nfrom {frm}{tail}"
         return "with " + ",\n".join(f"{n} as (\n{b}\n)" for n, b in ctes) + "\n" + body
 
@@ -4657,27 +4657,27 @@ class _Parser:
                 expr, name = param_bind(param), alias(f"{param.label} line")
             else:
                 fn = ta.WINDOW.get(formula) or ta.TOTAL_OF_MARKS[c[0].deriv]
-                by = [by_inst[r.instance][1] for r in parts[scope]]
+                by = [_ident(by_inst[r.instance][1]) for r in parts[scope]]
                 over = ", ".join(f"tile.{k}" for k in by)
                 over = f"partition by {over}" if over else ""
                 if fn != "median":
-                    expr = f"{fn}(tile.{c[1]}) over ({over})"
+                    expr = f"{fn}(tile.{_ident(c[1])}) over ({over})"
                 elif self.dialect == "bigquery":  # its percentile is a window function only
-                    expr = f"percentile_cont(cast(tile.{c[1]} as double precision), 0.5) over ({over})"
+                    expr = f"percentile_cont(cast(tile.{_ident(c[1])} as double precision), 0.5) over ({over})"
                 else:  # no window median in Postgres: the median per partition in its own CTE, joined back
-                    grouped.append((f"reference_{len(grouped) + 1}", f"median(cast({c[1]} as double precision))", by))  # a float, as Tableau's
+                    grouped.append((f"reference_{len(grouped) + 1}", f"median(cast({_ident(c[1])} as double precision))", by))  # a float, as Tableau's
                     expr = f"{grouped[-1][0]}.value"
                 name = alias(f"{c[1]} {formula}" + ("" if scope == "table" else f" per {scope}"))
             if band and percents:
                 cols_ = [alias(f"{name} {p} pct") for p in percents]
                 taken.discard(name)
-                items += [f"{float(p) / 100:g} * {expr} as {a}" for p, a in zip(percents, cols_)]
+                items += [f"{float(p) / 100:g} * {expr} as {_ident(a)}" for p, a in zip(percents, cols_)]
                 refs += [Reference(a, channel, scope, ta.label(rl, comp, p)) for p, a in zip(percents, cols_)]  # type: ignore[arg-type]
                 if len(cols_) > 1:
                     refs.append(Reference(cols_[0], channel, scope, band_to=cols_[-1]))  # type: ignore[arg-type]
                 where = ", ".join(cols_)
             else:
-                items.append(f"{expr} as {name}")
+                items.append(f"{expr} as {_ident(name)}")
                 refs.append(Reference(name, channel, scope, ta.label(rl, "" if param is not None else comp)))  # type: ignore[arg-type]
                 where = name
             self.b.warn(f"sheet {sheet}", f"{desc}: column {where} of the tile SQL, drawn as a rule", "info")
@@ -4839,9 +4839,9 @@ class _Parser:
         lits = ["'" + label.replace("'", "''") + "'" for label in labels]
         names = "\n  union all ".join(f"select {n} as measure_order, {lit} as measure_name" if n == 1 else f"select {n}, {lit}"
                                       for n, lit in enumerate(lits, 1))
-        value = "case measure_names.measure_order " + " ".join(f"when {n} then measure_values.{c[1]}" for n, c in enumerate(values, 1)) + " end"  # type: ignore[index]
-        picks = ([f"measure_values.{c[1]}" for c in dims] + ["measure_names.measure_name", f"{value} as measure_value"]
-                 + [f"measure_values.{c[1]}" for c in others])
+        value = "case measure_names.measure_order " + " ".join(f"when {n} then measure_values.{_ident(c[1])}" for n, c in enumerate(values, 1)) + " end"  # type: ignore[index]
+        picks = ([f"measure_values.{_ident(c[1])}" for c in dims] + ["measure_names.measure_name", f"{value} as measure_value"]
+                 + [f"measure_values.{_ident(c[1])}" for c in others])
         order = self._unpivot_order(dims, by_inst) + ["measure_names.measure_order"]
         head = f"with {ctes},\nmeasure_values as (" if ctes else "with measure_values as ("
         return (f"{head}\n{body}\n)\nselect\n" + ",\n".join(f"  {p}" for p in picks)
@@ -4859,7 +4859,7 @@ class _Parser:
             for inst in list(ctx.sort_by):
                 using = by_inst.get(ctx.sorts[inst].using)
                 if using is not None and using[3]:
-                    ctx.sort_by[inst] = (ctx.sort_by[inst][0], f"measure_values.{using[1]}")
+                    ctx.sort_by[inst] = (ctx.sort_by[inst][0], f"measure_values.{_ident(using[1])}")
                 else:
                     del ctx.sort_by[inst]
                     ctx.notes.append(f"sort by {ctx.sorts[inst].using} ({ctx.sorts[inst].direction.lower()}) not applied: add it to the tile's order by")
@@ -4868,7 +4868,7 @@ class _Parser:
                 if c[0].instance in ctx.labels and srt is not None and srt.kind in ("manual", "computed"):
                     ctx.notes.append(f"{c[4]} has aliases: with Measure Values its {srt.kind} sort compares the labels, not the values; "
                                      "check the order")
-            return self._sort_order(dims, lambda i, c: (str(i), f"measure_values.{c[1]}", f"measure_values.{c[1]}"), "measure_values")
+            return self._sort_order(dims, lambda i, c: (str(i), f"measure_values.{_ident(c[1])}", f"measure_values.{_ident(c[1])}"), "measure_values")
         finally:
             ctx.sort_by.clear()
             ctx.sort_by.update(saved)
@@ -4973,10 +4973,10 @@ class _Parser:
         head, _, last = sql.rpartition("\n")
         ctes, body = ta.split_with(head if last.startswith("order by ") else sql)
         alias = {c[0].instance: c[1] for c in columns}
-        conds = [cond.format(f"tile.{alias[inst]}") for inst, cond in ctx.table_calc_filters]
-        order_by = self._sort_order(dims, lambda i, c: (str(i), f"tile.{c[1]}", f"tile.{c[1]}"))
+        conds = [cond.format(f"tile.{_ident(alias[inst])}") for inst, cond in ctx.table_calc_filters]
+        order_by = self._sort_order(dims, lambda i, c: (str(i), f"tile.{_ident(c[1])}", f"tile.{_ident(c[1])}"))
         return "\n".join(["with " + ",\n".join(([ctes] if ctes else []) + [f"tile as (\n{body}\n)"]), "select",
-                          ",\n".join(f"  tile.{c[1]}" for c in columns if c[0].instance not in ctx.hidden), "from tile",
+                          ",\n".join(f"  tile.{_ident(c[1])}" for c in columns if c[0].instance not in ctx.hidden), "from tile",
                           "where " + "\n  and ".join(conds)] + (["order by " + ", ".join(order_by)] if dims else []))
 
     def _table_calc_filter(self, wb: _Workbook, flt: ET.Element, deps: dict, columns: list) -> bool:
@@ -5042,12 +5042,12 @@ class _Parser:
         def val(sql: str) -> str:  # an aggregate over the sheet's rows: a column of the marks CTE
             for h in hidden:
                 if h[2] == sql:
-                    return f"m.{h[1]}"
+                    return f"m.{_ident(h[1])}"
             alias = f"tc_value_{len(hidden) + 1}"
             hidden.append((_Ref(None, "", "\x00" + alias), alias, sql, True, alias, "quantitative", ""))
             return f"m.{alias}"
 
-        refer_d = lambda c: (f"d.{c[1]}", f"d.{c[1]}")  # noqa: E731
+        refer_d = lambda c: (f"d.{_ident(c[1])}", f"d.{_ident(c[1])}")  # noqa: E731
         windows = self._table_calc_sqls(columns, lambda r: self._tc_window(r, dims, rows, cols, refer_d, True), val)
         if ctx.row_lods:
             raise _NoSQL(f"table calculations over FIXED LOD values: add them as window columns over the tile's marks ({SKILL})")
@@ -5057,12 +5057,12 @@ class _Parser:
         if last.startswith("order by "):
             marks = head
         ctes, body = ta.split_with(marks)
-        domain = (f"select r.*, c.*\nfrom (select distinct {', '.join(c[1] for c in row_d)} from marks) as r\n"
-                  f"cross join (select distinct {', '.join(c[1] for c in col_d)} from marks) as c")
-        items = [f"  d.{c[1]}" if not c[3] else f"  {windows[c[0].instance]} as {c[1]}" if c[0].instance in windows else f"  m.{c[1]}"
+        domain = (f"select r.*, c.*\nfrom (select distinct {', '.join(_ident(c[1]) for c in row_d)} from marks) as r\n"
+                  f"cross join (select distinct {', '.join(_ident(c[1]) for c in col_d)} from marks) as c")
+        items = [f"  d.{_ident(c[1])}" if not c[3] else f"  {windows[c[0].instance]} as {_ident(c[1])}" if c[0].instance in windows else f"  m.{_ident(c[1])}"
                  for c in columns]
-        on = " and ".join(f"d.{c[1]} is not distinct from m.{c[1]}" for c in dims)
-        order_by = self._sort_order(dims, lambda i, c: (str(i), f"d.{c[1]}", f"d.{c[1]}"))
+        on = " and ".join(f"d.{_ident(c[1])} is not distinct from m.{_ident(c[1])}" for c in dims)
+        order_by = self._sort_order(dims, lambda i, c: (str(i), f"d.{_ident(c[1])}", f"d.{_ident(c[1])}"))
         return "\n".join(["with " + ",\n".join(([ctes] if ctes else []) + [f"marks as (\n{body}\n)", f"domain as (\n{domain}\n)"]),
                           "select", ",\n".join(items), "from domain as d", f"left join marks as m on {on}", "order by " + ", ".join(order_by)])
 
@@ -5390,7 +5390,7 @@ class _Parser:
             return ("\ngroup by " + ", ".join(str(i) for i in range(1, n + 1))) if n else ""
 
         def item(c: tuple) -> str:
-            return f"  {c[2]}" if c[2] == c[1] else f"  {c[2]} as {c[1]}"
+            return f"  {c[2]}" if c[2] == _ident(c[1]) else f"  {c[2]} as {_ident(c[1])}"
 
         def value(c: tuple) -> str:  # what an aliased dimension groups on: its values, not its labels
             return _qualify(ctx.labels[c[0].instance], from_sql) if c[0].instance in ctx.labels else c[2]
@@ -5403,7 +5403,7 @@ class _Parser:
             flags = [f"  grouping({expr[c[0].instance]}) as {c[1]}_total" for c in totalled]
             sets = ", ".join("(" + ", ".join(expr[i] for i in s) + ")" for s in totals)
             flag_pos = {id(c): len(columns) + k for k, c in enumerate(totalled, 1)}
-            shown = [f"  case when grouping({expr[c[0].instance]}) = 1 then null else {c[2]} end as {c[1]}"
+            shown = [f"  case when grouping({expr[c[0].instance]}) = 1 then null else {c[2]} end as {_ident(c[1])}"
                      if c[0].instance in ctx.labels and id(c) in flag_pos else item(c) for c in columns]  # no label on a total row
             per_dim = self._sort_items(dims, lambda i, c: (str(i), c[2], value(c)), from_sql, windows=False)
             lines = ["select", ",\n".join(shown + flags), f"from {rows}{where_sql}", f"group by grouping sets ({sets})",
@@ -5457,9 +5457,9 @@ class _Parser:
                 keys = self._lod_keys(sp.lod)
                 domain = (f"select distinct {', '.join(dim_items + [f'{k} as lod_key_{j}' for j, k in enumerate(keys, 1)])}\n"
                           f"from {rows}{where_sql}")
-                on = " and ".join(f"d.lod_key_{j} is not distinct from {sp.lod.name}.{a}" for j, (_, a) in enumerate(sp.lod.keys, 1))
+                on = " and ".join(f"d.lod_key_{j} is not distinct from {sp.lod.name}.{_ident(a)}" for j, (_, a) in enumerate(sp.lod.keys, 1))
                 value = AGG_SQL[sp.outer].format(sp.value or f"{sp.lod.name}.{_ident(sp.col)}")
-                ctes.append((name, f"select {', '.join([f'd.{d[1]}' for d in dims] + [f'{value} as {alias}'])}\n"
+                ctes.append((name, f"select {', '.join([f'd.{_ident(d[1])}' for d in dims] + [f'{value} as {_ident(alias)}'])}\n"
                                    f"from (\n{domain}\n) as d\nleft join {sp.lod.name} on {on}{group(len(dims))}"))
                 joins.append((name, dims))
 
@@ -5481,7 +5481,7 @@ class _Parser:
                     inner = (f"select {', '.join(dim_items + [f'{x} as lod_dim_{j}' for j, x in enumerate(sp.dims, 1)] + [f'{sp.inner} as lod_value'])}\n"
                              f"from {rows}{where_sql}{group(len(dims) + len(sp.dims))}")
                     value = AGG_SQL[sp.outer].format("t.lod_value")
-                    ctes.append((name, f"select {', '.join([f't.{d[1]}' for d in dims] + [f'{value} as {c[1]}'])}\n"
+                    ctes.append((name, f"select {', '.join([f't.{_ident(d[1])}' for d in dims] + [f'{value} as {_ident(c[1])}'])}\n"
                                        f"from (\n{inner}\n) as t{group(len(dims))}"))
                     joins.append((name, dims))
                 else:  # exclude: the aggregate without the excluded dimensions, repeated on each of the sheet's marks
@@ -5492,7 +5492,7 @@ class _Parser:
                                 raise _NoSQL(f"EXCLUDE of [{d[0].field.label}] while the sheet shows it at another level ({d[4]}): write it in the tile SQL")
                             continue
                         keep.append(d)
-                    ctes.append((name, f"select {', '.join([item(d).strip() for d in keep] + [f'{sp.inner} as {c[1]}'])}\n"
+                    ctes.append((name, f"select {', '.join([item(d).strip() for d in keep] + [f'{sp.inner} as {_ident(c[1])}'])}\n"
                                        f"from {rows}{where_sql}{group(len(keep))}"))
                     joins.append((name, keep))
             head = "base" if has_base else joins[0][0]
@@ -5501,12 +5501,12 @@ class _Parser:
                 if name == head:
                     continue
                 if on_dims and head == "base" and dims:
-                    frm += f"\nleft join {name} on " + " and ".join(f"base.{d[1]} is not distinct from {name}.{d[1]}" for d in on_dims)
+                    frm += f"\nleft join {name} on " + " and ".join(f"base.{_ident(d[1])} is not distinct from {name}.{_ident(d[1])}" for d in on_dims)
                 else:
                     frm += f"\ncross join {name}"
-            exprs = {c[0].instance: picks_sql.get(id(c)) or f"{source.get(id(c), head)}.{c[1]}" for c in columns}
+            exprs = {c[0].instance: picks_sql.get(id(c)) or f"{source.get(id(c), head)}.{_ident(c[1])}" for c in columns}
             labels = {inst: alias_sql(exprs[inst], c[0].field) or exprs[inst] for inst, c in labeled.items()}
-            picks = [f"  {labels.get(c[0].instance) or picks_sql.get(id(c))} as {c[1]}" if c[0].instance in labels or id(c) in picks_sql
+            picks = [f"  {labels.get(c[0].instance) or picks_sql.get(id(c))} as {_ident(c[1])}" if c[0].instance in labels or id(c) in picks_sql
                      else f"  {exprs[c[0].instance]}" for c in columns]
             for inst, (deriv, _) in list(ctx.sort_by.items()):
                 srt = ctx.sorts[inst]
@@ -5666,7 +5666,7 @@ class _Parser:
             raise _NoSQL(f"FIXED dimensions not translated for this sheet ({exc})") from None
 
     def _lod_on(self, lod: _Lod) -> str:
-        return " and ".join(f"{k} is not distinct from {lod.name}.{alias}" for k, (_, alias) in zip(self._lod_keys(lod), lod.keys))
+        return " and ".join(f"{k} is not distinct from {lod.name}.{_ident(alias)}" for k, (_, alias) in zip(self._lod_keys(lod), lod.keys))
 
     def _filter(self, wb: _Workbook, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, Any] | None:
         """A worksheet filter -> ("where" | "having", SQL), ("members", (member SQL, _MemberSet)), ("todo", note) or None."""

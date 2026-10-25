@@ -36,6 +36,26 @@ import re
 
 DIALECTS = ("postgres", "redshift", "snowflake", "bigquery", "databricks", "duckdb")
 
+# Words reserved in at least one of DIALECTS: a column or alias with one of these names is written quoted.
+RESERVED = frozenset("""
+account all allowoverwrite alter analyse analyze and any array as asc assert_rows_modified asymmetric at authorization
+backup between binary blanksasnull both by bytedict bzip2 case cast check collate collation column commit concurrently
+connect connection constraint contains create credentials cross cube current current_catalog current_date current_role
+current_schema current_time current_timestamp current_user current_user_id database default deferrable define defrag
+delete delta delta32k describe desc disable distinct do drop else emptyasnull enable encode encrypt encryption end
+enum escape except exclude exists explicit external extract false fetch filter following for foreign freeze from full
+function global globaldict256 globaldict64k grant group grouping groups gscluster gzip hash having identity if ignore
+ilike in increment initially inner insert intersect interval into is isnull issue join lambda lateral leading left like
+limit local localtime localtimestamp lookup lun luns lzo lzop merge minus mostly16 mostly32 mostly8 natural new no none
+not notnull null nulls of off offline offset oid old on only open or order organization out outer over overlaps
+parallel partition percent permissions pivot pivot_longer pivot_wider placing position preceding primary proto
+qualify range raw readratio recover recursive references regexp rejectlog resort respect restore returning revoke right
+rlike rollback rollup row rows sample schema select session_user set show similar snapshot some start struct summarize
+symmetric sysdate system system_user table tablesample tag tdes text255 text32k then time timestamp to top trailing
+treat trigger true truncatecolumns try_cast type unbounded union unique unknown unnest unpivot update user using values
+variadic verbose view wallet when whenever where window with within without
+""".split())
+
 _TOKEN = re.compile(r"""'(?:[^']|'')*'|"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|\s+|.""", re.S)
 
 # extract(<part> from x) as Postgres numbers it -> the dialect's form ({0} is x)
