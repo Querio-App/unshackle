@@ -362,3 +362,20 @@ def test_relationship_tiles_label_and_sort_too(tmp_path: Path):
     got = c.sql(tile.sql).fetchall()
     assert [r[0] for r in got].count("MONTH") == 2
     assert got == want
+
+
+def test_totals_group_on_values_and_follow_the_sort(con, rows, tmp_path: Path):
+    """Grand total on a sorted, aliased sheet: members grouped on their values, in the sheet's order, the total row last
+    and unlabelled."""
+    def edit(xml: str, _: str) -> str:
+        i = xml.index('<worksheet name="Computed Desc">')
+        j = xml.index("<rows>", i)
+        return xml[:j] + "<rows total='true'>" + xml[j + len("<rows>"):]
+
+    tile = next(t for d in _parse(tmp_path, edit=edit).dashboards for t in d.tiles if t.title == "Computed Desc")
+    totals = tile.source_config["totals_sql"]  # kept beside the tile SQL until the total's function is checked in Tableau
+    assert "grouping sets" in totals
+    got = [tuple(float(v) if type(v).__name__ == "Decimal" else v for v in r) for r in con.sql(totals).fetchall()]
+    marks = _marks(rows, "paper_type", PAPER).sort_values("value", ascending=False, kind="stable")
+    assert [r[:2] for r in got[:-1]] == pytest.approx(list(zip(marks.label, marks.value)))
+    assert got[-1][0] is None and got[-1][1] == pytest.approx(float(rows.post_discount_revenue.sum())) and got[-1][2] == 1
