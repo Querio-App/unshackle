@@ -29,6 +29,9 @@
   `unshackle[quicksight]`. Fixtures are a real export; the live test checks the migrated
   SQL on Athena.
 - Heat maps: tiles can use the `rect` mark.
+- Sigma: data model elements sourced from another data model's element become semantic models on
+  that element's table; union elements become a `UNION ALL` query plus a semantic model when
+  their columns line up, and keep a TODO otherwise. Both were skipped before.
 
 ## 0.1.0
 
