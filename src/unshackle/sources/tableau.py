@@ -4769,7 +4769,7 @@ class _Parser:
                 "exclude_source": [x.get("name", "") for x in src.findall("exclude-sheet")] if src is not None else [],
                 "target": params.get("target", ""), "exclude": [x for x in params.get("exclude", "").split(",") if x],
                 "fields": fields, "all_fields": params.get("special-fields") == "all",
-                "on": (act.get("type") if act is not None else "") or "on-select", "auto_clear": act is not None and act.get("auto-clear") == "true",
+                "on": (act.get("type") if act is not None else "") or "on-select",
             })
         return out
 
@@ -4811,13 +4811,16 @@ class _Parser:
                     gaps.append(f"{title} from {source} to {', '.join(targets) or a['target']} on {on}: no translated filter for it "
                                 "on the target sheets (see their TODOs)")
                     continue
-                cleared = "None shows all values, as Tableau does when the selection is cleared" if a["auto_clear"] else \
-                    "None shows all values (Tableau keeps or excludes the values when this selection is cleared)"
+                # what Tableau does when the selection is cleared (show all, keep, or exclude all values) is not read from the XML
+                cleared = ("None shows all values. Tableau may be set to exclude all values when the selection is cleared, so its "
+                           "dashboard can open empty where the notebook shows data")
                 d_notes.append(f"{title}: selecting marks on {source} filters {', '.join(targets)} on {on}. Here: set "
-                               f"{', '.join(f'`{n}`' for n in names)} in the parameters cell, one value each; {cleared}")
+                               f"{', '.join(f'`{n}`' for n in names)} in the parameters cell, one value each. {cleared}")
+                gaps.append(f"{title}: clearing the selection is not migrated. {cleared}")
                 for n in names:
                     if n in filters:
-                        filters[n].note = f"filter action {a['caption']}: the selected mark on {source}; None = no selection (all rows)"
+                        filters[n].note = (f"filter action {a['caption']}: the selected mark on {source}; None = no selection, all rows "
+                                           "(Tableau may instead exclude all values when the selection is cleared)")
             elif a["kind"] == "url":
                 url = re.sub(r"<\[?((?:[^\]>]|\]\])+?)\]?(?:~na)?>", lambda m: "{" + _unbracket(m.group(1)) + "}", a["url"])
                 d_notes.append(f"{title}: [{a['caption']}]({url.replace(' ', '%20')})" + (" (`{field}`: the selected mark's value)" if "{" in url else ""))

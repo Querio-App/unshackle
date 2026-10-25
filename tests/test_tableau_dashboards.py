@@ -86,10 +86,11 @@ def test_parameters_cell(bundle, out):
     notes = {f.name: f.note for f in d.filters}
     assert notes["payment_cycle"] == ("dashboard filter on [Payment Cycle], applied to Revenue by Status, Revenue by Cycle and Year, "
                                       "Orders by Account Manager; one value, None = all")
-    assert notes["selected_status"] == "filter action Filter by Status: the selected mark on Revenue by Status; None = no selection (all rows)"
+    assert notes["selected_status"] == ("filter action Filter by Status: the selected mark on Revenue by Status; None = no selection, all rows "
+                                        "(Tableau may instead exclude all values when the selection is cleared)")
     nb = _notebook(out[1], d.slug)
     src = notebook_source(nb)
-    assert "# filter action Filter by Status: the selected mark on Revenue by Status; None = no selection (all rows)\nselected_status = None" in src
+    assert f"# {notes['selected_status']}\nselected_status = None" in src
     params, _ = notebook_queries(nb)
     assert params == DEFAULTS
     assert not [t.todo for t in d.tiles if t.todo]
@@ -165,6 +166,10 @@ def test_actions_and_what_is_not_migrated(bundle, out):
     gaps = "\n".join(d.not_migrated)
     assert "**Highlight Manager** (highlight action, on hover)" in gaps and "on Account Manager" in gaps
     assert "**Pick Top Managers** (set action, on select)" in gaps
+    assert ("**Filter by Status** (filter action, on select): clearing the selection is not migrated. None shows all values. Tableau may be "
+            "set to exclude all values when the selection is cleared, so its dashboard can open empty where the notebook shows data") in gaps
+    assert "Tableau may be set to exclude all values when the selection is cleared" in notes  # a note, not a TODO
+    assert not [t.todo for t in d.tiles if "cleared" in t.todo]
     assert "web page zone (https://wiki.example.com/sales)" in gaps and "Phone layout" in gaps
     src = notebook_source(_notebook(out[1], d.slug))
     assert "## Interactions" in src and "## Not migrated" in src
