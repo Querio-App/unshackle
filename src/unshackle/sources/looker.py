@@ -13,11 +13,14 @@ Raw layout under migration/raw/looker/:
     _skipped.json                       content the API user could not read (404/403)
 
 parse() prefers raw LookML. Without it, it rebuilds views from the explore JSON
-(field `sql` is only present when the API user has `see_lookml`).
+(field `sql` is only present when the API user has `see_lookml`). LookML dashboards
+(`*.dashboard.lookml`) become notebooks whose tile SQL is written from the explore
+(see _Query); dashboards from the API keep Looker's generated SQL.
 """
 
 from __future__ import annotations
 
+import calendar
 import json
 import posixpath
 import re
@@ -49,6 +52,8 @@ from unshackle.raw import RawStore
 from unshackle.sources import _manual
 from unshackle.sources._semyaml import op_sql
 from unshackle.sources.base import Inventory, Source
+from unshackle.target.layout import Layout
+from unshackle.target.ossie import FILTER_REF
 
 REF = re.compile(r"\$\{([^}]+)\}")
 LIQUID = re.compile(r"\{%|\{\{")
@@ -97,6 +102,92 @@ VIS_MARK = {
     "looker_table": ("table", "table"),
 }
 COLUMN_TYPE = {"number": "number", "string": "string", "yesno": "boolean", "zipcode": "string", "tier": "string"}
+# `${created_<tf>}` -> SQL on the dimension_group's expression. These give the same value
+# as Looker's SQL in every dialect (a DATE, an integer part or a fixed name).
+TIMEFRAME_SQL = {
+    "date": "CAST({} AS DATE)",
+    "year": "EXTRACT(YEAR FROM {})",
+    "month_num": "EXTRACT(MONTH FROM {})",
+    "day_of_month": "EXTRACT(DAY FROM {})",
+    "hour_of_day": "EXTRACT(HOUR FROM {})",
+    "month_name": "CASE EXTRACT(MONTH FROM {}) "
+    + " ".join(f"WHEN {i} THEN '{m}'" for i, m in enumerate(calendar.month_name) if i)
+    + " END",
+}
+# The rest are strings or week-based numbers that Looker formats (checked against its SQL on
+# BigQuery, tests/fixtures/looker_generated/): month '2026-12', quarter '2026-10' (its first
+# month), week '2026-12-28' (the day it starts), day_of_week 'Thursday', day_of_week_index
+# (0 = week_start_day), week_of_year (ISO, whatever the week start), quarter_of_year 'Q4'.
+# Per warehouse: the type for strings, 'YYYY-MM-DD' / 'YYYY-MM' of a date, the day of the week
+# with Monday = 0, a date minus n days, the quarter's first day, the ISO week, the day of the year.
+DIALECT_DATES: dict[str, dict[str, str]] = {
+    "bigquery": {"str": "STRING", "day": "FORMAT_DATE('%F', {})", "month": "FORMAT_DATE('%Y-%m', {})",
+                 "dow": "MOD(EXTRACT(DAYOFWEEK FROM {}) + 5, 7)", "minus": "DATE_SUB({0}, INTERVAL {1} DAY)",
+                 "quarter": "DATE_TRUNC({}, QUARTER)", "isoweek": "EXTRACT(ISOWEEK FROM {})", "doy": "EXTRACT(DAYOFYEAR FROM {})"},
+    "snowflake": {"str": "VARCHAR", "day": "TO_CHAR({}, 'YYYY-MM-DD')", "month": "TO_CHAR({}, 'YYYY-MM')",
+                  "dow": "(DAYOFWEEKISO({}) - 1)", "minus": "DATEADD(day, -({1}), {0})",
+                  "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "WEEKISO({})", "doy": "DAYOFYEAR({})"},
+    "postgres": {"str": "VARCHAR", "day": "TO_CHAR({}, 'YYYY-MM-DD')", "month": "TO_CHAR({}, 'YYYY-MM')",
+                 "dow": "(CAST(EXTRACT(ISODOW FROM {}) AS INTEGER) - 1)", "minus": "({0} - CAST({1} AS INTEGER))",
+                 "quarter": "CAST(DATE_TRUNC('quarter', {}) AS DATE)", "isoweek": "CAST(EXTRACT(WEEK FROM {}) AS INTEGER)",
+                 "doy": "CAST(EXTRACT(DOY FROM {}) AS INTEGER)"},
+    "redshift": {"str": "VARCHAR", "day": "TO_CHAR({}, 'YYYY-MM-DD')", "month": "TO_CHAR({}, 'YYYY-MM')",
+                 "dow": "MOD(CAST(EXTRACT(DOW FROM {}) AS INTEGER) + 6, 7)", "minus": "DATEADD(day, -({1}), {0})",
+                 "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "CAST(EXTRACT(WEEK FROM {}) AS INTEGER)",
+                 "doy": "CAST(EXTRACT(DOY FROM {}) AS INTEGER)"},
+    "databricks": {"str": "STRING", "day": "DATE_FORMAT({}, 'yyyy-MM-dd')", "month": "DATE_FORMAT({}, 'yyyy-MM')",
+                   "dow": "WEEKDAY({})", "minus": "DATE_SUB({0}, {1})",
+                   "quarter": "DATE_TRUNC('QUARTER', {})", "isoweek": "WEEKOFYEAR({})", "doy": "DAYOFYEAR({})"},
+    "duckdb": {"str": "VARCHAR", "day": "STRFTIME({}, '%Y-%m-%d')", "month": "STRFTIME({}, '%Y-%m')",
+               "dow": "(ISODOW({}) - 1)", "minus": "CAST({0} - CAST({1} AS INTEGER) AS DATE)",
+               "quarter": "DATE_TRUNC('quarter', {})", "isoweek": "WEEKOFYEAR({})", "doy": "DAYOFYEAR({})"},
+}
+WEEKDAYS = [d.lower() for d in calendar.day_name]  # monday first, as Looker's default
+LOOKER_VALUE = {
+    "month": "a 'YYYY-MM' string", "quarter": "a 'YYYY-MM' string of the quarter's first month",
+    "week": "a 'YYYY-MM-DD' string of the day the week starts", "day_of_week": "the day's name ('Monday')",
+    "day_of_week_index": "0-6 from week_start_day", "week_of_year": "the ISO week number",
+    "day_of_year": "the day of the year", "quarter_of_year": "'Q1'-'Q4'",
+}
+
+
+def timeframe_sql(tf: str, expr: str, dialect: str, week_start: str = "monday") -> str | None:
+    """Looker's value for a string or week-based timeframe in `dialect`; None when not known."""
+    d = DIALECT_DATES.get(dialect)
+    if d is None:
+        return None
+    day = f"CAST({expr} AS DATE)"
+    offset = WEEKDAYS.index(week_start)
+    dow = d["dow"].format(day)
+    index = dow if offset == 0 else f"MOD({dow} + {7 - offset}, 7)"
+    if tf == "month":
+        return d["month"].format(day)
+    if tf == "quarter":
+        return d["month"].format(d["quarter"].format(day))
+    if tf == "week":
+        if dialect == "bigquery":
+            return d["day"].format(f"DATE_TRUNC({day}, WEEK({week_start.upper()}))")
+        return d["day"].format(d["minus"].format(day, index))
+    if tf == "day_of_week_index":
+        return index
+    if tf == "day_of_week":
+        return f"CASE {dow} " + " ".join(f"WHEN {i} THEN '{n}'" for i, n in enumerate(calendar.day_name)) + " END"
+    if tf == "week_of_year":
+        return d["isoweek"].format(day)
+    if tf == "day_of_year":
+        return d["doy"].format(day)
+    if tf == "quarter_of_year":
+        return f"'Q' || CAST(EXTRACT(QUARTER FROM {day}) AS {d['str']})"  # CONCAT drops NULLs in some warehouses
+    return None
+
+
+ALL_TIMEFRAMES = [
+    "raw", "time", "time_of_day", "date", "week", "month", "quarter", "year", "hour", "minute", "second", "millisecond",
+    "day_of_week", "day_of_week_index", "day_of_month", "day_of_year", "week_of_year", "month_num", "month_name",
+    "quarter_of_year", "hour_of_day", "fiscal_month_num", "fiscal_quarter", "fiscal_quarter_of_year", "fiscal_year",
+]
+REVERSED = {"many_to_one": "one_to_many", "one_to_many": "many_to_one", "one_to_one": "one_to_one", "many_to_many": "many_to_many"}
+FAN_SAFE = ("count_distinct", "min", "max")  # same result however often a row repeats
 
 
 class LookerSource(Source):
@@ -106,7 +197,8 @@ class LookerSource(Source):
     docs = "https://cloud.google.com/looker/docs/reference/looker-api/latest"
     manual_files = "the LookML project folder (a Git checkout, or its .zip download) or .lkml files"
     manual_gaps = (
-        "dashboards and Looks: user-defined dashboards and Looks only come from the API; LookML dashboards (.lookml) are not parsed",
+        "dashboards and Looks: user-defined dashboards and Looks only come from the API; LookML dashboards (.dashboard.lookml) "
+        "are parsed, with tile SQL written from the explore rather than Looker's own",
         "usage: no view counts",
         "generated SQL: no Looker-compiled SQL for saved queries",
         "permissions: access grants in the LookML are kept, but which users and groups hold the user attributes is not",
@@ -436,7 +528,9 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
         return f"{ref} {m.group(1) or '='} {m.group(2)}"
     # dates, number ranges and anything that reads like a relative date need a person; brackets
     # are literal in a string filter ("(5) Purchase")
-    if kind in ("time", "number") or re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I):
+    if kind in ("time", "number") or (kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I)):
+        return None
+    if '"' in v:  # quoting in a filter value: leave it to a person
         return None
     parts = [p.strip().replace("^,", ",") for p in re.split(r"(?<!\^),", v)]
     if any(p in ("", "-") or p.startswith("--") for p in parts):
@@ -466,6 +560,10 @@ class _Parser:
         self.fields: dict[str, tuple[str, str, str]] = {}  # "view.field" -> (kind, group/field, timeframe)
         self.metric_names: dict[tuple[str, str], str] = {}
         self.meta: dict[str, Any] = store.get_json("_meta.json") if store.exists("_meta.json") else {}
+        # warehouse type from unshackle.toml: some timeframes are written in the warehouse's dialect
+        self.dialect = Layout.load(store.repo_root).warehouses.get(self.b.datasource, "")
+        self.week_start = ""  # week_start_day the models agree on ("" = Looker's default, Monday)
+        self.cross: list[tuple[str, dict[str, Any], Measure, Metric]] = []  # measures over other views, checked after joins
 
     def run(self) -> Bundle:
         if self.store.glob("lookml/**/*.lkml"):
@@ -481,9 +579,12 @@ class _Parser:
             self._view(vname, view)
         for mname, model in self.models.items():
             self._model(mname, model)
+        self._check_cross()
         # an explore file included by several models yields the same policies once per model
         self.b.row_filters = list({(r.name, r.table, r.predicate, r.todo): r for r in self.b.row_filters}.values())
         self.b.permissions = list({(p.principal, p.action, p.resource_type, p.resource_id, p.todo): p for p in self.b.permissions}.values())
+        if self.store.glob("lookml/**/*.lookml"):
+            self._lookml_dashboards()
         usage = _usage_by_content(self.store.get_json("content_usage.json")) if self.store.exists("content_usage.json") else {}
         for rel in self.store.glob("dashboards/*.json"):
             try:
@@ -535,8 +636,6 @@ class _Parser:
             for g in doc.get("access_grants", []):
                 self.grants[g["name"]] = g
         self._load_models(docs, closures)
-        for rel in self.store.glob("lookml/**/*.lookml"):
-            self.b.warn(rel, "LookML dashboards are not parsed; the same dashboard is exported through the API if it is in a user folder")
         # Looker applies refinements to the view first, then resolves extends, so a view that
         # extends a refined view gets the refinement, and a refinement may add `extends`.
         for path, ref in refinements:
@@ -552,6 +651,7 @@ class _Parser:
     def _load_models(self, docs: dict[str, dict[str, Any]], closures: dict[str, list[str]]) -> None:
         """Models and the explores they include (explores often live in their own files)."""
         included = set().union(*closures.values())
+        starts: set[str] = set()
         explores: dict[str, list[dict[str, Any]]] = {}  # model file -> explores, in include order
         for mpath, paths in closures.items():
             explores[mpath] = list(docs[mpath].get("explores", []))
@@ -567,7 +667,11 @@ class _Parser:
             doc = docs[path]
             model["connection"] = doc.get("connection", model.get("connection", ""))
             model["label"] = doc.get("label", model.get("label", ""))
+            if doc.get("week_start_day"):
+                starts.add(str(doc["week_start_day"]).lower())
             model["explores"] += self._resolve_explores(path, exs)
+        if starts:
+            self.week_start = starts.pop() if len(starts) == 1 else "different days per model"
 
     def _resolve_explores(self, path: str, explores: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Apply explore refinements (`explore: +x`) and `extends`; drop `extension: required` explores."""
@@ -664,7 +768,7 @@ class _Parser:
             for d in v.get("dimensions", []):
                 self.fields[f"{vname}.{d['name']}"] = ("dimension", d["name"], "")
             for g in v.get("dimension_groups", []):
-                tfs = g.get("timeframes") or ["raw", "time", "date", "week", "month", "quarter", "year"]
+                tfs = g.get("timeframes") or ALL_TIMEFRAMES  # Looker adds every timeframe when none are listed
                 for tf in tfs:
                     self.fields[f"{vname}.{g['name']}_{tf}"] = ("time", g["name"], tf)
             for m in v.get("measures", []):
@@ -709,6 +813,17 @@ class _Parser:
     def table_name(self, vname: str) -> str:
         return _plain_table((self.views.get(vname) or {}).get("sql_table_name", "") or "")
 
+    def query_table(self, vname: str) -> tuple[str, str, str]:
+        """(table, note, problem): the table to read in a query, as LookML writes it (quoting kept).
+        A derived table is read under the name it is materialized as."""
+        v = self.views.get(vname) or {}
+        raw = str(v.get("sql_table_name") or "")
+        if raw and TABLE_NAME.fullmatch(raw) and not LIQUID.search(raw):
+            return raw.strip(), "", ""
+        if v.get("derived_table") or raw:
+            return snake(vname), f"reads {vname}, a derived table: materialize it as `{snake(vname)}` first (see its query in queries/)", ""
+        return snake(vname), "", f"view {vname} has no table"
+
     def model_table(self, vname: str) -> str:
         """The table the view's semantic model reads: its table, or the view name for SQL-backed views."""
         v = self.views.get(vname) or {}
@@ -718,6 +833,22 @@ class _Parser:
 
     def resolve(self, vname: str, sql: str, seen: frozenset[str] = frozenset()) -> tuple[str, list[str]]:
         """Turn LookML dimension SQL into a column expression on the view's table."""
+        return self._expand(vname, sql, "table", seen)
+
+    def cross_expr(self, vname: str, sql: str) -> tuple[str, list[str]]:
+        """LookML SQL that reads fields of other views, as an expression over dimensions:
+        `${sale_price} - ${inventory_items.cost}` -> `{{ Dimension('order_items__sale_price') }} - {{ Dimension('inventory_items__cost') }}`.
+        Fields that are themselves expressions over other views are inlined."""
+        return self._expand(vname, sql, "cross", frozenset())
+
+    def _expand(self, vname: str, sql: str, mode: str, seen: frozenset[str], q: _Query | None = None, alias: str = "") -> tuple[str, list[str]]:
+        """Resolve `${...}` references in LookML SQL.
+
+        mode "table": columns of the view's own table (`${TABLE}.x` -> `x`); other views are a problem.
+        mode "cross": every field reference becomes a `{{ Dimension(...) }}` template (see cross_expr).
+        mode "query": inside explore query `q`, where the view is aliased `alias` (`${TABLE}.x` -> `alias.x`)
+        and `${other.f}` reads the joined view `other`, which `q` then joins.
+        """
         problems: list[str] = []
         if LIQUID.search(sql or ""):
             return sql, ["uses Liquid templating"]
@@ -727,64 +858,222 @@ class _Parser:
         def sub(m: re.Match) -> str:
             ref = m.group(1).strip()
             if ref == "TABLE":
+                if mode == "query":
+                    return alias
+                if mode == "cross":
+                    problems.append("reads a column of the table directly (${TABLE}) next to fields of another view; use the dimension instead")
+                    return m.group(0)
                 return "\x00TABLE\x00"
-            view, _, name = ref.rpartition(".")
-            view = view or vname
+            qual, _, name = ref.rpartition(".")
+            if mode == "query":
+                assert q is not None
+                at = q.alias(qual) if qual else alias
+                view = q.view_of(at)
+                if view is None:
+                    problems.append(f"references {ref}, but {at} is not in explore {q.explore['name']}")
+                    return m.group(0)
+            else:
+                at, view = qual or vname, qual or vname
+                if mode == "cross" and qual and qual != vname:
+                    targets = {v for _, a, v, _, _, _ in self._links(vname) if a == qual}
+                    if len(targets) > 1:
+                        problems.append(f"references {ref}, but explores join {qual} as different views ({', '.join(sorted(targets))})")
+                        return m.group(0)
+                    view = targets.pop() if targets else qual
             if name == "SQL_TABLE_NAME":
                 t = self.table_name(view)
                 if not t:
                     problems.append(f"references derived table {view}.SQL_TABLE_NAME")
                     return snake(view)
                 return t
-            if view != vname:
-                problems.append(f"references another view ({ref})")
+            if view != vname and mode == "table":
+                problems.append(self._other_view_problem(vname, at, name))
                 return m.group(0)
-            if ref in seen:
+            key = f"{at}.{name}"
+            if key in seen:
                 problems.append(f"circular reference {ref}")
                 return m.group(0)
-            f = self._field(view, name)
-            if f is None:
-                kind = self.fields.get(f"{view}.{name}")
-                if kind and kind[0] == "time":
-                    g = self._field(view, kind[1]) or {}
-                    if kind[2] in ("raw", "time"):
-                        expr, p = self.resolve(view, g.get("sql") or f"${{TABLE}}.{kind[1]}", seen | {ref})
-                        problems.extend(p)
-                        return _paren(expr)
-                    problems.append(f"references timeframe {ref} (truncated to {kind[2]} in Looker)")
-                    return m.group(0)
-                problems.append(f"unknown field {ref}")
-                return m.group(0)
-            if any(f is x for x in self.views[view].get("measures", [])):
-                problems.append(f"references measure {ref}")
-                return m.group(0)
-            expr, p = self.resolve(view, f.get("sql") or f"${{TABLE}}.{name}", seen | {ref})
+            if mode == "query" and at != alias:
+                problems.extend(q.use(at))
+            expr, p = self._field_sql(view, name, mode, seen | {key}, q, at)
             problems.extend(p)
-            return _paren(expr)
+            return expr
 
         out = REF.sub(sub, sql or "")
         out = out.replace("\x00TABLE\x00.", "")
         if "\x00TABLE\x00" in out:
             problems.append("uses ${TABLE} without a column")
             out = out.replace("\x00TABLE\x00", "${TABLE}")
-        return " ".join(out.split()), problems
+        return " ".join(out.split()), list(dict.fromkeys(problems))
+
+    def _field_sql(self, view: str, name: str, mode: str, seen: frozenset[str], q: _Query | None, at: str) -> tuple[str, list[str]]:
+        """SQL for a referenced field `view.name` (`at` is its alias in a query)."""
+        ref = name if mode == "table" else f"{at}.{name}"
+        f = self._field(view, name)
+        if f is None:
+            kind = self.fields.get(f"{view}.{name}")
+            if kind and kind[0] == "time":
+                return self._timeframe(view, kind[1], kind[2], mode, seen, q, at)
+            return "", [f"unknown field {ref}"]
+        if any(f is x for x in self.views[view].get("measures", [])):
+            if mode == "query" and q is not None and q.in_measure:
+                return q.measure(at, view, f, seen)
+            return "", [f"references measure {ref}"]
+        if mode == "cross" and not self.dim_expr(view, f)[1]:
+            # a dimension that translates on its own is a field of its dataset; otherwise it is inlined
+            if _yes(f.get("primary_key")):
+                return "", [f"references primary key {ref}, which is an entity rather than a dimension"]
+            return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", []
+        if f.get("case"):
+            expr, problems = self._case(view, f["case"], mode, seen, q, at)
+            return f"({expr})", problems
+        expr, problems = self._expand(view, f.get("sql") or f"${{TABLE}}.{name}", mode, seen, q, at)
+        return _paren(expr), problems
+
+    def _timeframe(self, view: str, group: str, tf: str, mode: str, seen: frozenset[str], q: _Query | None, at: str) -> tuple[str, list[str]]:
+        """`${created_month}`: the dimension_group's SQL with Looker's truncation for the timeframe."""
+        ref = f"{group}_{tf}" if mode == "table" else f"{at}.{group}_{tf}"
+        g = next((x for x in (self.views.get(view) or {}).get("dimension_groups", []) if x["name"] == group), {})
+        datatype = str(g.get("datatype") or "timestamp")
+        if datatype in ("epoch", "yyyymmdd"):
+            return "", [f"references timeframe {ref} of a datatype: {datatype} dimension_group (the column is a number, not a date)"]
+        if mode == "cross":
+            if self.resolve(view, g.get("sql") or f"${{TABLE}}.{group}")[1]:
+                return "", [f"references timeframe {ref} of a dimension_group that is not translated"]
+            expr, problems = f"{{{{ Dimension('{snake(view)}__{snake(group)}') }}}}", []
+        else:
+            expr, problems = self._expand(view, g.get("sql") or f"${{TABLE}}.{group}", mode, seen, q, at)
+            expr = _paren(expr)
+        if problems:
+            return "", problems
+        if q is not None and tf != "raw" and datatype != "date" and str(g.get("convert_tz", "yes")).lower() != "no":
+            q.tz.add(f"{at}.{group}_{tf}")
+        if tf in ("raw", "time"):
+            return expr, []
+        if tf == "date" and datatype == "date":
+            return expr, []
+        if tf == "hour_of_day" and datatype == "date":
+            return "", [f"references timeframe {ref}, an hour of a date column"]
+        if tf in TIMEFRAME_SQL:
+            return f"({TIMEFRAME_SQL[tf].format(expr)})", []
+        if tf in ("week", "month", "quarter", "day_of_week", "day_of_week_index", "week_of_year", "day_of_year", "quarter_of_year"):
+            if self.week_start not in ("", *WEEKDAYS):
+                return "", [f"references timeframe {ref}; weeks start on {self.week_start} in this project, write the truncation by hand"]
+            sql = timeframe_sql(tf, expr, self.dialect, self.week_start or "monday")
+            if sql:
+                return f"({sql})", []
+            return "", [f"references timeframe {ref}: Looker returns {LOOKER_VALUE[tf]}, written in the warehouse's dialect; "
+                        f"set [datasources.{self.b.datasource}] type in unshackle.toml and re-run build"]
+        return "", [f"references timeframe {ref}: Looker's {tf} timeframe is not translated"]
+
+    def _other_view_problem(self, vname: str, alias: str, name: str) -> str:
+        """Why `${alias.name}` in view `vname` stays a TODO, naming the explores that join them."""
+        links = [x for x in self._links(vname) if x[1] == alias]
+        if not links:
+            return f"references {alias}.{name} in another view, but no explore joins {alias} with {vname}"
+        ex, _, _, rel, on, _ = links[0]
+        more = f" and {len(links) - 1} other explore(s)" if len(links) > 1 else ""
+        return (f"references {alias}.{name} in another view (explore {ex} joins {alias} {rel} on {on}{more}); a dimension "
+                f"reads one table, so group by {alias}.{name} through the join, or compute it in a SQL model")
+
+    def _links(self, vname: str) -> list[tuple[str, str, str, str, str, str]]:
+        """(explore, alias, view, relationship, on, join type) for each view an explore puts next to `vname`: its joins
+        (relationship as declared), and the explore's base when `vname` is joined (relationship reversed).
+        `on` names views rather than aliases, with the two sides of an equality in a fixed order."""
+        out = []
+        for model in self.models.values():
+            for ex in model["explores"]:
+                base = _base_view(ex)
+                alias = {base: base} | _aliases(ex)
+
+                def on(j: dict[str, Any]) -> str:
+                    text = REF.sub(lambda m: "${" + ".".join([alias.get(m.group(1).split(".")[0], m.group(1).split(".")[0]),
+                                                              *m.group(1).split(".")[1:]]) + "}", _join_on_text(j))
+                    sides = re.fullmatch(r"\s*(\$\{[\w.]+\})\s*=\s*(\$\{[\w.]+\})\s*", text)
+                    return " = ".join(sorted(sides.groups())) if sides else text
+
+                mine = [j for j in ex.get("joins", []) if (j.get("from") or j["name"]) == vname]
+                if base != vname and not mine:
+                    continue
+                for j in ex.get("joins", []):
+                    if (j.get("from") or j["name"]) != vname:
+                        out.append((ex["name"], j["name"], j.get("from") or j["name"], str(j.get("relationship", "many_to_one")), on(j),
+                                    str(j.get("type", "left_outer"))))
+                for j in mine if base != vname else []:
+                    out.append((ex["name"], ex["name"], base, REVERSED.get(str(j.get("relationship", "many_to_one")), "many_to_many"), on(j),
+                                str(j.get("type", "left_outer"))))
+        return out
+
+    def _other_views(self, vname: str, expr: str) -> set[str]:
+        """Views (snake-cased) other than `vname` whose dimensions a cross expression reads."""
+        return {v for v, _, _ in FILTER_REF.findall(expr) if v != snake(vname)}
+
+    def _join_signatures(self, vname: str, target: str) -> dict[str, str]:
+        """How explores put view `target` next to `vname`: "x_to_one|<relationship> on <condition>" -> explore.
+        For rows of `vname`, many_to_one and one_to_one are the same: no row repeats."""
+        out: dict[str, str] = {}
+        for ex, _, view, rel, on, _ in self._links(vname):
+            if view == target:
+                kind = "x_to_one" if rel in ("many_to_one", "one_to_one") else rel
+                out.setdefault(f"{kind} on {on}", f"{ex} ({rel})")
+        return out
+
+    def _check_cross(self) -> None:
+        """A measure over fields of other views is faithful when every explore joins those views the
+        same way, x_to_one on their primary key (no fan-out of the measure's rows): the semantic models
+        then relate through entities and the metric sums joined rows the way Looker does."""
+        models = {snake(sm.name): sm for sm in self.b.semantic_models}
+        for vname, _, measure, metric in self.cross:
+            reach = _reachable(snake(vname), models)
+            problem = ""
+            for other in sorted(self._other_views(vname, measure.expr)):
+                view = next((v for v in self.views if snake(v) == other), other)
+                sigs = self._join_signatures(vname, view)
+                if not sigs:
+                    problem = f"reads fields of {view}, but no explore joins {view} with {vname}"
+                elif len(sigs) > 1:
+                    problem = (f"reads fields of {view}, which explores join differently ("
+                               + "; ".join(f"{ex}: {sig}" for sig, ex in sigs.items()) + "), so the number depends on the explore")
+                elif other not in reach:
+                    (sig, ex), = sigs.items()
+                    if sig.startswith("x_to_one"):
+                        problem = (f"reads fields of {view}, joined in explore {ex} on {sig.split(' on ', 1)[1]}, which is not a key of "
+                                   f"{vname} to {view}'s primary key, so the semantic models have no relationship; "
+                                   f"add the entity by hand if each {vname} row matches one {view} row")
+                    else:
+                        problem = (f"reads fields of {view}, which explore {ex} joins on {sig.split(' on ', 1)[1]}: rows of {vname} repeat "
+                                   f"and Looker dedupes them with symmetric aggregates. Pre-aggregate {view} per {vname} row in a "
+                                   f"SQL model, or define the measure on {view}")
+                if not problem:
+                    other_types = sorted({(t, ex) for ex, _, v, _, _, t in self._links(vname) if v == view and t != "left_outer"})
+                    if other_types and not _null_propagating(measure.expr, vname, view):
+                        t, ex = other_types[0]
+                        problem = (f"reads fields of {view}, which explore {ex} joins type: {t}: rows without a match are "
+                                   f"{'dropped' if t == 'inner' else 'added'} there, and this expression doesn't ignore them")
+                if problem:
+                    break
+            if problem:
+                models[snake(vname)].measures.remove(measure)
+                metric.measure, metric.filter, metric.todo = "", "", problem
+                metric.source_expression, metric.source_language = measure.source_expression, "lookml"
 
     def dim_expr(self, vname: str, field: dict[str, Any]) -> tuple[str, list[str]]:
         if field.get("case"):
             return self._case(vname, field["case"])
         return self.resolve(vname, field.get("sql") or f"${{TABLE}}.{field['name']}")
 
-    def _case(self, vname: str, case: dict[str, Any]) -> tuple[str, list[str]]:
+    def _case(self, vname: str, case: dict[str, Any], mode: str = "table", seen: frozenset[str] = frozenset(),
+              q: _Query | None = None, at: str = "") -> tuple[str, list[str]]:
         parts, problems = ["CASE"], []
         for w in case.get("whens", []):
-            expr, p = self.resolve(vname, w.get("sql", ""))
+            expr, p = self._expand(vname, w.get("sql", ""), mode, seen, q, at)
             problems += p
             label = str(w.get("label", "")).replace("'", "''")
             parts.append(f"WHEN {expr} THEN '{label}'")
         if case.get("else"):
             parts.append("ELSE '" + str(case["else"]).replace("'", "''") + "'")
         parts.append("END")
-        return " ".join(parts), problems
+        return " ".join(parts), list(dict.fromkeys(problems))
 
     def field_ref(self, vname: str, ref: str) -> tuple[str, str] | None:
         """Filter field -> ("{{ Dimension('v__f') }}", kind)."""
@@ -798,9 +1087,7 @@ class _Parser:
         if kind[0] != "dimension":
             return None
         f = self._field(view, name) or {}
-        t = f.get("type", "string")
-        kind = "yesno" if t == "yesno" else "number" if t == "number" else "time" if t.startswith("date") or t == "time" else "string"
-        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", kind
+        return f"{{{{ Dimension('{snake(view)}__{snake(name)}') }}}}", _type_kind(f.get("type", "string"), "other")
 
     # ------------------------------------------------------------ views
 
@@ -950,9 +1237,18 @@ class _Parser:
                     self.b.warn(src, "count without a primary key; counting rows with expr 1", "info")
             else:
                 expr, problems = self.resolve(vname, raw_sql or f"${{TABLE}}.{m['name']}")
+                if problems:
+                    # reads fields of joined views: an expression over dimensions of several datasets,
+                    # checked against the explores' joins once they are known (_check_cross)
+                    cross, cross_problems = self.cross_expr(vname, raw_sql)
+                    if not cross_problems and self._other_views(vname, cross):
+                        expr, problems = cross, []
             if problems:
                 return todo("; ".join(problems))
             measure = Measure(name, MEASURE_AGG[mtype], expr, m.get("description", ""), metric.label)
+            if self._other_views(vname, expr):
+                measure.source_expression, measure.source_language = source_expr, "lookml"
+                self.cross.append((vname, m, measure, metric))
             if mtype == "percentile":
                 measure.agg_params = {"percentile": float(m.get("percentile", 50)) / 100, "use_discrete_percentile": False}
             filters, bad = [], []
@@ -1194,26 +1490,40 @@ class _Parser:
         if not sql:
             todos.append("no generated SQL saved for this element" + (" (merged results)" if el.get("merge_result_id") else ""))
         alias = self._explore_alias(q.get("model", ""), q.get("view", ""))
-        col = snake
+        todos += _dynamic_field_todos(q.get("dynamic_fields"))
+        enc, more = self._encodings(kind, mark, fields, pivots, hidden, alias)
+        todos += more
+        listen = [
+            (lf.get("dashboard_filter_name"), lf.get("field"))
+            for fl in (el.get("result_maker") or {}).get("filterables") or []
+            for lf in fl.get("listen") or []
+        ]
+        applied = [(n, f) for n, f in listen if n in dash_filters]
+        if applied:
+            todos.append(
+                "dashboard filter(s) "
+                + ", ".join(f"{n} on {f} (:{dash_filters[n].name})" for n, f in applied)
+                + " are not in the generated SQL; add WHERE clauses with those parameters"
+            )
+        title = el.get("title") or vis.get("title") or ", ".join(fields[:3]) or eid
+        return Tile(
+            eid, title, kind, mark, sql.strip(), enc, source_type=vtype,
+            source_config={"query": {k: q.get(k) for k in ("model", "view", "fields", "pivots", "filters", "sorts", "limit") if q.get(k)}, "vis_config": vis},
+            todo="; ".join(todos),
+        )
+
+    def _encodings(self, kind: str, mark: str, fields: list[str], pivots: list[str], hidden: set[str],
+                   alias: dict[str, str]) -> tuple[dict[str, Encoding], list[str]]:
+        """Chart channels: first dimension -> x (temporal for timeframes), first measure -> y, first pivot -> color."""
         dims = [f for f in fields if self._classify(f, alias)[0] in ("dimension", "time", "unknown") and f not in pivots and f not in hidden]
         measures = [f for f in fields if self._classify(f, alias)[0] == "measure" and f not in hidden]
-        dyn = q.get("dynamic_fields")
-        if isinstance(dyn, str) and dyn.strip():
-            try:
-                dyn = json.loads(dyn)
-            except ValueError:
-                dyn = []
-        for d in dyn or []:
-            if d.get("table_calculation"):
-                todos.append(f"table calculation {d['table_calculation']} = {d.get('expression', '')} (Looker expression); add it to the SQL as a window/column")
-            elif d.get("measure") or d.get("dimension"):
-                todos.append(f"custom field {d.get('measure') or d.get('dimension')}: {d.get('expression') or d.get('based_on', '')} ({d.get('type', '')}); add it to the SQL")
         enc: dict[str, Encoding] = {}
+        todos: list[str] = []
 
         def e(f: str, q_type: str | None = None) -> Encoding:
             k, _ = self._classify(f, alias)
             t = q_type or ("temporal" if k == "time" else "quantitative" if k == "measure" else "nominal")
-            return Encoding(col(f), t)  # type: ignore[arg-type]
+            return Encoding(snake(f), t)  # type: ignore[arg-type]
 
         if kind == "kpi":
             if measures:
@@ -1234,32 +1544,12 @@ class _Parser:
                 enc["color"] = e(dims[1], "nominal")
             if len(measures) > 1:
                 todos.append(f"Looker plotted {len(measures)} measures ({', '.join(measures)}); only the first is encoded, fold the rest or add tiles")
-        listen = [
-            (lf.get("dashboard_filter_name"), lf.get("field"))
-            for fl in (el.get("result_maker") or {}).get("filterables") or []
-            for lf in fl.get("listen") or []
-        ]
-        applied = [(n, f) for n, f in listen if n in dash_filters]
-        if applied:
-            todos.append(
-                "dashboard filter(s) "
-                + ", ".join(f"{n} on {f} (:{dash_filters[n].name})" for n, f in applied)
-                + " are not in the generated SQL; add WHERE clauses with those parameters"
-            )
-        title = el.get("title") or vis.get("title") or ", ".join(fields[:3]) or eid
-        return Tile(
-            eid, title, kind, mark, sql.strip(), enc, source_type=vtype,
-            source_config={"query": {k: q.get(k) for k in ("model", "view", "fields", "pivots", "filters", "sorts", "limit") if q.get(k)}, "vis_config": vis},
-            todo="; ".join(todos),
-        )
+        return enc, todos
 
     def _explore_alias(self, model: str, explore: str) -> dict[str, str]:
         for ex in (self.models.get(model) or {}).get("explores", []):
             if ex["name"] == explore:
-                base = ex.get("from") or ex["name"]
-                out = {ex["name"]: base}
-                out.update({j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])})
-                return out
+                return _aliases(ex)
         return {}
 
     def _dashboard(self, rel: str, d: dict[str, Any], usage: dict) -> None:
@@ -1303,6 +1593,262 @@ class _Parser:
             )
         )
 
+    # ------------------------------------------------------------ LookML dashboards
+
+    def _lookml_dashboards(self) -> None:
+        """`*.dashboard.lookml` (YAML): elements -> tiles with SQL written from the explore, filters -> parameters."""
+        import yaml
+
+        api = set()
+        for rel in self.store.glob("dashboards/*.json"):
+            did = str(self.store.get_json(rel).get("id") or "")
+            if "::" in did:
+                api.add(did.split("::", 1)[1])
+        found: dict[str, tuple[str, dict[str, Any]]] = {}
+        for rel in self.store.glob("lookml/**/*.lookml"):
+            try:
+                docs = yaml.safe_load(self.store.get_text(rel))
+            except Exception as exc:  # noqa: BLE001
+                self.b.warn(rel, f"LookML dashboard did not parse as YAML: {exc}")
+                continue
+            for d in docs if isinstance(docs, list) else [docs]:
+                if isinstance(d, dict) and d.get("dashboard"):
+                    found[str(d["dashboard"])] = (rel, d)
+        for name, (rel, raw) in found.items():
+            if raw.get("extension") == "required":
+                continue
+            if name in api:
+                self.b.warn(rel, f"LookML dashboard {name} was also exported through the API; the API copy is used", "info")
+                continue
+            try:
+                self._lookml_dashboard(rel, name, self._extend_dashboard(raw, found, {name}, rel))
+            except Exception as exc:  # noqa: BLE001 - one bad dashboard must not stop the rest
+                self.b.warn(rel, f"LookML dashboard {name} skipped: {exc}")
+
+    def _extend_dashboard(self, d: dict[str, Any], found: dict[str, tuple[str, dict[str, Any]]], seen: set[str], rel: str) -> dict[str, Any]:
+        parents = d.get("extends") or []
+        out: dict[str, Any] = {}
+        for p in [parents] if isinstance(parents, str) else parents:
+            if p in seen or p not in found:
+                self.b.warn(rel, f"dashboard {d['dashboard']} extends {p}, which is not in the LookML; its elements and filters are missing")
+                continue
+            out = _merge_view(out, self._extend_dashboard(found[p][1], found, seen | {p}, rel), named=DASHBOARD_LISTS)
+        return _merge_view(out, d, named=DASHBOARD_LISTS)
+
+    def _lookml_dashboard(self, rel: str, name: str, d: dict[str, Any]) -> None:
+        fdefs = {str(f["name"]): f for f in d.get("filters") or [] if isinstance(f, dict) and f.get("name")}
+        filters: dict[str, DashboardFilter] = {}
+        binds: dict[str, tuple[bool, Any, str]] = {}  # filter -> (bindable, value, kind of value)
+        for fname, f in fdefs.items():
+            field = str(f.get("field") or f.get("dimension") or "")
+            fkind = self._filter_field_kind(f, field)
+            ok, value = _bind_value(f.get("default_value"), fkind)
+            binds[fname] = (ok, value, fkind)
+            kind = "date_range" if fkind == "time" else "number" if fkind == "number" else "value"
+            default = value if ok else (f.get("default_value") or None)
+            filters[fname] = DashboardFilter(snake(fname), snake(field.replace(".", "_")), default, kind)  # type: ignore[arg-type]
+        elements = [el for el in d.get("elements") or [] if isinstance(el, dict)]
+        tiles = [self._lookml_tile(el, d, fdefs, filters, binds) for el in elements]
+        ids = [t.id for t in tiles]
+        for i, t in enumerate(tiles):
+            t.id = f"{t.id}_{i + 1}" if ids.count(t.id) > 1 else t.id
+        layout: list[list[str]] = []
+        if d.get("layout") == "grid" and d.get("rows"):
+            by_name = {str(el.get("name")): t.id for el, t in zip(elements, tiles)}
+            layout = [[by_name[str(e)] for e in r.get("elements") or [] if str(e) in by_name] for r in d["rows"] if isinstance(r, dict)]
+        elif elements and all("row" in el for el in elements):
+            rows: dict[int, list[tuple[int, str]]] = {}
+            for el, t in zip(elements, tiles):
+                rows.setdefault(int(el.get("row") or 0), []).append((int(el.get("col") or 0), t.id))
+            layout = [[i for _, i in sorted(r)] for _, r in sorted(rows.items())]
+        placed = {i for r in layout for i in r}
+        layout = [r for r in layout if r] + [[t.id] for t in tiles if t.id not in placed]
+        title = str(d.get("title") or name)
+        self.b.dashboards.append(
+            Dashboard(name=title, slug=slugify(title), description=str(d.get("description") or ""), tiles=tiles, layout=layout,
+                      filters=list(filters.values()), datasource=self.b.datasource, source_ref=f"{rel} dashboard: {name}")
+        )
+
+    def _find_explore(self, model: str, explore: str) -> dict[str, Any] | None:
+        pools = [self.models[model]] if model in self.models else list(self.models.values())
+        found = [ex for m in pools for ex in m["explores"] if ex["name"] == explore]
+        return found[0] if len(found) == 1 or (found and model in self.models) else None
+
+    def _filter_field_kind(self, f: dict[str, Any], field: str) -> str:
+        """time / number / yesno / string for a dashboard filter, from its type and its field."""
+        if f.get("type") == "date_filter":
+            return "time"
+        if f.get("type") == "number_filter":
+            return "number"
+        ex = self._find_explore(str(f.get("model") or ""), str(f.get("explore") or ""))
+        if ex and field:
+            q = _Query(self, ex)
+            _, kind, problems = q.field(field)
+            if not problems:
+                return kind
+        return "string" if f.get("type") == "string_filter" else "unknown"
+
+    def _lookml_tile(self, el: dict[str, Any], d: dict[str, Any], fdefs: dict[str, Any], filters: dict[str, DashboardFilter],
+                     binds: dict[str, tuple[bool, Any, str]]) -> Tile:
+        eid = str(el.get("name") or el.get("title") or "element")
+        etype = str(el.get("type") or "")
+        if etype == "text" or (not el.get("fields") and (el.get("body_text") or el.get("title_text"))):
+            parts = [f"## {el['title_text']}" if el.get("title_text") else "", str(el.get("subtitle_text") or ""), str(el.get("body_text") or "")]
+            return Tile(eid, str(el.get("title_text") or ""), "text", "text", text="\n\n".join(p for p in parts if p), source_type="text")
+        kind, mark = VIS_MARK.get(etype, ("unknown", "unknown"))
+        query = {k: el[k] for k in ("model", "explore", "fields", "pivots", "filters", "sorts", "limit", "listen") if el.get(k)}
+        vis = {k: v for k, v in el.items() if k not in query and k not in ("name", "title", "row", "col", "width", "height")}
+        problems: list[str] = []
+        notes: list[str] = []
+        if (kind, mark) == ("unknown", "unknown") and etype:
+            notes.append(f"Looker visualization {etype!r} has no Altair equivalent here; pick a chart")
+        fields = [str(f) for f in el.get("fields") or []]
+        pivots = [str(f) for f in el.get("pivots") or []]
+        model, explore = str(el.get("model") or ""), str(el.get("explore") or "")
+        ex = self._find_explore(model, explore) if explore else None
+        sql = ""
+        if el.get("merged_queries"):
+            problems.append("merged results (merged_queries): write the joined queries as one SQL statement")
+        elif not fields:
+            problems.append(f"element of type {etype or 'unknown'} has no query")
+        elif ex is None:
+            problems.append(f"explore {model}/{explore} is not in the LookML")
+        else:
+            sql, p, n = self._element_sql(ex, el, d, fields, pivots, fdefs, filters, binds)
+            problems += p
+            notes += n
+        notes += _dynamic_field_todos(el.get("dynamic_fields"))
+        enc, more = self._encodings(kind, mark, fields, pivots, set(el.get("hidden_fields") or []), self._explore_alias(model, explore))
+        notes += more
+        todo = list(dict.fromkeys(problems + notes))
+        if problems:
+            todo.insert(0, "no SQL written, so nothing shows a wrong number")
+            sql = ""
+        return Tile(eid, str(el.get("title") or eid), kind, mark, sql, enc, source_type=etype,
+                    source_config={"query": query, "vis_config": vis}, todo="; ".join(todo))
+
+    def _element_sql(self, ex: dict[str, Any], el: dict[str, Any], d: dict[str, Any], fields: list[str], pivots: list[str],
+                     fdefs: dict[str, Any], filters: dict[str, DashboardFilter],
+                     binds: dict[str, tuple[bool, Any, str]]) -> tuple[str, list[str], list[str]]:
+        """The element's query as SQL over the explore: (sql, problems, notes)."""
+        q = _Query(self, ex)
+        dims: list[tuple[str, str]] = []
+        meas: list[tuple[str, str]] = []
+        kinds: dict[str, str] = {}
+        for f in fields:
+            sql, kind, p = q.field(f)
+            q.problems += p
+            kinds[f] = kind
+            if not sql:
+                continue
+            if kind == "measure":
+                meas.append((sql, snake(f)))
+            else:
+                dims.append((f"CASE WHEN {sql} THEN 'Yes' ELSE 'No' END" if kind == "yesno" else sql, snake(f)))
+        q.problems += [f"pivot {pv} is not one of the fields" for pv in pivots if pv not in fields]
+        where: list[str] = []
+        having: list[str] = []
+
+        def add(field: str, value: Any, origin: str) -> None:
+            if value is None or str(value) == "":
+                return
+            sql, kind, p = q.field(field)
+            q.problems.extend(p)
+            if not sql:
+                return
+            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind)
+            if cond is None:
+                q.problems.append(f"{origin} filter {field}: {str(value)!r} is not translated (a Looker filter expression)")
+            else:
+                (having if kind == "measure" else where).append(cond)
+
+        tile_filters = el.get("filters") or {}
+        for field, value in (tile_filters.items() if isinstance(tile_filters, dict) else []):
+            add(str(field), value, "tile")
+        listen = el.get("listen") or {}
+        filtered = set(map(str, tile_filters)) | set(map(str, listen.values()))
+        qualify = lambda f: f if "." in f else f"{ex['name']}.{f}"  # noqa: E731
+        for field, value in _filter_pairs(ex.get("always_filter") or {}):
+            if qualify(field) not in filtered:
+                add(qualify(field), value, "explore always_filter")
+        cf = ex.get("conditionally_filter") or {}
+        pairs = _filter_pairs(cf)
+        if pairs and not filtered & ({qualify(f) for f, _ in pairs} | {qualify(str(u)) for u in cf.get("unless") or []}):
+            for field, value in pairs:
+                add(qualify(field), value, "explore conditionally_filter")
+        if ex.get("sql_always_where"):
+            expr, p = self._expand(q.base_view, ex["sql_always_where"], "query", frozenset(), q, q.base)
+            q.problems += [f"sql_always_where: {x}" for x in p]
+            where.append(f"({expr})")
+        if ex.get("sql_always_having"):
+            q.in_measure += 1
+            expr, p = self._expand(q.base_view, ex["sql_always_having"], "query", frozenset(), q, q.base)
+            q.in_measure -= 1
+            q.problems += [f"sql_always_having: {x}" for x in p]
+            having.append(f"({expr})")
+        if ex.get("access_filters"):
+            q.notes.append(f"explore {ex['name']} filters rows per user (access_filter on "
+                           + ", ".join(str(a.get("field")) for a in ex["access_filters"])
+                           + "); this SQL reads every row unless the warehouse applies the row filters in policies/")
+        for fname, field in listen.items():
+            fname, field = str(fname), str(field)
+            if fname not in fdefs:
+                q.notes.append(f"listens to dashboard filter {fname!r}, which the dashboard does not define")
+                continue
+            ok, value, fkind = binds[fname]
+            snap = q.snapshot()
+            sql, kind, p = q.field(field)
+            risky = q.risky_joins(snap[0])
+            param = filters[fname].name
+            default = fdefs[fname].get("default_value")
+            fits = ((fkind,) if fkind in ("string", "number", "yesno") else ()) if value is not None else ("string", "dimension", "number", "yesno", "measure")
+            if p or not sql or risky:
+                q.restore(snap)  # Looker joins for a filter only when it has a value
+            if p or not sql:
+                q.notes.append(f"dashboard filter {fname!r} on {field} is not applied: {'; '.join(p) or 'field not found'}")
+            elif risky:
+                q.notes.append(f"dashboard filter {fname!r} on {field} is not applied: it needs join(s) "
+                               + ", ".join(f"{a} ({q.joins[a].get('type', 'left_outer')}, {q.joins[a].get('relationship', 'many_to_one')})" for a in risky)
+                               + f", which change the rows even when the filter is empty; add the join and a WHERE clause on :{param} by hand")
+            elif ok and kind in fits:
+                cond = f"(:{param} IS NULL OR {_paren(sql)} = :{param})"
+                (having if kind == "measure" else where).append(cond)
+            else:
+                q.restore(snap)
+                what = "a date filter" if kind == "time" or fkind == "time" else f"default {default!r} is a Looker filter expression"
+                q.notes.append(f"dashboard filter {fname!r} on {field} is not applied ({what}); add a WHERE clause on :{param}")
+        order: list[str] = []
+        for s in el.get("sorts") or []:
+            parts = str(s).split()
+            if not parts:
+                continue
+            if parts[0] not in fields:
+                q.notes.append(f"sort on {parts[0]}, which is not a selected field, is not applied")
+                continue
+            desc = len(parts) > 1 and parts[1].lower() == "desc"
+            if len(parts) > 2:
+                q.notes.append(f"sort {s!r} orders by one pivoted column; the SQL sorts by {parts[0]}{' desc' if desc else ''}")
+            order.append(snake(parts[0]) + (" DESC" if desc else ""))
+        if not el.get("sorts"):  # Looker's default: newest time first, else largest measure, else first dimension
+            first = next((f for f in fields if kinds.get(f) == "time"), None)
+            if first:
+                order = [f"{snake(first)} DESC"]
+            elif meas:
+                order = [f"{meas[0][1]} DESC"]
+            elif dims:
+                order = [dims[0][1]]
+        limit = str(el.get("limit") or "")
+        if pivots and limit:
+            q.notes.append(f"Looker's limit {limit} counts rows after pivoting on {', '.join(pivots)}; the long-format SQL has no LIMIT")
+            limit = ""
+        tz = el.get("query_timezone") or d.get("query_timezone")
+        if tz and str(tz) not in ("UTC", "Etc/UTC") and q.tz:
+            q.notes.append(f"Looker converts {', '.join(sorted(q.tz))} to the query time zone ({tz}) when the connection has one; "
+                           "the SQL uses the stored time zone")
+        q.problems += q.fanout()
+        sql = q.sql(dims + meas, where, having, len(dims), order, limit)
+        return sql, list(dict.fromkeys(q.problems)), list(dict.fromkeys(q.notes))
+
     def _look(self, rel: str, lk: dict[str, Any]) -> None:
         lid = str(lk.get("id") or Path(rel).stem)
         qid = str(lk.get("query_id") or (lk.get("query") or {}).get("id") or "")
@@ -1327,17 +1873,309 @@ class _Parser:
         )
 
 
-def _merge_view(base: dict[str, Any], override: dict[str, Any], refine: bool = False) -> dict[str, Any]:
-    """Merge a view or explore into another: named children (fields, joins) by name, other keys
-    replaced. `extends` from a refinement adds to the base's; through `extends` it is not inherited."""
+def _type_kind(t: str, other: str) -> str:
+    """A dimension's LookML type as a filter kind; `other` for the rest."""
+    if t in ("yesno", "number"):
+        return t
+    if t.startswith("date") or t == "time":
+        return "time"
+    return "string" if t in ("string", "zipcode") else other
+
+
+def _base_view(ex: dict[str, Any]) -> str:
+    return ex.get("from") or ex.get("view_name") or ex["name"]
+
+
+def _aliases(ex: dict[str, Any]) -> dict[str, str]:
+    """Explore alias -> view: the explore's name for its base view, then each join."""
+    return {ex["name"]: _base_view(ex)} | {j["name"]: j.get("from") or j["name"] for j in ex.get("joins", [])}
+
+
+def _bind_value(value: Any, kind: str) -> tuple[bool, Any]:
+    """A dashboard filter default as a parameter value, when it is one plain value (None: no filter)."""
+    if value is None or str(value).strip() == "":
+        return kind != "time", None
+    v = str(value).strip()
+    if kind == "yesno":
+        return (v.lower() in ("yes", "no")), v.lower() == "yes"
+    if kind == "number":
+        if re.fullmatch(r"-?\d+", v):
+            return True, int(v)
+        if re.fullmatch(r"-?\d+\.\d+", v):
+            return True, float(v)
+        return False, None
+    if kind in ("string", "unknown") and not re.search(r"[,%_^]", v) and not v.startswith("-") and v.upper() not in ("NULL", "EMPTY", "NOT NULL"):
+        return True, v
+    return False, None
+
+
+def _dynamic_field_todos(dyn: Any) -> list[str]:
+    """Table calculations and custom fields (`dynamic_fields`) are Looker expressions over the result."""
+    if isinstance(dyn, str) and dyn.strip():
+        try:
+            dyn = json.loads(dyn)
+        except ValueError:
+            dyn = []
+    out = []
+    for d in dyn if isinstance(dyn, list) else []:
+        if d.get("table_calculation"):
+            out.append(f"table calculation {d['table_calculation']} = {d.get('expression', '')} (Looker expression); add it to the SQL as a window/column")
+        elif d.get("measure") or d.get("dimension"):
+            out.append(f"custom field {d.get('measure') or d.get('dimension')}: {d.get('expression') or d.get('based_on', '')} ({d.get('type', '')}); add it to the SQL")
+    return out
+
+
+def _null_propagating(expr: str, vname: str, other: str) -> bool:
+    """Arithmetic over fields of both views: NULL when either side has no match, so an inner or full
+    join and a left join aggregate the same rows (SUM, AVG, MIN, MAX and COUNT(DISTINCT) skip NULL)."""
+    refs = {v for v, _, _ in FILTER_REF.findall(expr)}
+    rest = FILTER_REF.sub("", expr)
+    return {snake(vname), snake(other)} <= refs and bool(re.fullmatch(r"[\s\d.+\-*/()]*", rest))
+
+
+def _join_on_text(j: dict[str, Any]) -> str:
+    if j.get("sql_on"):
+        return " ".join(str(j["sql_on"]).split())
+    if j.get("foreign_key"):
+        return f"foreign_key: {j['foreign_key']}"
+    if j.get("sql") is not None:
+        return "sql: " + " ".join(str(j["sql"]).split())
+    return "no condition"
+
+
+def _reachable(start: str, models: dict[str, SemanticModel]) -> set[str]:
+    """Models reachable from `start` through foreign/unique entities (x_to_one joins), as Ossie relates datasets."""
+    primary = {e.name: k for k, sm in models.items() for e in sm.entities if e.type == "primary"}
+    unique = {e.name: k for k, sm in models.items() for e in sm.entities if e.type == "unique"}
+    seen, todo = {start}, [start]
+    while todo:
+        sm = models.get(todo.pop())
+        for e in sm.entities if sm else []:
+            if e.type not in ("foreign", "unique"):
+                continue
+            to = primary.get(e.name) or (unique.get(e.name) if e.type == "foreign" else None)
+            if to and to not in seen:
+                seen.add(to)
+                todo.append(to)
+    return seen
+
+
+# ==================================================================== explore queries
+
+
+JOIN_TYPE = {"left_outer": "LEFT JOIN", "inner": "INNER JOIN", "full_outer": "FULL OUTER JOIN", "cross": "CROSS JOIN"}
+QUERY_AGG = {"sum": "SUM({})", "average": "AVG({})", "min": "MIN({})", "max": "MAX({})", "count_distinct": "COUNT(DISTINCT {})"}
+
+
+class _Query:
+    """One explore query written as SQL the way Looker writes it: the base view aliased as the explore,
+    only the joins the fields need (and what those joins need), dimensions grouped, measures aggregated.
+
+    `problems` make the SQL wrong (it is not written); `notes` leave it right but incomplete
+    (a dashboard filter that isn't bound, a time zone). Measures whose rows repeat across a join
+    are problems: Looker computes them with symmetric aggregates."""
+
+    def __init__(self, p: _Parser, ex: dict[str, Any]):
+        self.p, self.explore = p, ex
+        self.base = ex["name"]
+        self.base_view = _base_view(ex)
+        self.aliases = _aliases(ex)
+        self.joins: dict[str, dict[str, Any]] = {j["name"]: j for j in ex.get("joins", [])}
+        self.order: list[str] = []  # joins in SQL order (a join after the joins its ON reads)
+        self.join_sql: dict[str, str] = {}
+        self.join_reads: dict[str, set[str]] = {}
+        self.busy: set[str] = set()
+        self.aggs: list[tuple[str, str, str]] = []  # (alias, aggregation, field) for the fan-out check
+        self.tz: set[str] = set()  # timeframes Looker converts to the query time zone
+        self.in_measure = 0
+        self.problems: list[str] = []
+        self.notes: list[str] = []
+
+    def alias(self, a: str) -> str:
+        """The SQL alias for a name in a field reference (the base view's name means the explore)."""
+        return self.base if a not in self.joins and a in (self.base, self.base_view) else a
+
+    def view_of(self, a: str) -> str | None:
+        return self.aliases.get(self.alias(a))
+
+    def use(self, a: str) -> list[str]:
+        a = self.alias(a)
+        if a == self.base or a in self.join_sql or a in self.busy:
+            return []
+        j = self.joins.get(a)
+        if j is None:
+            return [f"{a} is not joined in explore {self.base}"]
+        self.busy.add(a)
+        problems: list[str] = []
+        for r in j.get("required_joins") or []:
+            problems += self.use(r)
+        view = self.aliases[a]
+        jtype = str(j.get("type", "left_outer"))
+        on = ""
+        if j.get("sql_on"):
+            on, p = self.p._expand(view, j["sql_on"], "query", frozenset(), self, a)
+            problems += p
+        elif j.get("foreign_key"):
+            pk = self.p._pk(view)
+            if pk is None:
+                problems.append(f"join {a} uses foreign_key, but {view} has no primary key")
+            else:
+                on, p = self.p._expand(view, f"${{{self.base}.{j['foreign_key']}}} = ${{{a}.{pk['name']}}}", "query", frozenset(), self, a)
+                problems += p
+        elif j.get("sql") is not None:
+            problems.append(f"join {a} is written as SQL (`sql: {' '.join(str(j['sql']).split())}`)")
+        elif jtype != "cross":
+            problems.append(f"join {a} has no sql_on or foreign_key")
+        if j.get("sql_where"):
+            problems.append(f"join {a} has sql_where")
+        if jtype not in JOIN_TYPE:
+            problems.append(f"join {a} has type {jtype}")
+        table = self._table(view, problems)
+        self.join_reads[a] = (set(re.findall(r"\b(\w+)\.", on)) & set(self.joins)) - {a}
+        self.join_sql[a] = f"{JOIN_TYPE.get(jtype, 'LEFT JOIN')} {table} AS {a}" + (f" ON {on}" if on and jtype != "cross" else "")
+        self.order.append(a)
+        self.busy.discard(a)
+        return problems
+
+    def field(self, ref: str) -> tuple[str, str, list[str]]:
+        """(SQL, kind, problems) for `alias.field`; kind is dimension / yesno / number / time / measure."""
+        qual, _, name = ref.rpartition(".")
+        a = self.alias(qual)
+        view = self.aliases.get(a)
+        if view is None:
+            return "", "", [f"{ref} is not a field of explore {self.base}"]
+        problems = self.use(a)
+        kind = self.p.fields.get(f"{view}.{name}")
+        if kind is None:
+            return "", "", problems + [f"{ref} is not a field of explore {self.base}"]
+        if kind[0] == "time":
+            sql, p = self.p._timeframe(view, kind[1], kind[2], "query", frozenset(), self, a)
+            return sql, "time", problems + p
+        f = self.p._field(view, name) or {}
+        if kind[0] == "measure":
+            sql, p = self.measure(a, view, f, frozenset({f"{a}.{name}"}))
+            return sql, "measure", problems + p
+        ftype = f.get("type", "string")
+        if ftype in ("tier", "location", "distance", "duration"):
+            return "", "", problems + [f"{ref} is a type: {ftype} dimension"]
+        sql, p = self.p._field_sql(view, name, "query", frozenset({f"{a}.{name}"}), self, a)
+        return sql, _type_kind(ftype, "dimension"), problems + p
+
+    def measure(self, a: str, view: str, m: dict[str, Any], seen: frozenset[str]) -> tuple[str, list[str]]:
+        mtype = m.get("type", "count")
+        ref = f"{a}.{m['name']}"
+        problems: list[str] = []
+        conds = []
+        for field, value in _filter_pairs(m):
+            sql, kind, p = self.field(field if "." in field else f"{a}.{field}")
+            problems += p
+            cond = looker_filter_sql(_paren(sql), value, kind) if sql and kind != "measure" else None
+            if cond is None:
+                problems.append(f"measure {ref} filter {field}: {value!r} not translated")
+            else:
+                conds.append(cond)
+        cond = " AND ".join(conds)
+        self.in_measure += 1
+        try:
+            if mtype == "count":
+                pk = self.p._pk(view)
+                if pk is not None:
+                    key, p = self.p._field_sql(view, pk["name"], "query", seen, self, a)
+                    problems += p
+                    self.aggs.append((a, "count_distinct", ref))
+                    return f"COUNT(DISTINCT {f'CASE WHEN {cond} THEN {key} END' if cond else key})", problems
+                self.aggs.append((a, "count", ref))
+                return (f"COUNT(CASE WHEN {cond} THEN 1 END)" if cond else "COUNT(*)"), problems
+            if mtype in QUERY_AGG:
+                expr, p = self.p._expand(view, m.get("sql") or f"${{TABLE}}.{m['name']}", "query", seen, self, a)
+                problems += p
+                self.aggs.append((a, mtype, ref))
+                return QUERY_AGG[mtype].format(f"CASE WHEN {cond} THEN {expr} END" if cond else expr), problems
+            if mtype == "number":
+                if conds:
+                    problems.append(f"measure {ref} is type: number with filters")
+                expr, p = self.p._expand(view, m.get("sql") or "", "query", seen, self, a)
+                if AGG_FN.search(REF.sub("", m.get("sql") or "")):
+                    self.aggs.append((a, "sql", ref))  # aggregates written in SQL: assume rows must not repeat
+                return f"({expr})", problems + p
+            return "", problems + [f"measure {ref} is type: {mtype}"]
+        finally:
+            self.in_measure -= 1
+
+    def _table(self, view: str, problems: list[str]) -> str:
+        """The view's table; its note goes to `notes`, its problem to `problems`."""
+        table, note, problem = self.p.query_table(view)
+        self.notes += [note] if note else []
+        problems += [problem] if problem else []
+        return table
+
+    def snapshot(self) -> tuple:
+        return list(self.order), dict(self.join_sql), dict(self.join_reads), list(self.aggs), set(self.tz)
+
+    def restore(self, snap: tuple) -> None:
+        self.order, self.join_sql, self.join_reads, self.aggs, self.tz = snap
+
+    def risky_joins(self, since: list[str]) -> list[str]:
+        """Joins added after `since` that change rows even when nothing is filtered (not a left x_to_one join)."""
+        return [a for a in self.order if a not in since and (str(self.joins[a].get("type", "left_outer")) != "left_outer"
+                or str(self.joins[a].get("relationship", "many_to_one")) not in ("many_to_one", "one_to_one"))]
+
+    def fanout(self) -> list[str]:
+        rel = {a: str(self.joins[a].get("relationship", "many_to_one")) for a in self.order}
+        many = [a for a, r in rel.items() if r in ("one_to_many", "many_to_many")]
+        outer = [a for a in self.order if self.joins[a].get("type") == "full_outer"]
+        out = []
+        for a, agg, ref in self.aggs:
+            if agg in ("count", "sql") and outer:
+                out.append(f"{ref} counts rows, and the full outer join of {', '.join(outer)} adds rows without a {self.base}")
+                continue
+            if agg in FAN_SAFE:
+                continue
+            direct = rel.get(a) == "one_to_one" and not self.join_reads.get(a)
+            if not many and (a == self.base or direct):
+                continue
+            why = (f"the query joins {', '.join(f'{x} {rel[x]}' for x in many)}" if many
+                   else f"{a} is joined {rel.get(a)}" + ("" if rel.get(a) != "one_to_one" else " through another join"))
+            out.append(f"{ref} ({agg}) counts repeated rows because {why}; Looker uses symmetric aggregates here")
+        return list(dict.fromkeys(out))
+
+    def sql(self, select: list[tuple[str, str]], where: list[str], having: list[str], dims: int, order: list[str], limit: str) -> str:
+        """`select` is (expression, column) with the dimensions first."""
+        table = self._table(self.aliases[self.base], self.problems)
+        lines = ["SELECT"]
+        lines += [f"    {e} AS {c}{',' if i < len(select) - 1 else ''}" for i, (e, c) in enumerate(select)]
+        lines.append(f"FROM {table} AS {self.base}")
+        lines += [self.join_sql[a] for a in self.order]
+        if where:
+            lines.append("WHERE " + "\n  AND ".join(where))
+        if dims:
+            lines.append("GROUP BY " + ", ".join(str(i + 1) for i in range(dims)))
+        if having:
+            lines.append("HAVING " + "\n  AND ".join(having))
+        if order:
+            lines.append("ORDER BY " + ", ".join(order))
+        if limit:
+            lines.append(f"LIMIT {limit}")
+        return "\n".join(lines)
+
+
+VIEW_LISTS = ("dimensions", "dimension_groups", "measures", "filters", "parameters", "sets", "joins")
+DASHBOARD_LISTS = ("elements", "filters")
+
+
+def _merge_view(base: dict[str, Any], override: dict[str, Any], refine: bool = False, named: tuple[str, ...] = VIEW_LISTS) -> dict[str, Any]:
+    """Merge a view, explore or LookML dashboard into another: `named` children (fields, joins; dashboard
+    elements and filters) by name, other keys replaced. `extends` from a refinement adds to the base's;
+    through `extends` it is not inherited."""
     out = {k: v for k, v in base.items()}
     for key, value in override.items():
         if key == "name":
             continue
-        if key in ("dimensions", "dimension_groups", "measures", "filters", "parameters", "sets", "joins") and isinstance(value, list):
-            by_name = {f["name"]: dict(f) for f in out.get(key, [])}
+        if key in named and isinstance(value, list):
+            by_name = {str(f.get("name")): dict(f) for f in out.get(key) or [] if isinstance(f, dict)}
             for f in value:
-                by_name[f["name"]] = {**by_name.get(f["name"], {}), **f}
+                if isinstance(f, dict):
+                    by_name[str(f.get("name"))] = {**by_name.get(str(f.get("name")), {}), **f}
             out[key] = list(by_name.values())
         elif key == "access_filters":
             out[key] = [*out.get(key, []), *(f for f in value if f not in out.get(key, []))]

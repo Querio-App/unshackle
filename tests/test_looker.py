@@ -388,7 +388,7 @@ def test_duplicate_view_prefers_the_included_file(tmp_path: Path):
 def test_unresolved_primary_key_gives_no_entity(tmp_path: Path):
     b = _lookml(tmp_path, {"v.view.lkml": """view: balances {
   sql_table_name: bank.balances ;;
-  dimension: pk { primary_key: yes sql: CONCAT(${TABLE}.account_id, CAST(${balance_date} AS STRING)) ;; }
+  dimension: pk { primary_key: yes sql: CONCAT(${TABLE}.account_id, ${balance_month}) ;; }
   dimension_group: balance { type: time timeframes: [date, month] sql: ${TABLE}.ts ;; }
   measure: count { type: count }
 }"""})

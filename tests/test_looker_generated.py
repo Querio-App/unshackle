@@ -17,7 +17,7 @@ from test_looker import _by_name
 from unshackle.ir import Bundle
 from unshackle.raw import RawStore
 from unshackle.sources import get_source
-from unshackle.sources.looker import TF_GRAIN
+from unshackle.sources.looker import DIALECT_DATES, TF_GRAIN, TIMEFRAME_SQL, timeframe_sql
 from unshackle.target.ossie import AGGS
 
 FIX = Path(__file__).parent / "fixtures" / "looker_generated"
@@ -100,3 +100,37 @@ def test_untranslated_stay_todo(bundle):
     assert "Liquid" in _by_name(_by_name(bundle.semantic_models)["ev_liquid"].dimensions)["user_locale"].todo
     # #30: the UNNEST join is not modelled, and says so
     assert any("UNNEST" in w.message for w in bundle.warnings if "ev_nested_lines" in w.item)
+
+
+# ---------------------------------------------------------------- timeframes (#18)
+
+TIMEFRAMES = ["date", "week", "month", "quarter", "year", "day_of_week", "day_of_week_index", "month_num", "month_name",
+              "quarter_of_year", "week_of_year", "day_of_month", "day_of_year", "hour_of_day"]
+
+
+def _timeframe(tf: str, col: str, dialect: str = "duckdb", week_start: str = "monday") -> str:
+    return TIMEFRAME_SQL[tf].format(col) if tf in TIMEFRAME_SQL else timeframe_sql(tf, col, dialect, week_start)
+
+
+@pytest.mark.parametrize("case,week_start,fields", [
+    ("time", "monday", [(f"created_{tf}", tf, "ts") for tf in TIMEFRAMES]
+     + [(f"day_{tf}", tf, "d") for tf in ("date", "week", "month", "quarter", "year", "day_of_week")]),
+    ("time_week_sunday", "sunday", [("created_week", "week", "ts"), ("created_day_of_week_index", "day_of_week_index", "ts"),
+                                    ("created_week_of_year", "week_of_year", "ts"), ("day_week", "week", "d")]),
+])
+def test_timeframes_return_lookers_values(db, case, week_start, fields):
+    for field, tf, col in fields:
+        ours = dict(db.execute(f"select id, {_timeframe(tf, col, week_start=week_start)} from ev_time").fetchall())
+        theirs = {r["ev_time.id"]: r[f"ev_time.{field}"] for r in looker(case)}
+        assert {k: None if v is None else str(v) for k, v in ours.items()} == {k: None if v is None else str(v) for k, v in theirs.items()}, field
+
+
+@pytest.mark.parametrize("dialect", sorted(DIALECT_DATES))
+def test_timeframe_sql_parses_in_each_dialect(dialect):
+    import sqlglot
+
+    for week_start in ("monday", "sunday", "saturday"):
+        for tf in TIMEFRAMES:
+            sql = _timeframe(tf, "t.created_at", dialect, week_start)
+            assert sql, (dialect, tf)
+            sqlglot.parse_one(f"SELECT {sql} FROM t", read=dialect)
