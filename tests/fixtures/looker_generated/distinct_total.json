@@ -1,9 +1,0 @@
-[
- {
-  "ev_items.count": 7,
-  "ev_items.total_price": 33,
-  "ev_items.shipping_sum_distinct": 38,
-  "ev_items.shipping_avg_distinct": 9.5,
-  "ev_items.shipping_naive_sum": 63
- }
-]

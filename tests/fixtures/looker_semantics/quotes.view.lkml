@@ -1,15 +1,9 @@
-# Evidence views, round 3: the Liquid that real projects use (_dialect._name, date_start / date_end,
-# _is_filtered / _in_query / _is_selected), string and number parameters, filter fields with sql,
-# quoted filter values and the hour / minute timeframes. Same use as evidence.view.lkml.
+# Hand-written: the Liquid projects use (_dialect._name, date_start / date_end, _is_filtered /
+# _in_query / _is_selected, string and number parameters), filter fields with sql, quoted filter
+# values and the hour / minute timeframes, over example.quotes.
 
-view: ev_l {
-  derived_table: {
-    sql:
-      SELECT 1 AS id, 'apple' AS s, 1 AS n, TIMESTAMP '2026-12-31 23:30:45' AS ts UNION ALL
-      SELECT 2, "Levi's", 5, TIMESTAMP '2026-12-01 08:05:00' UNION ALL
-      SELECT 3, "O'Brien", 7, TIMESTAMP '2027-01-03 10:00:00' UNION ALL
-      SELECT 4, CAST(NULL AS STRING), CAST(NULL AS INT64), CAST(NULL AS TIMESTAMP) ;;
-  }
+view: quotes {
+  sql_table_name: example.quotes ;;
   dimension: id { primary_key: yes type: number sql: ${TABLE}.id ;; }
   dimension: s { type: string sql: ${TABLE}.s ;; }
   dimension: n { type: number sql: ${TABLE}.n ;; }
@@ -27,14 +21,13 @@ view: ev_l {
   }
   dimension: range_start { type: string sql: CAST({% date_start date_f %} AS STRING) ;; }
   dimension: range_end { type: string sql: CAST({% date_end date_f %} AS STRING) ;; }
-  dimension: flag_filtered { type: string sql: {% if ev_l.s._is_filtered %} 'yes' {% else %} 'no' {% endif %} ;; }
-  dimension: flag_in_query { type: string sql: {% if ev_l.s._in_query %} 'yes' {% else %} 'no' {% endif %} ;; }
-  dimension: flag_selected { type: string sql: {% if ev_l.s._is_selected %} 'yes' {% else %} 'no' {% endif %} ;; }
+  dimension: flag_filtered { type: string sql: {% if quotes.s._is_filtered %} 'yes' {% else %} 'no' {% endif %} ;; }
+  dimension: flag_in_query { type: string sql: {% if quotes.s._in_query %} 'yes' {% else %} 'no' {% endif %} ;; }
+  dimension: flag_selected { type: string sql: {% if quotes.s._is_selected %} 'yes' {% else %} 'no' {% endif %} ;; }
   dimension: p_str_param { type: string sql: {% parameter p_str %} ;; }
-  dimension: p_str_value { type: string sql: CAST('{{ p_str._parameter_value }}' AS STRING) ;; }
   dimension: p_str_branch { type: string sql: {% if p_str._parameter_value == "'plain'" %} 'quoted' {% elsif p_str._parameter_value == 'plain' %} 'bare' {% else %} 'neither' {% endif %} ;; }
   dimension: p_num_param { type: number sql: {% parameter p_num %} ;; }
 
   measure: count { type: count }
-  measure: in_range { type: count filters: [at_time: "2026-12-01 to 2027-01-01"] }
+  measure: in_range { type: count filters: [at_time: "2027-09-01 to 2027-10-01"] }
 }
