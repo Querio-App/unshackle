@@ -406,9 +406,9 @@ def test_a_data_source_filter_that_cant_be_written_leaves_the_sheets_todo(tmp_pa
     assert not tiles["excl_two"].todo  # sheets on the other data source are unaffected
 
 
-def test_top_n_on_a_sheet_over_related_tables_stays_todo(tmp_path):
-    """A sheet over related tables (the logical layer) aggregates each table on its own; its top N members aren't written
-    there yet, so the sheet is a TODO rather than a sheet without its filter."""
+def test_top_n_on_a_sheet_over_related_tables(tmp_path, con):
+    """A sheet over related tables (the logical layer) aggregates each table on its own, and so does its top N: the statuses
+    ranked by business size with each account counted once per status it has orders in (tests/test_tableau_relationship_filters.py)."""
     fixture = Path(__file__).parent / "fixtures" / "tableau_relationships" / "workbooks" / "e8000000-0000-4000-8000-000000000001.twb"
     flt = ("<filter class='categorical' column='[federated.rel0demo].[none:status:nk]'><groupfilter count='2' end='top' function='end' "
            "units='records'><groupfilter direction='DESC' expression='SUM([business_size])' function='order'><groupfilter "
@@ -419,4 +419,7 @@ def test_top_n_on_a_sheet_over_related_tables_stays_todo(tmp_path):
     store = RawStore(tmp_path, "tableau")
     store.put_text(f"workbooks/{fixture.name}", xml[:cut] + flt + xml[cut + len("<aggregation"):])
     tile = _tiles(get_source("tableau").parse(store))["Business Size by Status"]
-    assert not tile.sql and "a top N or condition filter on a sheet over related tables" in tile.todo
+    assert tile.sql and not tile.todo
+    size = con.sql("select status, sum(business_size) as size from public.accounts join (select distinct account_id, status "
+                   "from public.orders) using (account_id) group by 1 order by 2 desc, 1 limit 2").fetchall()
+    assert sorted(con.sql(tile.sql).fetchall()) == sorted(size)

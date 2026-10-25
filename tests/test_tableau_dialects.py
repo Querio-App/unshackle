@@ -93,7 +93,7 @@ def test_configured_type_applies_when_the_export_names_none(tmp_path: Path):
 
 
 @pytest.mark.parametrize("warehouse", sorted(SQLGLOT))
-@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_analytics", "tableau_display", "tableau_extract", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc"])
+@pytest.mark.parametrize("fixture", ["tableau", "tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_extract", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc"])
 def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, warehouse: str):
     sqlglot = pytest.importorskip("sqlglot")
     b = _parse(tmp_path, fixture, warehouse)
@@ -107,7 +107,7 @@ def test_every_fixture_parses_in_every_dialect(tmp_path: Path, fixture: str, war
     assert not [t.todo for d in b.dashboards for t in d.tiles if f"{warehouse}:" in (t.todo or "")]
 
 
-@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_analytics", "tableau_display", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc"])
+@pytest.mark.parametrize("fixture", ["tableau_lod", "tableau_published", "tableau_dates", "tableau_params", "tableau_relationships", "tableau_relationship_filters", "tableau_analytics", "tableau_display", "tableau_groups", "tableau_dashboards", "tableau_filters", "tableau_cross_db", "tableau_marks", "tableau_tablecalc"])
 @pytest.mark.parametrize("null_cycle", [False, True])
 def test_dialect_forms_return_the_same_rows(tmp_path: Path, fixture: str, null_cycle: bool):
     sqlglot = pytest.importorskip("sqlglot")
