@@ -93,6 +93,49 @@ def test_parse_metrics(tmp_path: Path):
     assert {k for k, x in m.items() if x.todo} == {"Region Revenue Share", "Running Revenue"}
 
 
+def test_unique_count_and_nullif(tmp_path: Path):
+    store = _store(tmp_path)
+    tml = tmp_path / "migration" / "raw" / "thoughtspot" / "tml" / "model" / f"{MODEL}.tml"
+    doc = yaml.safe_load(tml.read_text())
+    doc["model"]["formulas"] += [
+        {"id": f"f_{name}", "name": name, "expr": expr} for name, expr in [
+            ("Unique Customers", "unique count ( [FCT_ORDERS::CUSTOMER_ID] )"),
+            ("Revenue per Customer", "sum ( [FCT_ORDERS::AMOUNT] ) / nullif ( unique count ( [FCT_ORDERS::CUSTOMER_ID] ) , 0 )"),
+            ("Safe Revenue per Order", "safe_divide ( sum ( [FCT_ORDERS::AMOUNT] ) , nullif ( Unique Count ( [FCT_ORDERS::ORDER_ID] ) , 0 ) )"),
+            ("Discount Rate", "[FCT_ORDERS::DISCOUNT] / nullif ( [FCT_ORDERS::AMOUNT] , 0 )"),
+            ("Known Region", "nullif ( [FCT_ORDERS::REGION] , 'unknown' )"),
+            ("Undiscounted Amount", "nullif ( [FCT_ORDERS::AMOUNT] , [FCT_ORDERS::DISCOUNT] )"),
+            ("Literal Flag", "if ( [FCT_ORDERS::STATUS] = 'unique count (x)' ) then 1 else 0"),
+        ]
+    ]
+    tml.write_text(yaml.safe_dump(doc, sort_keys=False))
+    b = get_source("thoughtspot").parse(store)
+    m = _by_name(b.metrics)
+    orders = _by_name(b.semantic_models)["orders"]
+    meas = _by_name(orders.measures)
+    assert not any(m[n].todo for n in ("Unique Customers", "Revenue per Customer", "Safe Revenue per Order"))
+    assert (meas[m["Unique Customers"].measure].agg, meas[m["Unique Customers"].measure].expr) == ("count_distinct", "customer_id")
+    rpc = m["Revenue per Customer"]
+    assert (rpc.type, rpc.numerator, rpc.denominator) == ("ratio", "revenue", "unique_customers")
+    assert (m["Safe Revenue per Order"].type, m["Safe Revenue per Order"].denominator) == ("ratio", "order_count")
+    dims = _by_name(orders.dimensions)
+    assert dims["discount_rate"].expr == "1.0 * discount / nullif(amount, 0)"
+    assert dims["known_region"].expr == "nullif(region, 'unknown')"
+    und = dims["undiscounted_amount"].expr
+    assert und == "nullif(amount, discount)"
+    assert dims["literal_flag"].expr == "case when status = 'unique count (x)' then 1 else 0 end"
+    assert not any(d.todo for d in dims.values())
+
+    import duckdb
+
+    con = duckdb.connect()
+    rows = [(5, 5), (5, 3), (None, 3), (5, None), (None, None)]
+    for a, d in rows:
+        got, want = con.execute(
+            f"select {und.replace('amount', '$1').replace('discount', '$2')}, nullif($1, $2)", [a, d]).fetchone()
+        assert got == want
+
+
 def test_parse_liveboard(tmp_path: Path):
     b = get_source("thoughtspot").parse(_store(tmp_path))
     (d,) = b.dashboards

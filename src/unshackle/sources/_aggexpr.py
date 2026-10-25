@@ -288,6 +288,7 @@ ROW_FUNCS: dict[str, tuple[str, int | None]] = {
     "ceiling": ("ceil({0})", 1),
     "ceil": ("ceil({0})", 1),
     "coalesce": ("coalesce({args})", None),
+    "nullif": ("nullif({0}, {1})", 2),
     "ifnull": ("coalesce({args})", None),
     "zn": ("coalesce({0}, 0)", 1),
     "isnull": ("({0} is null)", 1),

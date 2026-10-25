@@ -91,9 +91,11 @@ unshackle build thoughtspot
 | `joins` (`with`, `on: [A::x] = [B::y]`, `cardinality`, or `referencing_join` -> table `joins_with`) | foreign entity on the many side, primary on the one side |
 | column `column_type: ATTRIBUTE` | dimension; `DATE`/`DATE_TIME` -> time (day) |
 | column `column_type: MEASURE`, `aggregation: SUM/COUNT/COUNT_DISTINCT/AVERAGE/MIN/MAX/MEDIAN` | measure + simple metric (other aggregations -> TODO) |
-| formula `sum/count/unique_count/average/min/max/median ( x )` | measure + simple metric |
+| formula `sum/count/unique_count/average/min/max/median ( x )` (also `unique count ( x )`) | measure + simple metric |
 | `sum_if / count_if / unique_count_if / average_if ( cond , x )` | simple metric with `filter` |
 | `safe_divide ( a , b )`, `a / b` over aggregates or measure columns | ratio metric (helper metrics added) |
+| `a / nullif ( b , 0 )`, `safe_divide ( a , nullif ( b , 0 ) )` | same as `a / b` (generated division already uses `nullif(b, 0)`) |
+| `nullif ( a , b )` elsewhere | `nullif(a, b)` |
 | arithmetic over measure columns (`[Revenue] - [Refunds]`) | derived metric |
 | MEASURE formula over a row expression (`[A] - [B]`, `aggregation: SUM`) | measure with that `expr` |
 | `if ( c ) then a else b`, `start_of_month ( d )`, `concat`, `lower`, `round`, ... | dimension `expr` (`CASE`, `date_trunc('month', d)`, ...) |
