@@ -139,6 +139,8 @@ TABLE_CALC = re.compile(
 USER_FN = re.compile(r"\b(USERNAME|ISMEMBEROF|USERDOMAIN|FULLNAME|ISUSERNAME|ISFULLNAME|USERATTRIBUTE\w*)\s*\(", re.I)
 ATTR_FN = re.compile(r"\bATTR\s*\(", re.I)
 DATE_LIT = re.compile(r"#(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2})?#")
+# a number Tableau writes with a trailing dot (filter conditions: `SUM([Sales]) >= 1000000.`), outside strings and [fields]
+TRAILING_DOT = re.compile(r"""'(?:[^']|'')*'|"(?:[^"]|"")*"|\[(?:[^\]]|\]\])*\]|(?<![\w.])(\d+)\.(?![\d\w])""")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # connection attributes that change what the warehouse returns, and how the migration carries them
 CONNECTION_SETTINGS = {
@@ -147,6 +149,8 @@ CONNECTION_SETTINGS = {
 }
 INITIAL_SQL_VARS = re.compile(r"\[(TableauServerUser(?:Full)?|TableauApp|TableauVersion|WorkbookName)\]")
 NODE_LIMIT = "NODE_LIMIT_EXCEEDED"
+# the date relative date filters count from (Tableau's today); None: the warehouse's current_date
+AS_OF = DashboardFilter("as_of", "", None, "date")
 SKILL = "skills/source-tableau"
 
 GQL_WORKBOOKS = """
@@ -882,6 +886,21 @@ def _member_py(v: str | None) -> Any:
     return v
 
 
+def _in_sql(expr: str, values: list[str | None], exclude: bool) -> str:
+    """A categorical filter's list of values. Tableau keeps NULL rows when it excludes values, unless NULL is one of them."""
+    lits = [_member_sql(v) for v in values]
+    nonnull = list(dict.fromkeys(x for x in lits if x is not None))
+    has_null = len(nonnull) < len(lits)
+    x = _paren(expr)
+    if not nonnull:
+        return f"{x} is {'not ' if exclude else ''}null" if has_null else ("true" if exclude else "false")
+    one = len(nonnull) == 1
+    test = f"{x} {('<>' if one else 'not in') if exclude else ('=' if one else 'in')} {nonnull[0] if one else '(' + ', '.join(nonnull) + ')'}"
+    if exclude:
+        return f"({test} and {x} is not null)" if has_null else f"({test} or {x} is null)"
+    return f"({test} or {x} is null)" if has_null else test
+
+
 def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     """-> (formula without // comments, code with strings blanked, code with strings and [fields] blanked, comments)."""
     clean: list[str] = []
@@ -1039,6 +1058,7 @@ class _TabParser(ax._Parser):
 def parse_formula(text: str, dates: "_DateOpts | None" = None) -> ax.Node:
     """`dates`: the datasource's Date Properties, which DATETRUNC/DATEPART/DATENAME of weeks, quarters and years follow."""
     text = DATE_LIT.sub(lambda m: f"DATETIME('{m.group(1)}{m.group(2)}')" if m.group(2) else f"DATE('{m.group(1)}')", text)
+    text = TRAILING_DOT.sub(lambda m: f"{m.group(1)}.0" if m.group(1) else m.group(0), text)
     if not text.strip():
         raise ax.FormulaError("empty formula")
     return _normalize(_dates(_TabParser(text).parse(), dates or _DateOpts()))
@@ -1348,6 +1368,7 @@ class TDatasource:
     fields: dict[str, TField] = field(default_factory=dict)
     joins: list[str] = field(default_factory=list)
     filters: list[ET.Element] = field(default_factory=list)
+    extract_filters: list[ET.Element] = field(default_factory=list)  # <extract enabled='true'><filter>: the extract holds only those rows
     connection_class: str = ""
     published: str = ""  # sqlproxy dbname (published datasource content url)
     # left-deep join tree as steps after the first relation: (join type, right relation name, ON column pairs
@@ -1436,11 +1457,13 @@ class _Lod:
     dims: list[str] = field(default_factory=list)  # the FIXED fields' local names
     cols: dict[str, str] = field(default_factory=dict)  # output column -> aggregate SQL
     model: "_Model | None" = None
+    where: str = ""  # the datasource's extract and data source filters, which Tableau applies before FIXED LODs
 
     def select(self) -> str:
         items = [sql if sql == alias else f"{sql} as {alias}" for sql, alias in self.keys]
         items += [f"{sql} as {alias}" for alias, sql in self.cols.items()]
-        return (f"select {', '.join(items)}\nfrom {self.from_sql}\n"
+        where = f"where {self.where}\n" if self.where else ""
+        return (f"select {', '.join(items)}\nfrom {self.from_sql}\n{where}"
                 f"group by {', '.join(str(i) for i in range(1, len(self.keys) + 1))}")
 
     def sql(self) -> str:
@@ -1462,6 +1485,16 @@ class _Special:
     # sheet's rows) or ("fixed", _Special of a FIXED aggregate)
     expr: str = ""
     parts: list[tuple[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class _MemberSet:
+    """The members a categorical filter keeps, computed as Tableau nests its <groupfilter>s: a list (or all members), then
+    wildcard and other per-member conditions, then aggregate conditions per member, then top N."""
+
+    preds: list[str] = field(default_factory=list)  # row-level predicates (on the member's value)
+    having: list[str] = field(default_factory=list)  # aggregate conditions per member
+    top: tuple[str, str, str] | None = None  # (aggregate SQL, asc | desc, count SQL)
 
 
 @dataclass
@@ -1603,6 +1636,9 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
             f.relation = next(iter(ds.relations))
     ds.filters = el.findall("filter")
     ds.default_sorts = [s for d in el.findall("default-sorts") for s in d]
+    ex = el.find("extract")
+    if ex is not None and ex.get("enabled") != "false":
+        ds.extract_filters = ex.findall("filter")
     for dp in el.findall("drill-paths/drill-path"):
         ds.hierarchies.append((dp.get("name", ""), [_unbracket(x.text) for x in dp.findall("field") if x.text]))
     for folder in el.findall("folder") + el.findall("folders-common/folder"):
@@ -1855,6 +1891,7 @@ class _Parser:
                 for m in (self.ds_models.get(ds.uid) or {}).values():
                     self._describe(m, note)
             self._display(ds)
+            self._ds_filter_rules(ds)
         for lod in self.lod_names.values():
             if lod.model is not None:
                 lod.model.sm.sql = lod.sql()
@@ -2867,6 +2904,7 @@ class _Parser:
         prev, self._joined = self._joined, (ds if joined else None)
         try:
             keys = [(self._row_ref(ds, d), _name(ds.fields[d].label)) for d in dims]
+            where = " and ".join(self._ds_where(ds))  # extract and data source filters come before FIXED
             if inner is None:
                 cl = self._classify(ds, node, lambda r: self._row_ref(ds, r), lambda r: None)
             else:
@@ -2881,15 +2919,16 @@ class _Parser:
             lod_in, col_in = inner
             domain = ", ".join([f"{s} as {a}" for s, a in keys] + [f"{k} as lod_key_{j}" for j, k in enumerate(inner_keys, 1)])
             on = " and ".join(f"d.lod_key_{j} is not distinct from {lod_in.name}.{a}" for j, (_, a) in enumerate(lod_in.keys, 1))
-            from_sql = (f"(\nselect distinct {domain}\nfrom {from_sql}\n) as d\n"
+            from_sql = (f"(\nselect distinct {domain}\nfrom {from_sql}{f' where {where}' if where else ''}\n) as d\n"
                         f"left join (\n{lod_in.select()}\n) as {lod_in.name} on {on}")
             keys = [(f"d.{a}", a) for _, a in keys]
+            where = ""
             agg_sql = AGG_SQL[TABLEAU_AGGS[nested[0]][0]].format(f"{lod_in.name}.{_ident(col_in)}")  # type: ignore[index]
         elif cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
             raise ax.FormulaError("the expression after ':' is not one aggregate")
         else:
             agg_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
-        key = (from_sql, cte, tuple(k for k, _ in keys))
+        key = (from_sql, cte, tuple(k for k, _ in keys), where)
         lod = self.lods.get(key)
         if lod is None:
             taken = {mm.sm.name for mm in self.models.values()} | set(self.lod_names)
@@ -2897,7 +2936,7 @@ class _Parser:
             name, n = base, 2
             while name in taken:
                 name, n = f"{base}_{n}", n + 1
-            lod = _Lod(name, keys, from_sql, cte, dims)
+            lod = _Lod(name, keys, from_sql, cte, dims, where=where)
             self.lods[key] = lod
             self.lod_names[name] = lod
             if len(dims) == 1:
@@ -3632,6 +3671,7 @@ class _Parser:
         if join_todo:
             todos.append(join_todo)
         qualify_one = False  # one table, its columns qualified (FIXED grains are joined to it)
+        members: list = []  # top N and condition filters: (member SQL, _MemberSet[, the filters computed before them])
 
         sorts = sheet_sorts(view, tile_ds.default_sorts if tile_ds is not None else [])
 
@@ -3639,6 +3679,7 @@ class _Parser:
             self._sheet = _SheetCtx(tile_ds, sorts=sorts)
             self._joined = tile_ds if (join_from or qualify_one or rel_tile) else None
             problems, columns, dropped, notes = [], [], set(), []
+            members.clear()
             for r, critical in ordered:
                 try:
                     alias, sql, is_agg, display, etype, unit = self._rel_column(r) if rel_tile else self._column(r)
@@ -3651,7 +3692,15 @@ class _Parser:
                     continue
                 columns.append((r, alias, sql, is_agg, display, etype, unit))
             notes += self._aliases(columns) + self._sort_aggregates(wb, columns, deps)
+            # Tableau's order: extract and data source filters, context filters, then FIXED LODs, top N and conditions
+            # (each over the context's rows, independently of the sheet's other filters), dimension filters, measure filters.
             where, having, order, limit = list(self._sheet.member_sets), [], [], ""
+            context: list[str] = []  # context filters (#79 adds them to the FIXED LODs; tile SQL has them before top N)
+            try:
+                ds_where = self._ds_where(tile_ds) if tile_ds is not None else []
+            except ax.FormulaError as exc:
+                ds_where = []
+                problems.append(f"{exc}: Tableau applies it to every sheet on the data source, before FIXED LODs; add it to the SQL")
             for flt in view.findall("filter"):
                 res = self._filter(wb, flt, deps, meta)
                 if res is None:
@@ -3659,13 +3708,19 @@ class _Parser:
                 k, v = res
                 if k == "where":
                     where.append(v)
+                    if flt.get("context") == "true":
+                        context.append(v)
                 elif k == "having":
                     having.append(v)
-                elif k == "top":
-                    order, limit = [v[0]], v[1]
+                elif k == "members":
+                    if flt.get("context") == "true":
+                        notes.append("a top N or condition filter in the context: other top N and condition filters here are "
+                                     "computed without it; Tableau computes them over its members")
+                    members.append(v)
                 else:
                     notes.append(v)
-            return problems, columns, dropped, notes, where, having, order, limit
+            members[:] = [(expr, ms, ds_where + context) for expr, ms in members]
+            return problems, columns, dropped, notes, ds_where + where, having, order, limit
 
         problems, columns, dropped, notes, where, having, order, limit = build()
         uses_lod = bool(self._sheet.row_lods) or any(sp.kind == "fixed" for sp in self._sheet.specials.values())  # type: ignore[union-attr]
@@ -3696,6 +3751,9 @@ class _Parser:
         sql = totals_sql = ""
         if problems:
             todos += problems
+        elif rel_tile and tile_ds is not None and members:
+            todos.append("a top N or condition filter on a sheet over related tables: compute its members (over the rows the "
+                         "context leaves) and keep their rows in the tile SQL")
         elif rel_tile and tile_ds is not None:
             columns = [c for c in columns if not c[3]] + [c for c in columns if c[3]]
             try:
@@ -3710,11 +3768,11 @@ class _Parser:
                 from_sql = f"{from_sql} as {_ident(model.rel.name)}"
             dims = [c for c in columns if not c[3]]
             columns = dims + [c for c in columns if c[3]]
-            totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit))
+            totals, note = self._totals(name, kind, table, rows, cols, columns, bool(having or limit or members))
             try:
-                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit)
+                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, members=members)
                 if totals:  # Tableau's Automatic totals; Total Using isn't in the file, so they stay a TODO with this SQL
-                    totals_sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals)
+                    totals_sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit, totals, members)
                     if self.dialect in dialect.DIALECTS:
                         keep = tuple(r.sql for r in (tile_ds.relations.values() if tile_ds else []) if r.kind == "text" and r.sql)
                         try:
@@ -4324,10 +4382,12 @@ class _Parser:
         return r.field is not None and r.field.is_calc and bool((c := self.cache.get((ds.uid, r.field.local))) and c.lod)
 
     def _tile_sql(self, columns: list, from_sql: str, cte: str, where: list[str], having: list[str], order: list[str], limit: str,
-                  totals: list[list[str]] | None = None) -> str:
+                  totals: list[list[str]] | None = None, members: list | tuple = ()) -> str:
         """SELECT for a sheet. Aggregated LODs are computed in their own CTEs at the sheet's grain and joined on its dimensions.
         `totals`: grouping sets (dimension instances) for the sheet's totals; each totalled dimension gets a `<alias>_total`
-        column (1 on its total rows), and total rows sort after their group."""
+        column (1 on its total rows), and total rows sort after their group. A top N or condition filter's members are a CTE
+        over the rows its filters leave (`members`: (member SQL, _MemberSet, those filters)), and the sheet keeps the rows of
+        those members."""
         ctx = self._sheet
         assert ctx is not None
         dims = [c for c in columns if not c[3]]
@@ -4337,6 +4397,15 @@ class _Parser:
         lods = list(dict.fromkeys(ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None] + [p.lod for p in fixed_parts]))
         ctes = ([("custom_sql", cte)] if cte else []) + [(lod.name, lod.select()) for lod in lods]
         rows = from_sql + "".join(f"\nleft join {lod.name} on {self._lod_on(lod)}" for lod in ctx.row_lods)
+        where = list(where)
+        for i, (expr, ms, before) in enumerate(members, 1):
+            name, x = f"filter_{i}", _paren(expr)
+            pre = before + ms.preds
+            inner = (f"select {expr} as member" + (f", row_number() over (order by {ms.top[0]} {ms.top[1]}, {x}) as filter_rank" if ms.top else "")
+                     + f"\nfrom {rows}" + ("\nwhere " + "\n  and ".join(pre) if pre else "") + "\ngroup by 1"
+                     + ("\nhaving " + " and ".join(ms.having) if ms.having else ""))
+            ctes.append((name, f"select member from (\n{inner}\n) as ranked\nwhere filter_rank <= {ms.top[2]}" if ms.top else inner))
+            where.append(f"({x} in (select member from {name}) or ({x} is null and exists (select 1 from {name} where member is null)))")
         where_sql = ("\nwhere " + "\n  and ".join(where)) if where else ""
 
         def group(n: int) -> str:
@@ -4488,6 +4557,7 @@ class _Parser:
         return " and ".join(f"{k} is not distinct from {lod.name}.{alias}" for k, (_, alias) in zip(self._lod_keys(lod), lod.keys))
 
     def _filter(self, wb: _Workbook, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, Any] | None:
+        """A worksheet filter -> ("where" | "having", SQL), ("members", (member SQL, _MemberSet)), ("todo", note) or None."""
         refs = self._shelf(wb, flt.get("column"), deps)
         if not refs:
             return None
@@ -4515,43 +4585,36 @@ class _Parser:
         if bound is not None:
             return bound
         cls = flt.get("class", "")
+        try:
+            res = self._filter_sql(wb, r.ds, flt, expr, is_agg, r.field)
+        except ax.FormulaError as exc:
+            what = "top N" if any(g.get("function") == "end" for g in flt.iter("groupfilter")) else cls
+            return ("todo", f"{what} filter on [{label}] not translated ({exc}); add it to the SQL")
+        if res is not None and ":as_of" in str(res[1]) and not any(b.name == "as_of" for b in meta.get("binds", [])):
+            meta.setdefault("binds", []).append(AS_OF)
+        return res
+
+    def _filter_sql(self, wb: _Workbook | None, ds: TDatasource | None, flt: ET.Element, expr: str, is_agg: bool,
+                    f: TField | None, as_of: bool = True) -> tuple[str, Any] | None:
+        """A <filter> on `expr` (its field's SQL) in Tableau's semantics. None: it keeps every row. `as_of`: relative dates count
+        from the :as_of bind (else the warehouse's current date). Raises FormulaError when it can't be written faithfully."""
+        cls = flt.get("class", "")
         clause = "having" if is_agg else "where"
         if cls == "categorical":
             gf = flt.find("groupfilter")
             if gf is None:
                 return None
-            res = self._members(gf)
-            if res is None:
-                return ("todo", f"filter on [{label}] ({gf.get('function')}) not translated; add it to the SQL")
-            k, vals = res
-            if k == "all":
-                return None
-            if k == "top":
-                count, expression, end = vals
-                try:
-                    osql = self._expression_sql(r.ds, expression)
-                except ax.FormulaError as exc:
-                    return ("todo", f"top-N filter on [{label}] by {expression} not translated ({exc})")
-                return ("top", (f"{osql} {'desc' if end != 'bottom' else 'asc'}", count))
-            lits = [_member_sql(v) for v in vals]
-            nonnull = [x for x in lits if x is not None]
-            expr = _paren(expr)
-            parts = []
-            if nonnull:
-                op = "=" if len(nonnull) == 1 else "in"
-                rhs = nonnull[0] if len(nonnull) == 1 else f"({', '.join(nonnull)})"
-                if k == "not in":
-                    op = "<>" if op == "=" else "not in"
-                parts.append(f"{expr} {op} {rhs}")
-            if len(nonnull) < len(lits):
-                parts.append(f"{expr} is {'not ' if k == 'not in' else ''}null")
-            if not parts:
-                return None
-            joiner = " and " if k == "not in" else " or "
-            return (clause, parts[0] if len(parts) == 1 else "(" + joiner.join(parts) + ")")
+            ms = self._groupfilter(wb, ds, gf, expr)
+            if ms.having or ms.top:
+                if is_agg:
+                    raise ax.FormulaError("a condition or top N on an aggregate's values")
+                return ("members", (expr, ms))
+            return (clause, " and ".join(ms.preds)) if ms.preds else None
         if cls == "quantitative":
             lo, hi = flt.findtext("min"), flt.findtext("max")
             inc = flt.get("included-values", "in-range")
+            if inc == "null":
+                return (clause, f"{expr} is null")
             parts = []
             for bound, op in ((lo, ">="), (hi, "<=")):
                 if bound is not None and bound.strip():
@@ -4565,44 +4628,208 @@ class _Parser:
                 cond = f"({cond} or {expr} is null)"
             return (clause, cond)
         if cls == "relative-date":
-            return ("todo", f"relative date filter on [{label}] (last {flt.get('period-type-v2') or flt.get('period-type', '')} "
-                            f"{flt.get('first-period', '')}..{flt.get('last-period', '')}): pin a fixed window or add :date_from/:date_to binds")
-        return ("todo", f"{cls} filter on [{label}] not translated")
+            if is_agg:
+                raise ax.FormulaError("a relative date filter on an aggregate")
+            return (clause, self._relative_date(ds, flt, expr, f, as_of))
+        raise ax.FormulaError(f"{cls or 'unknown'} filters are not translated")
 
-    def _members(self, gf: ET.Element) -> tuple[str, Any] | None:
+    def _relative_date(self, ds: TDatasource | None, flt: ET.Element, expr: str, f: TField | None, as_of: bool) -> str:
+        """Tableau's relative date filter: whole periods from first-period to last-period around the anchor (period-anchor, else
+        today), the anchor's period being 0; weeks start on the datasource's Week start. "To date" (include-future='false') stops
+        at the anchor's day. NULL dates are kept only with include-null='true'."""
+        period = (flt.get("period-type-v2") or flt.get("period-type") or "").lower()
+        period = period[:-1] if period.endswith("s") else period
+        if period not in ("day", "week", "month", "quarter", "year"):
+            raise ax.FormulaError(f"relative {period or 'unknown'} periods")
+        try:
+            first, last = int(flt.get("first-period", "0")), int(flt.get("last-period", "0"))
+        except ValueError:
+            raise ax.FormulaError("first-period / last-period are not numbers") from None
+        m = re.search(r"\d{4}-\d{2}-\d{2}", flt.get("period-anchor") or "")
+        anchor = f"cast('{m.group(0)}' as date)" if m else "coalesce(cast(:as_of as date), current_date)" if as_of else "current_date"
+        opts = date_opts(ds)
+        if period in ("week", "quarter", "year"):
+            start = date_sql("trunc", period, anchor, opts) or f"date_trunc('{period}', {anchor})"
+        else:
+            start = f"date_trunc('month', {anchor})" if period == "month" else anchor
+        months = {"month": 1, "quarter": 3, "year": 12}.get(period, 0)
+
+        def at(n: int) -> str:
+            if months:
+                return _shift(start, n * months)
+            days = n * (7 if period == "week" else 1)
+            return start if not days else f"{start} {'+' if days > 0 else '-'} interval '{abs(days)} day'"
+
+        cond = f"{expr} >= {at(first)} and {expr} < {at(last + 1)}"
+        if flt.get("include-future") == "false":
+            if f is not None and f.datatype != "date":
+                raise ax.FormulaError("a period to date on a date and time field (Tableau stops at the current time)")
+            cond += f" and {expr} <= {anchor}"
+        return f"({cond} or {expr} is null)" if flt.get("include-null") == "true" else cond
+
+    def _groupfilter(self, wb: _Workbook | None, ds: TDatasource | None, gf: ET.Element, expr: str) -> _MemberSet:
+        """A categorical filter's <groupfilter> tree on the member SQL `expr`. Tableau keeps NULL rows when it excludes values,
+        unless NULL is one of them; a top N keeps exactly N members (ties go to the first members in ascending order)."""
         fn = gf.get("function", "")
-        children = gf.findall("groupfilter")
-        if fn == "member":
-            return ("in", [gf.get("member")])
-        if fn == "union":
-            vals: list[Any] = []
-            for c in children:
-                res = self._members(c)
-                if res is None or res[0] != "in":
-                    return None
-                vals += res[1]
-            return ("in", vals)
+        kids = gf.findall("groupfilter")
         if fn == "level-members":
-            return ("all", [])
-        if fn == "except" and len(children) == 2 and children[0].get("function") == "level-members":
-            res = self._members(children[1])
-            return ("not in", res[1]) if res and res[0] == "in" else None
-        if fn == "end":
-            order = next((c for c in gf.iter("groupfilter") if c.get("function") == "order"), None)
-            if order is not None and order.get("expression") and gf.get("count", "").isdigit():
-                return ("top", (int(gf.get("count", "0")), order.get("expression", ""), gf.get("end", "top")))
-        return None
+            return _MemberSet()
+        if fn in ("member", "union"):
+            return _MemberSet([_in_sql(expr, self._member_values(gf), exclude=False)])
+        if fn == "except" and len(kids) == 2:
+            base = self._groupfilter(wb, ds, kids[0], expr)
+            if base.having or base.top:
+                raise ax.FormulaError("values excluded from a condition or top N")
+            return _MemberSet(base.preds + [_in_sql(expr, self._member_values(kids[1]), exclude=True)])
+        if fn == "range" and not kids:
+            parts = [f"{expr} {op} {lit}" for attr, op in (("from", ">="), ("to", "<=")) if (lit := _member_sql(gf.get(attr)))]
+            return _MemberSet(parts)
+        if fn == "filter" and gf.get("expression") and len(kids) == 1:
+            inner = self._groupfilter(wb, ds, kids[0], expr)
+            if ds is None:
+                raise ax.FormulaError("no datasource")
+            node = parse_formula(scan_formula(gf.get("expression", ""))[0], date_opts(ds))
+            if inner.top:
+                raise ax.FormulaError("a condition on a top N's members")
+            if _has_agg(node):
+                inner.having.append(self._agg_formula_sql(ds, node))
+            elif inner.having:
+                raise ax.FormulaError("a wildcard on a condition's members")
+            else:
+                inner.preds.append(ax.strip_outer(self._sql(ds, node, lambda n: self._row_ref(ds, n))))
+            return inner
+        if fn == "end" and len(kids) == 1 and kids[0].get("function") == "order" and kids[0].get("expression"):
+            order = kids[0]
+            if (gf.get("units") or "records") != "records":
+                raise ax.FormulaError(f"top N by {gf.get('units')}")
+            if ds is None or len(order.findall("groupfilter")) != 1:
+                raise ax.FormulaError("top N of a set Tableau computes elsewhere")
+            inner = self._groupfilter(wb, ds, order.find("groupfilter"), expr)  # type: ignore[arg-type]
+            agg = self._agg_formula_sql(ds, parse_formula(scan_formula(order.get("expression", ""))[0], date_opts(ds)))
+            count = (gf.get("count") or "").strip()
+            pm = re.fullmatch(r"\[Parameters\]\.\[(.+)\]", count)
+            if pm and wb is not None and _unesc(pm.group(1)) in wb.params:
+                count = ":" + _name(wb.params[_unesc(pm.group(1))].label)
+            elif not count.isdigit():
+                raise ax.FormulaError(f"top N count {count!r}")
+            descending = (order.get("direction") or "DESC").upper() == "DESC"
+            inner.top = (agg, "desc" if descending == (gf.get("end", "top") != "bottom") else "asc", count)
+            return inner
+        raise ax.FormulaError(f"{fn or 'unknown'} groupfilter")
 
-    def _expression_sql(self, ds: TDatasource | None, expression: str) -> str:
-        if ds is None:
-            raise ax.FormulaError("no datasource")
-        node = parse_formula(scan_formula(expression)[0], date_opts(ds))
-        cl = self._classify(ds, node, lambda r: self._row_ref(ds, r), lambda r: self._metric_ref(ds, r))
-        if cl.kind == "agg" and cl.agg is not None and cl.agg.condition is None:
-            return AGG_SQL[cl.agg.agg].format(cl.agg.expr)
-        if cl.kind == "derived" and len(cl.metrics) == 1 and cl.expr == cl.metrics[0]:
-            return self.metric_sql[cl.metrics[0]]
-        raise ax.FormulaError("not a single aggregate")
+    def _member_values(self, gf: ET.Element) -> list[str | None]:
+        fn = gf.get("function", "")
+        if fn == "member":
+            return [gf.get("member")]
+        if fn == "union":
+            return [v for c in gf.findall("groupfilter") for v in self._member_values(c)]
+        raise ax.FormulaError(f"{fn or 'unknown'} groupfilter in a list of values")
+
+    def _agg_formula_sql(self, ds: TDatasource, node: ax.Node) -> str:
+        """An expression over aggregates (a condition, a top N's order): each aggregate over the rows, then the expression."""
+        parts: dict[str, str] = {}
+
+        def put(sql: str) -> ax.Node:
+            key = f"\x00agg{len(parts)}"
+            parts[key] = sql
+            return ax.Ref(key)
+
+        def walk(n: ax.Node) -> ax.Node:
+            if isinstance(n, ax.Call) and n.name in TABLEAU_AGGS:
+                if len(n.args) != 1 or _has_agg(n.args[0]):
+                    raise ax.FormulaError(f"{n.name.upper()} of an aggregate")
+                inner = ax.strip_outer(self._sql(ds, n.args[0], lambda r: self._row_ref(ds, r)))
+                return put(AGG_SQL[TABLEAU_AGGS[n.name][0]].format(inner))
+            if isinstance(n, ax.Ref):
+                g = ds.fields.get(n.name)
+                c = self.cache.get((ds.uid, g.local)) if g is not None and g.is_calc else None
+                if g is None or c is None or c.kind != "agg":
+                    raise ax.FormulaError(f"[{g.label if g else n.name}] outside an aggregate")
+                try:
+                    return put(_paren(self._agg_sql(ds, g, c)))
+                except _NoSQL as exc:
+                    raise ax.FormulaError(str(exc)) from None
+            if isinstance(n, ax.Call):
+                return ax.Call(n.name, [walk(a) for a in n.args])
+            if isinstance(n, ax.BinOp):
+                return ax.BinOp(n.op, walk(n.left), walk(n.right))
+            if isinstance(n, ax.Unary):
+                return ax.Unary(n.op, walk(n.operand))
+            return n
+
+        return ax.strip_outer(self._sql(ds, walk(node), lambda r: parts[r]))
+
+    def _ds_filters(self, ds: TDatasource) -> list[tuple[TDatasource, str, ET.Element]]:
+        """The extract and data source filters every sheet on `ds` gets (a published datasource's own first): (owner, kind, filter).
+        User filters (USERNAME() / ISMEMBEROF() calcs) are left to the row filters."""
+        out, seen = [], set()
+        for owner in [d for d in (ds.origin, ds) if d is not None]:
+            for kind, flts in (("extract", owner.extract_filters), ("data source", owner.filters)):
+                for flt in flts:
+                    key = ET.tostring(flt)
+                    g = owner.fields.get(_unbracket(flt.get("column")))
+                    if key in seen or (g is not None and g.formula and USER_FN.search(scan_formula(g.formula)[2])):
+                        continue
+                    seen.add(key)
+                    out.append((owner, kind, flt))
+        return out
+
+    def _ds_filter_sql(self, ds: TDatasource, flt: ET.Element, as_of: bool = False) -> str:
+        """One extract or data source filter as a predicate over the datasource's rows (in the current FROM)."""
+        local = _unbracket(flt.get("column"))
+        g = ds.fields.get(local)
+        if g is None:
+            raise ax.FormulaError(f"filter on unknown field [{local}]")
+        res = self._filter_sql(None, ds, flt, _paren(self._row_ref(ds, local)), False, g, as_of)
+        if res is not None and res[0] != "where":
+            raise ax.FormulaError(f"a condition or top N on [{g.label}]")
+        return res[1] if res else ""
+
+    def _ds_where(self, ds: TDatasource) -> list[str]:
+        """The extract and data source filters as predicates over the datasource's rows: Tableau applies them to every sheet,
+        before FIXED LODs and before the sheet's own filters. Raises FormulaError when one can't be written faithfully."""
+        out = []
+        for owner, kind, flt in self._ds_filters(ds):
+            g = ds.fields.get(_unbracket(flt.get("column")))
+            try:
+                pred = self._ds_filter_sql(ds, flt)
+            except ax.FormulaError as exc:
+                raise ax.FormulaError(f"{kind} filter on [{g.label if g else flt.get('column')}] not translated ({exc})") from None
+            if pred:
+                out.append(pred)
+        return out
+
+    def _ds_filter_rules(self, ds: TDatasource) -> None:
+        """A datasource's own extract and data source filters in the semantic layer: a row filter on the table of the filtered
+        field (and through inner joins on the others), with a note, since the table may be read without them elsewhere."""
+        for owner, kind, flt in self._ds_filters(ds):
+            if owner is not ds:
+                continue
+            g = ds.fields.get(_unbracket(flt.get("column")))
+            model = self._field_model(ds, g) if g is not None else None
+            label = g.label if g else _unbracket(flt.get("column"))
+            rows = "the extract holds only these rows, so every sheet" if kind == "extract" else "every sheet"
+            note = (f"Tableau {kind} filter: {rows} on this data source sees only these rows, before FIXED LODs; this rule hides "
+                    "the others from everyone who reads the table. If the table is also read without this filter (other data "
+                    "sources, other tools), put it in a SQL model of this data source instead (skills/source-tableau)")
+            try:
+                if model is None:
+                    raise ax.FormulaError(f"[{label}] has no table")
+                pred = self._ds_filter_sql(ds, flt)
+            except ax.FormulaError as exc:
+                pred, note = "", f"Tableau {kind} filter on [{label}] not translated ({exc}): every sheet on this data source sees only its rows"
+            else:
+                if not pred:
+                    continue
+                if model.rel.kind == "text":
+                    note += f"; table is Tableau custom SQL ({model.sm.name})"
+            rf = RowFilter(f"{_name(ds.caption)}_{_name(label)}_{'extract' if kind == 'extract' else 'filter'}", model.sm.table if model else "",
+                           pred, ["*"], source_expression=ET.tostring(flt, encoding="unicode").strip()[:400], source_ref=f"{ds.src} datasource: "
+                           f"{ds.caption} {kind} filter on {label}", todo=note)
+            self.b.row_filters.append(rf)
+            if pred and model is not None and g is not None and ds.join_steps:
+                self._join_filters(ds, g, model, rf, [note])
+
 
     # ------------------------------------------------------------ dashboards
 

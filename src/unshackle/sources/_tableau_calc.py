@@ -237,6 +237,8 @@ class Renderer:
         tmpl, arity, _ = spec
         if self.hyper and name in ("upper", "lower", "trim", "ltrim", "rtrim", "today"):
             self.notes.add(NOTES["case" if name in ("upper", "lower") else "today" if name == "today" else "trim"])
+        if self.hyper and name in ("contains", "startswith", "endswith"):
+            self.notes.add(NOTES["compare"])
         if arity is not None and len(args) != arity:
             raise ax.FormulaError(f"{name.upper()} takes {arity} argument(s)")
         parts = [self.sql(a) for a in args]

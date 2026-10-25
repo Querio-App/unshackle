@@ -8,6 +8,7 @@ the Postgres form has:
   literals escape with a backslash; BigQuery writes `date_trunc(x, MONTH)`, and `extract` parts are mapped to the
   same numbers (ISO week, Sunday = 0 day of week);
 - BigQuery, Databricks: `interval '1 day'` is written `interval 1 day`, and `cast(x as varchar)` `cast(x as string)`;
+- BigQuery has no `position(a in b)`: `strpos(b, a)`;
 - Postgres has no `median()`: `percentile_cont(0.5) within group (order by x)`; its `round()` of a double takes no
   digits, so `round(x, n)` rounds a numeric (halves away from zero), as Tableau's Postgres connection does;
 - Redshift keeps the scale of a DECIMAL input in `avg()` and in decimal division, truncating the rest, and averages
@@ -178,6 +179,18 @@ class _Rewriter:
             if unit not in _BQ_UNITS:
                 raise Unsupported(f"date_trunc({a[0]}, ...) has no BigQuery form")
             return f"date_trunc({a[1]}, {'week(monday)' if unit == 'week' else unit})"
+        if name == "position" and self.w == "bigquery":
+            a = self.args()
+            toks = _TOKEN.findall(a[0]) if len(a) == 1 else []
+            depth, cut = 0, -1
+            for j, tok in enumerate(toks):
+                depth += (tok == "(") - (tok == ")")
+                if depth == 0 and tok.lower() == "in":
+                    cut = j
+                    break
+            if cut < 0:
+                raise Unsupported(f"position({', '.join(a)}) has no BigQuery form")
+            return f"strpos({''.join(toks[cut + 1:]).strip()}, {''.join(toks[:cut]).strip()})"
         if name == "extract" and self.w in _EXTRACT:
             save = self.i
             a = self.args()

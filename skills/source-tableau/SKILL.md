@@ -168,9 +168,8 @@ joins (`from public.orders as orders inner join public.products as products on .
 physical columns qualified), even when it uses one table: Tableau computes it over the
 joined rows, where inner joins drop unmatched rows and joins can repeat rows. The join
 is left out only when it can't change the numbers: the sheet uses the first table and
-every join is a left join on the other table's key. Categorical filters
-(include / exclude / null) -> `where` (or `having` on aggregates), range filters ->
-`>=`/`<=`, Top N by an aggregate -> `order by ... desc limit N`. A filter on a calc
+every join is a left join on the other table's key. Filters follow Tableau's order of
+operations (Filters, below). A filter on a calc
 that compares with a parameter (`[Revenue] >= [Parameters].[Min Order Value]`)
 becomes `where (post_discount_revenue >= :min_order_value) = true`, bound from the
 parameters cell (see **Parameters** below). Column aliases follow Tableau's display names
@@ -214,8 +213,48 @@ its encodings: `axis=alt.Axis(format='$,.2f')`, `alt.Tooltip(..., format='.1%')`
 `format` (d3) and `source_format` (Tableau's) in `custom_extensions`. Scaled units
 (`#,##0,K`), literal text and locale formats (`C1033%`) have no d3 form: format them by hand.
 
+### Filters
+
+Tableau applies them in this order, and the tile SQL follows it: extract filters, data source
+filters, context filters, then FIXED LODs, top N and condition filters, then the sheet's
+dimension filters, then measure filters (`having`).
+
+| Tableau filter | Tile SQL |
+| --- | --- |
+| list of values (`member`/`union`) | `x in (...)`; with Null selected, `or x is null` |
+| excluded values (`except`) | `(x not in (...) or x is null)`: Tableau keeps NULL rows unless Null is excluded too |
+| range (`quantitative`, `range`) | `>=` / `<=`; `included-values` `non-null`, `null`, `in-range-or-null` |
+| wildcard (contains, starts with, ends with, exact) | the expression Tableau stores (`CONTAINS(LOWER([x]), LOWER('an'))`) as a row predicate; `CONTAINS` is case-sensitive, so the older form without `LOWER` stays so |
+| condition (`SUM([Quantity]) > 140`) | a `filter_N` CTE of the members (`group by` the field, `having` the condition), and `x in (select member from filter_N)` |
+| top N / bottom N (by any aggregate or formula; count from a parameter -> `:param`) | the same CTE with `row_number() over (order by <agg> desc, x)`: exactly N members, a tie at the boundary goes to the members first in ascending order |
+| relative date | whole periods from `first-period` to `last-period`, 0 = the period holding `period-anchor` (else today); `include-future='false'` (to date) stops at that day; `include-null` keeps NULL dates |
+| extract filters (`<extract enabled='true'><filter>`) and data source filters | predicates on every sheet of the data source, inside its FIXED grains too |
+
+- Top N and condition filters are computed over the rows the extract, data source and context
+  filters leave, each on its own: the sheet's other dimension filters don't change which
+  members they keep (make a filter a context filter to rank within it), and the top N is
+  over the whole view, not per pane (the same N members in every pane; a top N per pane is a
+  table calculation, `RANK()`/`INDEX()` filter). Their groupfilters nest from the inside out: a
+  list, then a wildcard, then a condition, then the top N.
+- Relative dates relative to today use the dashboard parameter `as_of` (`:as_of`; `None`
+  = the warehouse's `current_date`). Tableau uses its own today (the server's date), so
+  set `as_of` when comparing with a view exported on another day, or across a time zone
+  boundary. Weeks follow the Week start (unknown -> TODO); with a Fiscal year start,
+  quarter and year periods stay TODO (as DATETRUNC does). Ties on extracts break by the
+  member's ascending order; a live connection may break them in the database's order.
+- Extract and data source filters also become row filters in the semantic layer (`groups:
+  ['*']`, one per inner-joined table through the join keys), with a TODO: the table may be
+  read without them elsewhere; if so, make a SQL model of the data source instead. User
+  filters (`USERNAME()`, `ISMEMBEROF()`) stay permissions (below).
+- TODO with the filter named: a top N by percent, hour/minute and ISO-8601 periods, a period
+  to date on a date and time field (Tableau stops at the current time), a top N or condition
+  as a data source filter (every sheet and FIXED grain on that data source stays TODO), and
+  a top N or condition in the context together with other top N filters. Context filters
+  are in the tile's `where` and before top N, but not yet inside FIXED grains (TODO).
+
 **LODs in tiles** follow Tableau's order of operations. A FIXED grain is a CTE computed
-over all of the datasource's rows (before the sheet's dimension filters):
+over all of the datasource's rows (after its extract and data source filters, before the
+sheet's dimension filters):
 
 | Sheet shows | Tile SQL |
 | --- | --- |
@@ -437,9 +476,10 @@ CTE so the notebook runs meanwhile.
 **Extracts vs live**: for a data source on a warehouse, unshackle reads the connection behind
 the extract and the `.hyper` is never downloaded. Tableau answers from the extract, so the
 report says so for each one (with its row limit, extract filters, incremental refresh and last
-refresh when the file records them). Extract filters, aggregation ("Aggregate data for visible
-dimensions") and rows changed since the refresh are not in the migrated SQL: check the data
-source's Extract settings in Tableau and add those filters to the semantic model or SQL.
+refresh when the file records them). Extract filters are applied like data source filters
+(Filters, above); a row limit, aggregation ("Aggregate data for visible dimensions") and rows
+changed since the refresh are not in the migrated SQL: check the data source's Extract settings
+in Tableau.
 
 **Data only in Tableau** (no warehouse table holds it): data sources on a Hyper file
 (`hyper`), Excel, CSV and other files (`excel-direct`, `textscan`, `google-sheets`...), cloud
@@ -453,7 +493,8 @@ openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
 - Each table becomes `data/tableau/<table>.parquet` (`[paths] data` in `unshackle.toml`) with
   Tableau's column types. With an extract, the table is the extract's (what Tableau answers
   from; its filters, row limit and aggregation are already applied, and it is as fresh as the
-  last refresh); the models then use the extract's columns. Without one, Excel sheets and CSV
+  last refresh, so its extract filters are not applied again); the models then use the extract's
+  columns. Without one, Excel sheets and CSV
   files are read as they are and cast to the types in the metadata records; empty cells are
   NULL. Not read (an extract error, the data source stays on its file): Data Interpreter
   (`cleaning='yes'`), named ranges, `.xls`.
