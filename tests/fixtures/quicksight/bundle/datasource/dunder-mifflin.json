@@ -1,0 +1,41 @@
+{
+  "resourceType": "datasource",
+  "dataSourceId": "dunder-mifflin",
+  "name": "Dunder Mifflin warehouse",
+  "type": "ATHENA",
+  "dataSourceParameters": {
+    "athenaParameters": {
+      "workGroup": "analytics"
+    }
+  },
+  "sslProperties": {
+    "disableSsl": false
+  },
+  "tags": [
+    {
+      "key": "team",
+      "value": "analytics"
+    }
+  ],
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:group/default/Analysts",
+      "actions": [
+        "quicksight:DescribeDataSource",
+        "quicksight:DescribeDataSourcePermissions",
+        "quicksight:PassDataSource"
+      ]
+    },
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/pbeesly",
+      "actions": [
+        "quicksight:DescribeDataSource",
+        "quicksight:DescribeDataSourcePermissions",
+        "quicksight:PassDataSource",
+        "quicksight:UpdateDataSource",
+        "quicksight:DeleteDataSource",
+        "quicksight:UpdateDataSourcePermissions"
+      ]
+    }
+  ]
+}
