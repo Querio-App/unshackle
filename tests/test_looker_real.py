@@ -160,6 +160,18 @@ def test_retail(built):
     assert m["transactions_number_of_customer_transactions"].filter == "{{ Dimension('transactions__customer_id') }} IS NOT NULL"
     dims = _by_name(_by_name(b.semantic_models)["transactions"].dimensions)
     assert "duration" in dims["since_first_customer_transaction"].todo
+    # a SQL comment line before the column (`-- spectacles: ignore`) no longer swallows it
+    assert (dims["line_items"].expr, dims["line_items"].todo) == ("", "")  # the column itself
+    # nested records joined with LEFT JOIN UNNEST: a view of their own, related to the parent by its key
+    models = _by_name(b.semantic_models)
+    q = _by_name(b.queries)["transactions__line_items derived table"]
+    assert q.sql == ("SELECT transactions.transaction_id AS transactions_key, transactions__line_items.* "
+                     "FROM `looker-private-demo.retail.transaction_detail` AS transactions "
+                     "LEFT JOIN UNNEST(transactions.line_items) AS transactions__line_items")
+    for child, parent in (("transactions__line_items", "transactions"),
+                          ("omni_channel_transactions__transaction_details", "omni_channel_transactions")):
+        assert (parent, "foreign") in [(e.name, e.type) for e in models[child].entities], child
+        assert models[child].measures and not any(x.todo for x in models[child].measures), child
 
 
 def test_cloud_sql_observability(built):
