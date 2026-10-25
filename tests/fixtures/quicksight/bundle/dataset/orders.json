@@ -1,0 +1,359 @@
+{
+  "resourceType": "dataset",
+  "tags": [
+    {
+      "key": "project",
+      "value": "unshackle-live"
+    }
+  ],
+  "dataSetId": "orders",
+  "name": "Orders",
+  "physicalTableMap": {
+    "accounts-pt": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "accounts",
+        "inputColumns": [
+          {
+            "name": "account_id",
+            "type": "STRING"
+          },
+          {
+            "name": "account_name",
+            "type": "STRING"
+          },
+          {
+            "name": "business_size",
+            "type": "INTEGER"
+          },
+          {
+            "name": "payment_cycle",
+            "type": "STRING"
+          },
+          {
+            "name": "account_manager",
+            "type": "STRING"
+          }
+        ]
+      }
+    },
+    "products-pt": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "products",
+        "inputColumns": [
+          {
+            "name": "product_id",
+            "type": "STRING"
+          },
+          {
+            "name": "product_name",
+            "type": "STRING"
+          },
+          {
+            "name": "paper_type",
+            "type": "STRING"
+          },
+          {
+            "name": "price",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    },
+    "orders-pt": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "orders",
+        "inputColumns": [
+          {
+            "name": "order_id",
+            "type": "STRING"
+          },
+          {
+            "name": "status",
+            "type": "STRING"
+          },
+          {
+            "name": "purchased_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "cancelled_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "returned_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "product_id",
+            "type": "STRING"
+          },
+          {
+            "name": "quantity",
+            "type": "INTEGER"
+          },
+          {
+            "name": "pre_discount_revenue",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "discount_percentage",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "post_discount_revenue",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "days_to_close",
+            "type": "INTEGER"
+          },
+          {
+            "name": "order_contact_name",
+            "type": "STRING"
+          },
+          {
+            "name": "order_contact_email",
+            "type": "STRING"
+          },
+          {
+            "name": "account_id",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_id",
+            "type": "STRING"
+          }
+        ]
+      }
+    }
+  },
+  "logicalTableMap": {
+    "accounts-lt": {
+      "alias": "accounts",
+      "dataTransforms": [
+        {
+          "renameColumnOperation": {
+            "columnName": "account_id",
+            "newColumnName": "account_id[accounts]"
+          }
+        }
+      ],
+      "source": {
+        "physicalTableId": "accounts-pt"
+      }
+    },
+    "orders-joined": {
+      "alias": "Orders, accounts and products",
+      "dataTransforms": [
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "order_size",
+                "columnId": "c-order-size",
+                "expression": "ifelse({quantity} >= 100, 'large', 'small')"
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "purchase_month",
+                "columnId": "c-purchase-month",
+                "expression": "truncDate('MM', {purchased_at})"
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "account_label",
+                "columnId": "c-account-label",
+                "expression": "concat({account_name}, ' (', toString({business_size}), ')')"
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "revenue_per_unit_price",
+                "columnId": "c-rev-per-price",
+                "expression": "{post_discount_revenue} / {unit_price}"
+              }
+            ]
+          }
+        },
+        {
+          "castColumnTypeOperation": {
+            "columnName": "days_to_close",
+            "newColumnType": "DECIMAL"
+          }
+        },
+        {
+          "filterOperation": {
+            "conditionExpression": "{status} <> 'TEST'",
+            "enabled": false,
+            "inverse": false
+          }
+        },
+        {
+          "projectOperation": {
+            "projectedColumns": [
+              "order_id",
+              "status",
+              "purchased_at",
+              "cancelled_at",
+              "product_id",
+              "quantity",
+              "pre_discount_revenue",
+              "post_discount_revenue",
+              "days_to_close",
+              "order_contact_name",
+              "order_contact_email",
+              "account_id",
+              "account_name",
+              "business_size",
+              "payment_cycle",
+              "account_manager",
+              "product_name",
+              "paper_type",
+              "unit_price",
+              "order_size",
+              "purchase_month",
+              "account_label",
+              "revenue_per_unit_price"
+            ]
+          }
+        }
+      ],
+      "source": {
+        "joinInstruction": {
+          "leftOperand": "orders-accounts",
+          "rightOperand": "products-lt",
+          "rightJoinKeyProperties": {
+            "uniqueKey": true
+          },
+          "type": "LEFT",
+          "onClause": "{product_id} = {product_id[products]}"
+        }
+      }
+    },
+    "products-lt": {
+      "alias": "products",
+      "dataTransforms": [
+        {
+          "renameColumnOperation": {
+            "columnName": "product_id",
+            "newColumnName": "product_id[products]"
+          }
+        },
+        {
+          "renameColumnOperation": {
+            "columnName": "price",
+            "newColumnName": "unit_price"
+          }
+        }
+      ],
+      "source": {
+        "physicalTableId": "products-pt"
+      }
+    },
+    "orders-lt": {
+      "alias": "orders",
+      "source": {
+        "physicalTableId": "orders-pt"
+      }
+    },
+    "orders-accounts": {
+      "alias": "Orders and accounts",
+      "source": {
+        "joinInstruction": {
+          "leftOperand": "orders-lt",
+          "rightOperand": "accounts-lt",
+          "rightJoinKeyProperties": {
+            "uniqueKey": true
+          },
+          "type": "LEFT",
+          "onClause": "{account_id} = {account_id[accounts]}"
+        }
+      }
+    }
+  },
+  "importMode": "DIRECT_QUERY",
+  "fieldFolders": {
+    "Revenue": {
+      "description": "Order revenue before and after discounts",
+      "columns": [
+        "pre_discount_revenue",
+        "post_discount_revenue"
+      ]
+    }
+  },
+  "rowLevelPermissionTagConfiguration": {
+    "status": "ENABLED",
+    "tagRules": [
+      {
+        "tagKey": "account_manager",
+        "columnName": "account_manager",
+        "matchAllValue": "*"
+      }
+    ]
+  },
+  "columnLevelPermissionRules": [
+    {
+      "principals": [
+        "arn:aws:quicksight:us-east-1:123456789012:group/default/Finance"
+      ],
+      "columnNames": [
+        "order_contact_name",
+        "order_contact_email"
+      ]
+    }
+  ],
+  "dataSetUsageConfiguration": {
+    "disableUseAsDirectQuerySource": false,
+    "disableUseAsImportedSource": false
+  },
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:group/default/Analysts",
+      "actions": [
+        "quicksight:ListIngestions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeIngestion"
+      ]
+    },
+    {
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:user/default/jhalpert",
+      "actions": [
+        "quicksight:ListIngestions",
+        "quicksight:DeleteDataSet",
+        "quicksight:UpdateDataSetPermissions",
+        "quicksight:CancelIngestion",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:CreateIngestion"
+      ]
+    }
+  ]
+}

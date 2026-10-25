@@ -1,0 +1,106 @@
+{
+  "resourceType": "dataset",
+  "tags": [
+    {
+      "key": "project",
+      "value": "unshackle-live"
+    }
+  ],
+  "dataSetId": "shipped-orders",
+  "name": "Shipped orders",
+  "physicalTableMap": {
+    "shipped-sql": {
+      "customSql": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/dunder-mifflin-athena",
+        "name": "Shipped orders",
+        "sqlQuery": "SELECT o.order_id, o.purchased_at, o.post_discount_revenue, s.shipping_region, s.shipping_mode, s.shipping_cost\nFROM dunder_mifflin.orders o\nJOIN dunder_mifflin.shippings s ON o.shipping_id = s.shipping_id",
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "STRING"
+          },
+          {
+            "name": "purchased_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "post_discount_revenue",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "shipping_region",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_mode",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_cost",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    }
+  },
+  "logicalTableMap": {
+    "shipped-lt": {
+      "alias": "Shipped orders",
+      "dataTransforms": [
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "cost_share",
+                "columnId": "c-cost-share",
+                "expression": "{shipping_cost} / {post_discount_revenue}"
+              }
+            ]
+          }
+        }
+      ],
+      "source": {
+        "physicalTableId": "shipped-sql"
+      }
+    }
+  },
+  "importMode": "DIRECT_QUERY",
+  "rowLevelPermissionDataSet": {
+    "namespace": "default",
+    "arn": "arn:aws:quicksight:us-east-1:123456789012:dataset/region-access-rules",
+    "permissionPolicy": "GRANT_ACCESS",
+    "formatVersion": "VERSION_1",
+    "status": "ENABLED"
+  },
+  "dataSetUsageConfiguration": {
+    "disableUseAsDirectQuerySource": false,
+    "disableUseAsImportedSource": false
+  },
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:group/default/Sales",
+      "actions": [
+        "quicksight:ListIngestions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeIngestion"
+      ]
+    },
+    {
+      "principal": "arn:aws:quicksight:us-east-1:123456789012:user/default/jhalpert",
+      "actions": [
+        "quicksight:ListIngestions",
+        "quicksight:DeleteDataSet",
+        "quicksight:UpdateDataSetPermissions",
+        "quicksight:CancelIngestion",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:CreateIngestion"
+      ]
+    }
+  ]
+}

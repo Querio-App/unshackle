@@ -150,6 +150,11 @@ the source. Predicates are SQL in the warehouse dialect on the table's own colum
 | Lightdash | `required_attributes` on model/dimension/metric | `forbid query` on Table/Column/Metric unless group (attribute value -> group) |
 | Lightdash | space access (viewer/editor) | `view` / `edit` on Notebook |
 | Hex | project sharing (can view / explore / edit), workspace groups | `view` / `edit` on Notebook |
+| QuickSight | dashboard / analysis permissions (viewer, co-owner with `UpdateDashboard`) | `view` / `edit` on Notebook |
+| QuickSight | dataset and data source permissions | `query` on the dataset's tables / the datasource |
+| QuickSight | column-level security (`ColumnLevelPermissionRules`) | `forbid query` on Column unless the listed groups/users |
+| QuickSight | user-based RLS rules dataset (`UserName`, `GroupName`, field columns; empty = all; `GRANT_ACCESS` / `DENY_ACCESS`) | row filter with a subquery on the rules table matching `{{ user.email }}` / `{{ user.groups }}` |
+| QuickSight | tag-based RLS (session tags, `MatchAllValue`) | row filter `col = {{ user.<tag> }}` |
 | Hex | data connection access | `query` on `Datasource` |
 
 Attribute-to-group mapping: Cedar only knows groups, so an attribute test like

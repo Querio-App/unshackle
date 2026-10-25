@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Literal, get_args, get_origin, get_type_hints
 
-Mark = Literal["bar", "line", "area", "point", "arc", "text", "table", "unknown"]
+Mark = Literal["bar", "line", "area", "point", "arc", "rect", "text", "table", "unknown"]
 FieldType = Literal["quantitative", "nominal", "temporal", "ordinal"]
 
 
