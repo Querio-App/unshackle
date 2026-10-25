@@ -1666,7 +1666,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                 database=parts[-3] if len(parts) >= 3 else (cattrs.get("dbname", "") if cattrs is not None else ""),
                 sql=(rel.text or "").strip() if rel.get("type") == "text" else "",
                 connection_class=(cattrs.get("class", "") if cattrs is not None else ""),
-                connection=_connection_label(nc) if nc is not None else "",
+                connection=_connection_label(cattrs) if nc is not None or ds.connection_class not in ("federated", "sqlproxy", "") else "",
             )
             ds.relations.setdefault(r.name, r)
             ds.extract = ds.extract or r.connection_class in HYPER_ENGINE
@@ -2008,7 +2008,7 @@ class _Parser:
             if c not in ("federated", "sqlproxy")
         )
         self.dialect = self.store.warehouse(self.b.datasource) or self.b.warehouse  # unshackle.toml wins over the export
-        for ds in data_sources:
+        for ds in sorted(data_sources, key=lambda d: bool(connections(d))):  # cross-database ones last: they key tables by database
             self._assign_models(ds)
         if self.copied_used:
             self._load_step()
@@ -2198,16 +2198,26 @@ class _Parser:
             self.b.warn(item, f"{_cross_db(conns)}{extract}")
         self._connection_settings(ds, item)
         mine: dict[str, _Model] = {}
-        names = [(r.schema.lower(), r.table.lower()) for r in ds.relations.values() if r.kind == "table"]
         for r in ds.relations.values():
             key = f"table:{r.schema.lower()}.{r.table.lower()}" if r.kind == "table" else "sql:" + hashlib.sha1(" ".join(r.sql.split()).encode()).hexdigest()[:12]
-            if conns and r.kind == "table" and names.count((r.schema.lower(), r.table.lower())) > 1:
-                key += f"@{r.connection}"  # the same table name in two of its databases: two tables
-            model = self.models.get(key)
+            # A table of a cross-database data source is keyed by its database too: the same schema and name in another
+            # database is another table. It shares a model only with the same table of the same database.
+            same_db = self.models.get(f"{key}@{r.connection}") if r.kind == "table" and r.connection else None
+            model = same_db or self.models.get(key)
+            namesake = None
+            if conns and r.kind == "table" and same_db is None:
+                if model is not None and model.rel.connection != r.connection:
+                    namesake = model
+                model = None if namesake is not None else model
+                key = key if model is not None else f"{key}@{r.connection}"
+            elif same_db is not None:
+                key = f"{key}@{r.connection}"
             if model is None:
                 base = _name(r.table if r.kind == "table" else ds.caption)
-                name, n = base, 2
                 taken = {m.sm.name for m in self.models.values()}
+                if conns and r.kind == "table" and r.database and base in taken:
+                    base = _name(f"{r.table}_{r.database}")  # a namesake from another database: name it after its database
+                name, n = base, 2
                 while name in taken:
                     name, n = f"{base}_{n}", n + 1
                 src = f"{ds.src} datasource: {ds.caption}"
@@ -2230,6 +2240,13 @@ class _Parser:
                         todo += "; it uses Tableau parameters (<[Parameters].[x]>), replace them with fixed values or :binds"
                     self.b.queries.append(VerifiedQuery(f"{ds.caption} custom SQL", r.sql, f"Custom SQL relation of Tableau datasource {ds.caption}",
                                                         datasource=self.b.datasource, source_ref=src, todo=todo))
+                if conns and r.kind == "table":  # also a namesake made earlier in this data source
+                    namesake = namesake or next((m for m in self.models.values() if m.rel.kind == "table" and m.sm.table == sm.table), None)
+                if namesake is not None:
+                    sm.todo = (f"reads {sm.table} in {r.connection or 'its database'}; semantic model {namesake.sm.name} reads {sm.table} in "
+                               f"{namesake.rel.connection or 'another database'}. In one warehouse they are one table: load this database's "
+                               f"table under another schema or name and point `table` at it")
+                    tbl = None  # the catalog describes the warehouse's {schema}.{table} once
                 self.models[key] = model
                 self.b.semantic_models.append(sm)
                 if tbl is not None:

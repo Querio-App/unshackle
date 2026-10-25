@@ -52,11 +52,11 @@ def test_connections_of_each_table():
 
 def test_the_report_names_the_connections(bundle):
     warns = [w for w in bundle.warnings if CROSS in w.message]
-    assert sorted(w.item.split(" datasource ")[-1] for w in warns) == ["Orders and CRM Accounts", "Related across Databases"]
+    assert sorted(w.item.split(" datasource ")[-1] for w in warns) == ["Orders and CRM Accounts", "Related across Databases", "Sales and CRM Accounts"]
     assert all("crm.example.com:5432 crm" in w.message and "warehouse.example.com:5432 sales" in w.message for w in warns)
     # no entity joins the two databases; the one-database data source keeps its foreign entity
     across = [w.message for w in bundle.warnings if "(across databases)" in w.message]
-    assert len(across) == 2
+    assert len(across) == 3
     foreign = {(sm.name, e.name) for sm in bundle.semantic_models for e in sm.entities if e.type == "foreign"}
     assert foreign == {("orders", "accounts")}
 
@@ -106,3 +106,25 @@ def test_count_of_a_logical_table(bundle, con):
     pairs = accounts.merge(orders[["account_id", "status"]].drop_duplicates(), on="account_id", how="left")
     want = {None if pd.isna(k) else k: v for k, v in pairs.groupby("status", dropna=False).size().items()}
     assert run("Accounts by Status") == want
+
+
+def test_same_table_in_two_databases_is_two_models(bundle, con):
+    """public.accounts in the sales database and in the crm database: one model each, named after its database, never
+    merged; the same table of the same database is one model across data sources. In one warehouse the two have one
+    name, so the second model says so."""
+    accounts = {sm.name: sm for sm in bundle.semantic_models if sm.table == "public.accounts"}
+    assert sorted(accounts) == ["accounts", "accounts_crm"]
+    sales, crm = accounts["accounts"], accounts["accounts_crm"]
+    assert not sales.todo
+    assert "crm.example.com:5432 crm" in crm.todo and "In one warehouse they are one table" in crm.todo
+    dims = {name: {d.name for d in sm.dimensions} for name, sm in accounts.items()}
+    assert "account_manager" in dims["accounts_crm"] and "account_manager" not in dims["accounts"]  # only the crm table has it
+    assert "payment_cycle" in dims["accounts"] and "payment_cycle" not in dims["accounts_crm"]
+    assert [sm.name for sm in bundle.semantic_models if sm.table == "public.orders"] == ["orders"]  # both read the sales orders
+    assert [(t.schema, t.name) for t in bundle.tables].count(("public", "accounts")) == 1  # the catalog lists the warehouse table once
+    tiles = _tiles(bundle)
+    assert CROSS in tiles["Business Size by Account Manager (two databases)"].todo
+    t = tiles["Business Size by Payment Cycle (sales accounts)"]
+    a = con.sql("select * from public.accounts").df()
+    want = {None if k != k else k: float(v) for k, v in a.groupby("payment_cycle", dropna=False).business_size.sum().items()}
+    assert not t.todo and {r[0]: float(r[1]) for r in con.sql(t.sql).fetchall()} == pytest.approx(want)

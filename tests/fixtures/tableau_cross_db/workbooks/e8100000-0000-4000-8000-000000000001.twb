@@ -97,6 +97,14 @@
       
       <column caption='orders' datatype='table' name='[__tableau_internal_object_id__].[orders_OBJ]' role='measure' type='quantitative' /><column caption='accounts' datatype='table' name='[__tableau_internal_object_id__].[accounts_OBJ]' role='measure' type='quantitative' /><object-graph><objects><object caption='orders' id='orders_OBJ'><properties context=''><relation connection='postgres.sales' name='orders' table='[public].[orders]' type='table' /></properties></object><object caption='accounts' id='accounts_OBJ'><properties context=''><relation connection='postgres.sales' name='accounts' table='[public].[accounts]' type='table' /></properties></object></objects><relationships><relationship><expression op='='><expression op='[account_id]' /><expression op='[account_id (accounts)]' /></expression><first-end-point object-id='orders_OBJ' /><second-end-point object-id='accounts_OBJ' /></relationship></relationships></object-graph>
     </datasource>
+    <datasource caption='Sales and CRM Accounts' inline='true' name='federated.twins' version='18.1'>
+      <connection class='federated'>
+        <named-connections><named-connection caption='warehouse.example.com' name='postgres.sales'><connection authentication='username-password' class='postgres' dbname='sales' port='5432' server='warehouse.example.com' username='reader' /></named-connection><named-connection caption='crm.example.com' name='postgres.crm'><connection authentication='username-password' class='postgres' dbname='crm' port='5432' server='crm.example.com' username='reader' /></named-connection></named-connections>
+        <relation join='left' type='join'><clause type='join'><expression op='='><expression op='[accounts].[account_id]' /><expression op='[crm_accounts].[account_id]' /></expression></clause><relation connection='postgres.sales' name='accounts' table='[public].[accounts]' type='table' /><relation connection='postgres.crm' name='crm_accounts' table='[public].[accounts]' type='table' /></relation>
+        <metadata-records><metadata-record class='column'><remote-name>account_id</remote-name><remote-type>129</remote-type><local-name>[account_id]</local-name><parent-name>[accounts]</parent-name><remote-alias>account_id</remote-alias><ordinal>0</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null></metadata-record><metadata-record class='column'><remote-name>business_size</remote-name><remote-type>20</remote-type><local-name>[business_size]</local-name><parent-name>[accounts]</parent-name><remote-alias>business_size</remote-alias><ordinal>1</ordinal><local-type>integer</local-type><aggregation>Sum</aggregation><contains-null>true</contains-null></metadata-record><metadata-record class='column'><remote-name>payment_cycle</remote-name><remote-type>129</remote-type><local-name>[payment_cycle]</local-name><parent-name>[accounts]</parent-name><remote-alias>payment_cycle</remote-alias><ordinal>2</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null></metadata-record><metadata-record class='column'><remote-name>account_id</remote-name><remote-type>129</remote-type><local-name>[account_id (crm_accounts)]</local-name><parent-name>[crm_accounts]</parent-name><remote-alias>account_id</remote-alias><ordinal>3</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null></metadata-record><metadata-record class='column'><remote-name>account_manager</remote-name><remote-type>129</remote-type><local-name>[account_manager]</local-name><parent-name>[crm_accounts]</parent-name><remote-alias>account_manager</remote-alias><ordinal>4</ordinal><local-type>string</local-type><aggregation>Count</aggregation><contains-null>true</contains-null></metadata-record></metadata-records>
+      </connection>
+      <column datatype='string' name='[account_id]' role='dimension' type='nominal' /><column datatype='integer' name='[business_size]' role='measure' type='quantitative' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column datatype='string' name='[account_id (crm_accounts)]' role='dimension' type='nominal' /><column datatype='string' name='[account_manager]' role='dimension' type='nominal' />
+    </datasource>
   </datasources>
   <worksheets>
     <worksheet name='Revenue by Status (two databases)'>
@@ -189,6 +197,42 @@
         <cols>[federated.xrel].[sum:post_discount_revenue:qk]</cols>
       </table>
     </worksheet>
+    <worksheet name='Business Size by Payment Cycle (sales accounts)'>
+      <table>
+        <view>
+          <datasources><datasource caption='Sales and CRM Accounts' name='federated.twins' /></datasources>
+          <datasource-dependencies datasource='federated.twins'>
+            <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[business_size]' role='measure' type='quantitative' />
+            <column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_size]' derivation='Sum' name='[sum:business_size:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes><pane><view><breakdown value='auto' /></view><mark class='Bar' /></pane></panes>
+        <rows>[federated.twins].[none:payment_cycle:nk]</rows>
+        <cols>[federated.twins].[sum:business_size:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name='Business Size by Account Manager (two databases)'>
+      <table>
+        <view>
+          <datasources><datasource caption='Sales and CRM Accounts' name='federated.twins' /></datasources>
+          <datasource-dependencies datasource='federated.twins'>
+            <column datatype='string' name='[account_manager]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[business_size]' role='measure' type='quantitative' />
+            <column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_size]' derivation='Sum' name='[sum:business_size:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes><pane><view><breakdown value='auto' /></view><mark class='Bar' /></pane></panes>
+        <rows>[federated.twins].[none:account_manager:nk]</rows>
+        <cols>[federated.twins].[sum:business_size:qk]</cols>
+      </table>
+    </worksheet>
     <worksheet name='Orders by Status'>
       <table>
         <view>
@@ -232,6 +276,8 @@
     <window class='worksheet' name='Revenue by Business Size' />
     <window class='worksheet' name='Related Revenue by Status (two databases)' />
     <window class='worksheet' name='Related Revenue by Business Size (two databases)' />
+    <window class='worksheet' name='Business Size by Payment Cycle (sales accounts)' />
+    <window class='worksheet' name='Business Size by Account Manager (two databases)' />
     <window class='worksheet' name='Orders by Status' />
     <window class='worksheet' name='Accounts by Status' />
   </windows>
