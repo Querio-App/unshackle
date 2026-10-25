@@ -1,0 +1,1098 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <datasources>
+    <datasource caption='Dunder Mifflin Table Calcs' inline='true' name='federated.tablecalc0' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='warehouse' name='postgres.tablecalc'>
+            <connection class='postgres' dbname='dunder_mifflin' server='warehouse.example.com' />
+          </named-connection>
+        </named-connections>
+        <relation join='inner' type='join'>
+          <clause type='join'><expression op='='><expression op='[orders].[product_id]' /><expression op='[products].[product_id]' /></expression></clause>
+          <relation join='inner' type='join'>
+            <clause type='join'><expression op='='><expression op='[orders].[account_id]' /><expression op='[accounts].[account_id]' /></expression></clause>
+            <relation connection='postgres.tablecalc' name='orders' table='[public].[orders]' type='table' />
+            <relation connection='postgres.tablecalc' name='accounts' table='[public].[accounts]' type='table' />
+          </relation>
+          <relation connection='postgres.tablecalc' name='products' table='[public].[products]' type='table' />
+        </relation>
+        <cols>
+      <map key='[order_id]' value='[orders].[order_id]' />
+      <map key='[status]' value='[orders].[status]' />
+      <map key='[purchased_at]' value='[orders].[purchased_at]' />
+      <map key='[quantity]' value='[orders].[quantity]' />
+      <map key='[pre_discount_revenue]' value='[orders].[pre_discount_revenue]' />
+      <map key='[post_discount_revenue]' value='[orders].[post_discount_revenue]' />
+      <map key='[account_id]' value='[orders].[account_id]' />
+      <map key='[product_id]' value='[orders].[product_id]' />
+      <map key='[account_id (accounts)]' value='[accounts].[account_id]' />
+      <map key='[account_name]' value='[accounts].[account_name]' />
+      <map key='[payment_cycle]' value='[accounts].[payment_cycle]' />
+      <map key='[account_manager]' value='[accounts].[account_manager]' />
+      <map key='[business_size]' value='[accounts].[business_size]' />
+      <map key='[product_id (products)]' value='[products].[product_id]' />
+      <map key='[paper_type]' value='[products].[paper_type]' />
+        </cols>
+        <metadata-records>
+      <metadata-record class='column'><remote-name>order_id</remote-name><local-name>[order_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>status</remote-name><local-name>[status]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>purchased_at</remote-name><local-name>[purchased_at]</local-name><parent-name>[orders]</parent-name><local-type>date</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>quantity</remote-name><local-name>[quantity]</local-name><parent-name>[orders]</parent-name><local-type>integer</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>pre_discount_revenue</remote-name><local-name>[pre_discount_revenue]</local-name><parent-name>[orders]</parent-name><local-type>real</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>post_discount_revenue</remote-name><local-name>[post_discount_revenue]</local-name><parent-name>[orders]</parent-name><local-type>real</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>account_id</remote-name><local-name>[account_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>product_id</remote-name><local-name>[product_id]</local-name><parent-name>[orders]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>account_id</remote-name><local-name>[account_id (accounts)]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>account_name</remote-name><local-name>[account_name]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>payment_cycle</remote-name><local-name>[payment_cycle]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>account_manager</remote-name><local-name>[account_manager]</local-name><parent-name>[accounts]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>business_size</remote-name><local-name>[business_size]</local-name><parent-name>[accounts]</parent-name><local-type>integer</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>product_id</remote-name><local-name>[product_id (products)]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
+      <metadata-record class='column'><remote-name>paper_type</remote-name><local-name>[paper_type]</local-name><parent-name>[products]</parent-name><local-type>string</local-type></metadata-record>
+        </metadata-records>
+      </connection>
+    <column datatype='string' name='[order_id]' role='dimension' type='nominal' />
+    <column datatype='string' name='[status]' role='dimension' type='nominal' />
+    <column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' />
+    <column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' />
+    <column caption="Revenue Before Discount" datatype='real' name='[pre_discount_revenue]' role='measure' type='quantitative' />
+    <column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+    <column datatype='string' name='[account_id]' role='dimension' type='nominal' />
+    <column datatype='string' name='[product_id]' role='dimension' type='nominal' />
+    <column datatype='string' name='[account_id (accounts)]' role='dimension' type='nominal' />
+    <column datatype='string' name='[account_name]' role='dimension' type='nominal' />
+    <column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' />
+    <column datatype='string' name='[account_manager]' role='dimension' type='nominal' />
+    <column datatype='integer' name='[business_size]' role='measure' type='quantitative' />
+    <column datatype='string' name='[product_id (products)]' role='dimension' type='nominal' />
+    <column datatype='string' name='[paper_type]' role='dimension' type='nominal' />
+    <column caption="Completed Revenue" datatype='real' name='[Calculation_7201]' role='measure' type='quantitative'><calculation class='tableau' formula='IF [status] = "COMPLETED" THEN [post_discount_revenue] END'></calculation></column>
+    <column caption="Discount Amount" datatype='real' name='[Calculation_7202]' role='measure' type='quantitative'><calculation class='tableau' formula="[post_discount_revenue] - [pre_discount_revenue]"></calculation></column>
+    <column caption="Running Revenue" datatype='real' name='[Calculation_7211]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]))"></calculation></column>
+    <column caption="Revenue Share" datatype='real' name='[Calculation_7212]' role='measure' type='quantitative'><calculation class='tableau' formula="SUM([post_discount_revenue]) / TOTAL(SUM([post_discount_revenue]))"></calculation></column>
+    <column caption="Quantity vs Average" datatype='real' name='[Calculation_7213]' role='measure' type='quantitative'><calculation class='tableau' formula="AVG([quantity]) / TOTAL(AVG([quantity]))"></calculation></column>
+    <column caption="Centered Average" datatype='real' name='[Calculation_7214]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_AVG(SUM([post_discount_revenue]), -1, 1)"></calculation></column>
+    <column caption="Partition Max" datatype='real' name='[Calculation_7215]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_MAX(SUM([post_discount_revenue]))"></calculation></column>
+    <column caption="Previous Revenue" datatype='real' name='[Calculation_7216]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), -1)"></calculation></column>
+    <column caption="Next Revenue" datatype='real' name='[Calculation_7217]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), 1)"></calculation></column>
+    <column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column>
+    <column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column>
+    <column caption="Revenue Rank Asc" datatype='integer' name='[Calculation_7220]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([post_discount_revenue]), 'asc')"></calculation></column>
+    <column caption="Revenue To Date" datatype='real' name='[Calculation_7221]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_SUM(SUM([post_discount_revenue]), FIRST(), 0)"></calculation></column>
+    <column caption="Offset From First" datatype='integer' name='[Calculation_7222]' role='measure' type='quantitative'><calculation class='tableau' formula="FIRST()"></calculation></column>
+    <column caption="Offset To Last" datatype='integer' name='[Calculation_7223]' role='measure' type='quantitative'><calculation class='tableau' formula="LAST()"></calculation></column>
+    <column caption="Running Avg Completed" datatype='real' name='[Calculation_7224]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_AVG(SUM([Calculation_7201]))"></calculation></column>
+    <column caption="Completed Rank" datatype='integer' name='[Calculation_7225]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([Calculation_7201]))"></calculation></column>
+    <column caption="Revenue From Here" datatype='real' name='[Calculation_7226]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_SUM(SUM([post_discount_revenue]), 0, LAST())"></calculation></column>
+    <column caption="First Revenue" datatype='real' name='[Calculation_7227]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), FIRST())"></calculation></column>
+    <column caption="Rank Over Three" datatype='real' name='[Calculation_7228]' role='measure' type='quantitative'><calculation class='tableau' formula="ROUND(INDEX() / 3 - 0.6, 0) + 1"><table-calc ordering-type='Columns' /></calculation></column>
+    <column caption="Max Quantity Dense Rank" datatype='integer' name='[Calculation_7229]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_DENSE(MAX([quantity]))"></calculation></column>
+    <column caption="Max Quantity Unique Rank" datatype='integer' name='[Calculation_7230]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_UNIQUE(MAX([quantity]))"></calculation></column>
+    <column caption="Max Quantity Modified Rank" datatype='integer' name='[Calculation_7231]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_MODIFIED(MAX([quantity]))"></calculation></column>
+    <column caption="Max Quantity Percentile" datatype='real' name='[Calculation_7232]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_PERCENTILE(MAX([quantity]))"></calculation></column>
+    <column caption="Max Quantity Rank" datatype='integer' name='[Calculation_7233]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(MAX([quantity]))"></calculation></column>
+    <column caption="Index Default" datatype='integer' name='[Calculation_7234]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column>
+    <column caption="Running Count" datatype='integer' name='[Calculation_7235]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_COUNT(SUM([post_discount_revenue]))"></calculation></column>
+    <column caption="Running Min" datatype='real' name='[Calculation_7236]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_MIN(SUM([post_discount_revenue]))"></calculation></column>
+    <column caption="Window Count Back" datatype='integer' name='[Calculation_7237]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_COUNT(SUM([post_discount_revenue]), -1, 0)"></calculation></column>
+    <column caption="Last Revenue" datatype='real' name='[Calculation_7238]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), LAST())"></calculation></column>
+    <column caption="Min Share" datatype='real' name='[Calculation_7239]' role='measure' type='quantitative'><calculation class='tableau' formula="MIN([post_discount_revenue]) / TOTAL(MIN([post_discount_revenue]))"></calculation></column>
+    <column caption="Orders Share" datatype='real' name='[Calculation_7243]' role='measure' type='quantitative'><calculation class='tableau' formula="COUNT([order_id]) / TOTAL(COUNT([order_id]))"></calculation></column>
+    <column caption="Ratio Running" datatype='real' name='[Calculation_7244]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]) / SUM([quantity]))"></calculation></column>
+    <column caption="Ratio Share" datatype='real' name='[Calculation_7245]' role='measure' type='quantitative'><calculation class='tableau' formula="(SUM([post_discount_revenue]) / SUM([quantity])) / TOTAL(SUM([post_discount_revenue]) / SUM([quantity]))"></calculation></column>
+    <column caption="Running of Running" datatype='real' name='[Calculation_7240]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM([Calculation_7211])"></calculation></column>
+    <column caption="Previous Value" datatype='real' name='[Calculation_7241]' role='measure' type='quantitative'><calculation class='tableau' formula="PREVIOUS_VALUE(0) + SUM([post_discount_revenue])"></calculation></column>
+    <column caption="Script Value" datatype='real' name='[Calculation_7242]' role='measure' type='quantitative'><calculation class='tableau' formula="SCRIPT_REAL('return _arg1', SUM([post_discount_revenue]))"></calculation></column>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name="Running Total by Month">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[purchased_at]' derivation='Month-Trunc' name='[tmn:purchased_at:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Line' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]</rows>
+        <cols>[federated.tablecalc0].[tmn:purchased_at:qk]</cols>
+      </table>
+      <simple-id uuid='{758ED79C-9C11-5143-88D1-01B84B7148D7}' />
+    </worksheet>
+    <worksheet name="Running Total by Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[purchased_at]' derivation='Month-Trunc' name='[tmn:purchased_at:qk]' pivot='key' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Line' />
+            <encodings><color column="[federated.tablecalc0].[none:status:nk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]</rows>
+        <cols>[federated.tablecalc0].[tmn:purchased_at:qk]</cols>
+      </table>
+      <simple-id uuid='{827EA8AC-0BBB-5367-891C-35C798F7E815}' />
+    </worksheet>
+    <worksheet name="Share by Paper Type">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[pcto:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" type="PctTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[pcto:sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{19891BEB-5E47-5A46-9323-31AEDD9DFD58}' />
+    </worksheet>
+    <worksheet name="Grid Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{F5F946BA-FEDF-5899-9C1D-5A9AD2D7F5D3}' />
+    </worksheet>
+    <worksheet name="Grid Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{FD9AC2E5-6180-57CE-98D4-1DB5800ED5C6}' />
+    </worksheet>
+    <worksheet name="Grid Table">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{A25B0C19-B6FC-59E3-9A4A-CA65E7219617}' />
+    </worksheet>
+    <worksheet name="Pane Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:4]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="ColumnInPane" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:4]</cols>
+      </table>
+      <simple-id uuid='{04C265FB-EA97-5519-9FE3-015D5CD3DCE1}' />
+    </worksheet>
+    <worksheet name="Quarterly Difference">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[purchased_at]' derivation='Quarter' name='[qr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[diff:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="Difference"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[pcdf:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="PctDiff"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[pcva:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="PctValue"><address><value>-1</value></address></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[diff:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[pcdf:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[pcva:sum:post_discount_revenue:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows></rows>
+        <cols>([federated.tablecalc0].[yr:purchased_at:ok] / [federated.tablecalc0].[qr:purchased_at:ok])</cols>
+      </table>
+      <simple-id uuid='{899DF1D8-D8BF-596B-9B83-60D08A59F664}' />
+    </worksheet>
+    <worksheet name="Discount Change">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Discount Amount" datatype='real' name='[Calculation_7202]' role='measure' type='quantitative'><calculation class='tableau' formula="[post_discount_revenue] - [pre_discount_revenue]"></calculation></column><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Revenue Before Discount" datatype='real' name='[pre_discount_revenue]' role='measure' type='quantitative' /><column caption="Completed Revenue" datatype='real' name='[Calculation_7201]' role='measure' type='quantitative'><calculation class='tableau' formula='IF [status] = "COMPLETED" THEN [post_discount_revenue] END'></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[Calculation_7202]' derivation='Sum' name='[pcdf:sum:Calculation_7202:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="PctDiff"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[Calculation_7202]' derivation='Sum' name='[pcva:sum:Calculation_7202:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="PctValue"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[Calculation_7201]' derivation='Sum' name='[diff:sum:Calculation_7201:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Columns" type="Difference"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[Calculation_7201]' derivation='Sum' name='[pcdf:sum:Calculation_7201:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Columns" type="PctDiff"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[Calculation_7202]' derivation='Sum' name='[sum:Calculation_7202:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_7201]' derivation='Sum' name='[sum:Calculation_7201:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[pcdf:sum:Calculation_7202:qk]" /><lod column="[federated.tablecalc0].[pcva:sum:Calculation_7202:qk]" /><lod column="[federated.tablecalc0].[diff:sum:Calculation_7201:qk]" /><lod column="[federated.tablecalc0].[pcdf:sum:Calculation_7201:qk]" /><lod column="[federated.tablecalc0].[sum:Calculation_7202:qk]" /><lod column="[federated.tablecalc0].[sum:Calculation_7201:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{4DAC1EB5-B50C-5054-ADA6-2C61FFAB3A7B}' />
+    </worksheet>
+    <worksheet name="Rank by Manager">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[quantity]' derivation='Max' name='[max:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[quantity]' derivation='Max' name='[rank:max:quantity:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" rank-options="Competition,Descending" type="Rank" /></column-instance><column-instance column='[quantity]' derivation='Max' name='[pcrk:max:quantity:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" rank-options="Competition,Ascending" type="PctRank" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[rank:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" rank-options="Unique,Ascending" type="Rank" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[rank:max:quantity:qk]" /><lod column="[federated.tablecalc0].[pcrk:max:quantity:qk]" /><lod column="[federated.tablecalc0].[rank:sum:post_discount_revenue:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[max:quantity:qk]</cols>
+      </table>
+      <simple-id uuid='{2465B8A7-0830-5773-98C9-B0CC6AB5CEFB}' />
+    </worksheet>
+    <worksheet name="Rank Calcs by Manager">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="Max Quantity Dense Rank" datatype='integer' name='[Calculation_7229]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_DENSE(MAX([quantity]))"></calculation></column><column caption="Max Quantity Unique Rank" datatype='integer' name='[Calculation_7230]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_UNIQUE(MAX([quantity]))"></calculation></column><column caption="Max Quantity Modified Rank" datatype='integer' name='[Calculation_7231]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_MODIFIED(MAX([quantity]))"></calculation></column><column caption="Max Quantity Percentile" datatype='real' name='[Calculation_7232]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_PERCENTILE(MAX([quantity]))"></calculation></column><column caption="Max Quantity Rank" datatype='integer' name='[Calculation_7233]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(MAX([quantity]))"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[quantity]' derivation='Max' name='[max:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_7229]' derivation='User' name='[usr:Calculation_7229:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7230]' derivation='User' name='[usr:Calculation_7230:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7231]' derivation='User' name='[usr:Calculation_7231:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7232]' derivation='User' name='[usr:Calculation_7232:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7233]' derivation='User' name='[usr:Calculation_7233:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[usr:Calculation_7229:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7230:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7231:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7232:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7233:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[max:quantity:qk]</cols>
+      </table>
+      <simple-id uuid='{8B058E55-F837-54CA-B33C-DFF36D8EFAFA}' />
+    </worksheet>
+    <worksheet name="Moving Average by Month">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[win:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Avg" from="-2" ordering-type="Rows" to="0" type="WindowTotal" window-options="IncludeCurrent" /></column-instance><column-instance column='[purchased_at]' derivation='Month-Trunc' name='[tmn:purchased_at:qk]' pivot='key' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Line' />
+            <encodings><lod column="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[win:sum:post_discount_revenue:qk]</rows>
+        <cols>[federated.tablecalc0].[tmn:purchased_at:qk]</cols>
+      </table>
+      <simple-id uuid='{80A895BE-407A-53EC-A90E-B8E84AA2AE58}' />
+    </worksheet>
+    <worksheet name="Restart Every Year">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[purchased_at]' derivation='Quarter' name='[qr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:5]' pivot='key' type='quantitative'><table-calc aggregation="Sum" level-break="[federated.tablecalc0].[qr:purchased_at:ok]" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[yr:purchased_at:ok]" /><order field="[federated.tablecalc0].[qr:purchased_at:ok]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:5]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[yr:purchased_at:ok]</rows>
+        <cols>[federated.tablecalc0].[qr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{50C075DF-AA0B-566D-9BE2-1A51B1424769}' />
+    </worksheet>
+    <worksheet name="Share Within Paper Type">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[pcto:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Field" ordering-field="[federated.tablecalc0].[status]" type="PctTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[pcto:sum:post_discount_revenue:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{3397A5BF-B01F-5E59-BC24-DEBDC968FE7C}' />
+    </worksheet>
+    <worksheet name="Formula Calcs">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Running Revenue" datatype='real' name='[Calculation_7211]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]))"></calculation></column><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Revenue Share" datatype='real' name='[Calculation_7212]' role='measure' type='quantitative'><calculation class='tableau' formula="SUM([post_discount_revenue]) / TOTAL(SUM([post_discount_revenue]))"></calculation></column><column caption="Quantity vs Average" datatype='real' name='[Calculation_7213]' role='measure' type='quantitative'><calculation class='tableau' formula="AVG([quantity]) / TOTAL(AVG([quantity]))"></calculation></column><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="Centered Average" datatype='real' name='[Calculation_7214]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_AVG(SUM([post_discount_revenue]), -1, 1)"></calculation></column><column caption="Partition Max" datatype='real' name='[Calculation_7215]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_MAX(SUM([post_discount_revenue]))"></calculation></column><column caption="Previous Revenue" datatype='real' name='[Calculation_7216]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), -1)"></calculation></column><column caption="Next Revenue" datatype='real' name='[Calculation_7217]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), 1)"></calculation></column><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column caption="Partition Size" datatype='integer' name='[Calculation_7219]' role='measure' type='quantitative'><calculation class='tableau' formula="SIZE()"></calculation></column><column caption="Revenue Rank Asc" datatype='integer' name='[Calculation_7220]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([post_discount_revenue]), 'asc')"></calculation></column><column caption="Revenue To Date" datatype='real' name='[Calculation_7221]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_SUM(SUM([post_discount_revenue]), FIRST(), 0)"></calculation></column><column caption="Offset From First" datatype='integer' name='[Calculation_7222]' role='measure' type='quantitative'><calculation class='tableau' formula="FIRST()"></calculation></column><column caption="Offset To Last" datatype='integer' name='[Calculation_7223]' role='measure' type='quantitative'><calculation class='tableau' formula="LAST()"></calculation></column><column caption="Running Avg Completed" datatype='real' name='[Calculation_7224]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_AVG(SUM([Calculation_7201]))"></calculation></column><column caption="Completed Revenue" datatype='real' name='[Calculation_7201]' role='measure' type='quantitative'><calculation class='tableau' formula='IF [status] = "COMPLETED" THEN [post_discount_revenue] END'></calculation></column><column caption="Completed Rank" datatype='integer' name='[Calculation_7225]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK(SUM([Calculation_7201]))"></calculation></column><column caption="Revenue From Here" datatype='real' name='[Calculation_7226]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_SUM(SUM([post_discount_revenue]), 0, LAST())"></calculation></column><column caption="First Revenue" datatype='real' name='[Calculation_7227]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), FIRST())"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[Calculation_7211]' derivation='User' name='[usr:Calculation_7211:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7212]' derivation='User' name='[usr:Calculation_7212:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7213]' derivation='User' name='[usr:Calculation_7213:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7214]' derivation='User' name='[usr:Calculation_7214:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7215]' derivation='User' name='[usr:Calculation_7215:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7216]' derivation='User' name='[usr:Calculation_7216:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7217]' derivation='User' name='[usr:Calculation_7217:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7219]' derivation='User' name='[usr:Calculation_7219:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7220]' derivation='User' name='[usr:Calculation_7220:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7221]' derivation='User' name='[usr:Calculation_7221:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7222]' derivation='User' name='[usr:Calculation_7222:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7223]' derivation='User' name='[usr:Calculation_7223:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7224]' derivation='User' name='[usr:Calculation_7224:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7225]' derivation='User' name='[usr:Calculation_7225:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[Calculation_7226]' derivation='User' name='[usr:Calculation_7226:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7227]' derivation='User' name='[usr:Calculation_7227:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_7201]' derivation='Sum' name='[sum:Calculation_7201:qk]' pivot='key' type='quantitative' /><column-instance column='[quantity]' derivation='Avg' name='[avg:quantity:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[usr:Calculation_7211:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7212:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7213:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7214:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7215:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7216:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7217:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7219:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7220:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7221:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7222:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7223:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7224:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7225:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7226:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7227:qk]" /><lod column="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[sum:Calculation_7201:qk]" /><lod column="[federated.tablecalc0].[avg:quantity:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{C6225159-551B-5976-B988-1638AEB198C2}' />
+    </worksheet>
+    <worksheet name="Rank Over Three">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Rank Over Three" datatype='real' name='[Calculation_7228]' role='measure' type='quantitative'><calculation class='tableau' formula="ROUND(INDEX() / 3 - 0.6, 0) + 1"><table-calc ordering-type='Columns' /></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[Calculation_7228]' derivation='User' name='[usr:Calculation_7228:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[usr:Calculation_7228:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{1CA61407-13F5-55F2-8DEC-D4D229D058CB}' />
+    </worksheet>
+    <worksheet name="Default Addressing">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Index Default" datatype='integer' name='[Calculation_7234]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[Calculation_7234]' derivation='User' name='[usr:Calculation_7234:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[usr:Calculation_7234:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{63EC3C84-8045-548D-8FBA-8114B487B16C}' />
+    </worksheet>
+    <worksheet name="Sparse Grid">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[diff:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="Difference"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[diff:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{362CDFCF-D2DF-5105-8256-FBC1FAE3C72C}' />
+    </worksheet>
+    <worksheet name="Average Share">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column datatype='string' name='[order_id]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[quantity]' derivation='Avg' name='[pcto:avg:quantity:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" type="PctTotal" /></column-instance><column-instance column='[order_id]' derivation='Count' name='[pcto:cnt:order_id:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" type="PctTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[pcto:cnt:order_id:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[pcto:avg:quantity:qk]</cols>
+      </table>
+      <simple-id uuid='{ABB953B9-A168-5F67-A138-1CDC3BC5C70F}' />
+    </worksheet>
+    <worksheet name="Share With Measure Filter">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[pcto:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" type="PctTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <filter class='quantitative' column="[federated.tablecalc0].[sum:post_discount_revenue:qk]" included-values='in-range'><min>3000000</min></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[pcto:sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{5B3749F4-DE26-5CD1-BB84-07210BE52D02}' />
+    </worksheet>
+    <worksheet name="Window Variants">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Running Count" datatype='integer' name='[Calculation_7235]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_COUNT(SUM([post_discount_revenue]))"></calculation></column><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Running Min" datatype='real' name='[Calculation_7236]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_MIN(SUM([post_discount_revenue]))"></calculation></column><column caption="Window Count Back" datatype='integer' name='[Calculation_7237]' role='measure' type='quantitative'><calculation class='tableau' formula="WINDOW_COUNT(SUM([post_discount_revenue]), -1, 0)"></calculation></column><column caption="Last Revenue" datatype='real' name='[Calculation_7238]' role='measure' type='quantitative'><calculation class='tableau' formula="LOOKUP(SUM([post_discount_revenue]), LAST())"></calculation></column><column caption="Min Share" datatype='real' name='[Calculation_7239]' role='measure' type='quantitative'><calculation class='tableau' formula="MIN([post_discount_revenue]) / TOTAL(MIN([post_discount_revenue]))"></calculation></column><column caption="Orders Share" datatype='real' name='[Calculation_7243]' role='measure' type='quantitative'><calculation class='tableau' formula="COUNT([order_id]) / TOTAL(COUNT([order_id]))"></calculation></column><column datatype='string' name='[order_id]' role='dimension' type='nominal' /><column caption="Ratio Running" datatype='real' name='[Calculation_7244]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]) / SUM([quantity]))"></calculation></column><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="Ratio Share" datatype='real' name='[Calculation_7245]' role='measure' type='quantitative'><calculation class='tableau' formula="(SUM([post_discount_revenue]) / SUM([quantity])) / TOTAL(SUM([post_discount_revenue]) / SUM([quantity]))"></calculation></column><column caption="Completed Revenue" datatype='real' name='[Calculation_7201]' role='measure' type='quantitative'><calculation class='tableau' formula='IF [status] = "COMPLETED" THEN [post_discount_revenue] END'></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[Calculation_7235]' derivation='User' name='[usr:Calculation_7235:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7236]' derivation='User' name='[usr:Calculation_7236:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7237]' derivation='User' name='[usr:Calculation_7237:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7238]' derivation='User' name='[usr:Calculation_7238:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7239]' derivation='User' name='[usr:Calculation_7239:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7243]' derivation='User' name='[usr:Calculation_7243:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7244]' derivation='User' name='[usr:Calculation_7244:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7245]' derivation='User' name='[usr:Calculation_7245:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7201]' derivation='Sum' name='[pcva:sum:Calculation_7201:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Columns" type="PctValue"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[pcrk:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" rank-options="Competition,Descending" type="PctRank" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[win:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" from="0" ordering-type="Rows" to="1" type="WindowTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column-instance column='[Calculation_7201]' derivation='Sum' name='[sum:Calculation_7201:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[usr:Calculation_7235:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7236:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7237:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7238:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7239:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7243:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7244:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7245:qk]" /><lod column="[federated.tablecalc0].[pcva:sum:Calculation_7201:qk]" /><lod column="[federated.tablecalc0].[pcrk:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[win:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[sum:Calculation_7201:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{793013DA-83EC-5DAC-846D-769FCEA0CE7A}' />
+    </worksheet>
+    <worksheet name="Running by Manual Sort">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <manual-sort column="[federated.tablecalc0].[none:paper_type:nk]" direction='ASC'><dictionary><bucket>&quot;Printer&quot;</bucket><bucket>&quot;Copy&quot;</bucket><bucket>&quot;Cardstock&quot;</bucket></dictionary></manual-sort>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]</cols>
+      </table>
+      <simple-id uuid='{4A85F5DF-3E80-5C0A-8906-D0348FEAE60C}' />
+    </worksheet>
+    <worksheet name="Running by Revenue Sort">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[diff:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Columns" type="Difference"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <computed-sort column="[federated.tablecalc0].[none:paper_type:nk]" direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[diff:sum:post_discount_revenue:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]</cols>
+      </table>
+      <simple-id uuid='{A673CE4B-C638-5304-8655-8AFBDE3DB032}' />
+    </worksheet>
+    <worksheet name="Average Share Filtered">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[quantity]' derivation='Avg' name='[pcto:avg:quantity:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" type="PctTotal" /></column-instance><column-instance column='[quantity]' derivation='Avg' name='[avg:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <filter class='quantitative' column="[federated.tablecalc0].[sum:post_discount_revenue:qk]" included-values='in-range'><min>3000000</min></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[avg:quantity:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[pcto:avg:quantity:qk]</cols>
+      </table>
+      <simple-id uuid='{FC35B3E6-4216-5CFB-9F85-1D1ACE2E2DCD}' />
+    </worksheet>
+    <worksheet name="Nested Calcs">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Running of Running" datatype='real' name='[Calculation_7240]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM([Calculation_7211])"></calculation></column><column caption="Running Revenue" datatype='real' name='[Calculation_7211]' role='measure' type='quantitative'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]))"></calculation></column><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Previous Value" datatype='real' name='[Calculation_7241]' role='measure' type='quantitative'><calculation class='tableau' formula="PREVIOUS_VALUE(0) + SUM([post_discount_revenue])"></calculation></column><column caption="Script Value" datatype='real' name='[Calculation_7242]' role='measure' type='quantitative'><calculation class='tableau' formula="SCRIPT_REAL('return _arg1', SUM([post_discount_revenue]))"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[Calculation_7240]' derivation='User' name='[usr:Calculation_7240:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7241]' derivation='User' name='[usr:Calculation_7241:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance><column-instance column='[Calculation_7242]' derivation='User' name='[usr:Calculation_7242:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[usr:Calculation_7240:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7241:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7242:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{B29A0093-CB20-57E0-B4B8-9AA1CC253447}' />
+    </worksheet>
+    <worksheet name="Grid Across with Index">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[diff:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc diff-options="Relative" ordering-type="Rows" type="Difference"><address><value>-1</value></address></table-calc></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[diff:sum:post_discount_revenue:qk]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{CFA7DC43-9520-51AC-AD8D-7D836EB17C32}' />
+    </worksheet>
+    <worksheet name="Sparse Grid Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="Row Index" datatype='integer' name='[Calculation_7218]' role='measure' type='quantitative'><calculation class='tableau' formula="INDEX()"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[Calculation_7218]' derivation='User' name='[usr:Calculation_7218:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7218:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[none:payment_cycle:nk]</cols>
+      </table>
+      <simple-id uuid='{59CC6E0E-CF1E-5561-B079-90165B4B6C95}' />
+    </worksheet>
+    <worksheet name="Specific Status then Paper">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:6]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:6]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{88648CC5-040C-5857-98D4-84C14D8833B4}' />
+    </worksheet>
+    <worksheet name="Specific Paper then Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:7]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:paper_type:nk]" /><order field="[federated.tablecalc0].[none:status:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:7]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{9A6178B0-81E1-503A-BF40-2F5F92373C08}' />
+    </worksheet>
+    <worksheet name="Restart at First Field">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:8]' pivot='key' type='quantitative'><table-calc aggregation="Sum" level-break="[federated.tablecalc0].[none:status:nk]" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:8]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{8C9080E8-CC90-5D45-975D-BB1B06965688}' />
+    </worksheet>
+    <worksheet name="Restart Every Status">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:9]' pivot='key' type='quantitative'><table-calc aggregation="Sum" level-break="[federated.tablecalc0].[none:paper_type:nk]" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:9]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{1E3CC9F9-1294-5C46-8BCA-ADF7710677BB}' />
+    </worksheet>
+    <worksheet name="Specific Fields by Name">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:10]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field='[federated.tablecalc0].[status]' /><order field='[federated.tablecalc0].[paper_type]' /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:10]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{346F7D79-5A88-5B8C-862E-22B9188AED17}' />
+    </worksheet>
+    <worksheet name="Table Columns Only">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows></rows>
+        <cols>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</cols>
+      </table>
+      <simple-id uuid='{DA7F5282-FA40-51AA-836B-1E720943C3D6}' />
+    </worksheet>
+    <worksheet name="Table Rows Only">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Table" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:3]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols></cols>
+      </table>
+      <simple-id uuid='{2EB46AC9-72ED-5D94-B0D3-2D354CBA32F3}' />
+    </worksheet>
+    <worksheet name="Pane Down Grid">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:4]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="ColumnInPane" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:4]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{999C8EF7-56AA-5DEA-A1CF-72980AF15BBC}' />
+    </worksheet>
+    <worksheet name="Pane Across">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[purchased_at]' derivation='Quarter' name='[qr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:11]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="RowInPane" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:11]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>([federated.tablecalc0].[yr:purchased_at:ok] / [federated.tablecalc0].[qr:purchased_at:ok])</cols>
+      </table>
+      <simple-id uuid='{C369C951-EA33-5493-B604-F857B3CBABC6}' />
+    </worksheet>
+    <worksheet name="Pane Across then Down">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[purchased_at]' derivation='Quarter' name='[qr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:12]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Pane" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:12]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols>([federated.tablecalc0].[yr:purchased_at:ok] / [federated.tablecalc0].[qr:purchased_at:ok])</cols>
+      </table>
+      <simple-id uuid='{46B07391-C1A3-51BB-A0BA-CF3DD6036803}' />
+    </worksheet>
+    <worksheet name="Cell">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[purchased_at]' derivation='Year' name='[yr:purchased_at:ok]' pivot='key' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:13]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="CellInPane" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:13]" /></encodings>
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols>[federated.tablecalc0].[yr:purchased_at:ok]</cols>
+      </table>
+      <simple-id uuid='{2604FEF6-FD10-5D84-9D3A-EDF75E1B340E}' />
+    </worksheet>
+    <worksheet name="Table Down Nested">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>([federated.tablecalc0].[none:status:nk] / [federated.tablecalc0].[none:paper_type:nk])</rows>
+        <cols>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]</cols>
+      </table>
+      <simple-id uuid='{5731E31A-0986-54CE-A66F-1A56008AD01C}' />
+    </worksheet>
+    <worksheet name="Percentile Alone">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="Max Quantity Percentile" datatype='real' name='[Calculation_7232]' role='measure' type='quantitative'><calculation class='tableau' formula="RANK_PERCENTILE(MAX([quantity]))"></calculation></column><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[quantity]' derivation='Max' name='[max:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[quantity]' derivation='Max' name='[pcrk:max:quantity:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" rank-options="Competition,Ascending" type="PctRank" /></column-instance><column-instance column='[Calculation_7232]' derivation='User' name='[usr:Calculation_7232:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Rows" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[pcrk:max:quantity:qk:2]" /><lod column="[federated.tablecalc0].[usr:Calculation_7232:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[max:quantity:qk]</cols>
+      </table>
+      <simple-id uuid='{E5457A96-0A4B-5993-A338-5BB7C0456F6A}' />
+    </worksheet>
+    <worksheet name="Moving Average Without Current">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[win:sum:post_discount_revenue:qk:3]' pivot='key' type='quantitative'><table-calc aggregation="Avg" from="-2" ordering-type="Rows" to="0" type="WindowTotal" /></column-instance><column-instance column='[purchased_at]' derivation='Month-Trunc' name='[tmn:purchased_at:qk]' pivot='key' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Line' />
+            <encodings><lod column="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[win:sum:post_discount_revenue:qk:3]</rows>
+        <cols>[federated.tablecalc0].[tmn:purchased_at:qk]</cols>
+      </table>
+      <simple-id uuid='{6477EFE3-FD4E-5D9B-BB6B-DD9DF316B803}' />
+    </worksheet>
+    <worksheet name="Dense Rank">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[quantity]' derivation='Max' name='[max:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[quantity]' derivation='Max' name='[rank:max:quantity:qk:2]' pivot='key' type='quantitative'><table-calc ordering-type="Columns" rank-options="Dense,Descending" type="Rank" /></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><lod column="[federated.tablecalc0].[rank:max:quantity:qk:2]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:account_manager:nk]</rows>
+        <cols>[federated.tablecalc0].[max:quantity:qk]</cols>
+      </table>
+      <simple-id uuid='{344D3B13-E9F7-5864-99C2-3E44AA775553}' />
+    </worksheet>
+    <worksheet name="At the Level">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:14]' pivot='key' type='quantitative'><table-calc aggregation="Sum" level-address="[federated.tablecalc0].[none:status:nk]" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:status:nk]" /><order field="[federated.tablecalc0].[none:paper_type:nk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:14]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{07F17978-B85A-5F8E-A45F-5A3140AABED5}' />
+    </worksheet>
+    <worksheet name="Custom Sort Addressing">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:15]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Field" type="CumTotal"><order field="[federated.tablecalc0].[none:paper_type:nk]" /><sort direction='DESC' using="[federated.tablecalc0].[sum:post_discount_revenue:qk]" /></table-calc></column-instance></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:15]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{A7B422FE-A71E-5BC8-8813-2D2FC9CFCE20}' />
+    </worksheet>
+    <worksheet name="Moving Average Null If Incomplete">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='date' name='[purchased_at]' role='dimension' type='ordinal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[win:sum:post_discount_revenue:qk:4]' pivot='key' type='quantitative'><table-calc aggregation="Avg" from="-2" ordering-type="Rows" to="0" type="WindowTotal" window-options="IncludeCurrent,NullIfIncomplete" /></column-instance><column-instance column='[purchased_at]' derivation='Month-Trunc' name='[tmn:purchased_at:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Line' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[win:sum:post_discount_revenue:qk:4]</rows>
+        <cols>[federated.tablecalc0].[tmn:purchased_at:qk]</cols>
+      </table>
+      <simple-id uuid='{BCF8FF9B-6360-590C-BC64-4368AE6D32B5}' />
+    </worksheet>
+    <worksheet name="Top Paper Types Running">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk:2]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Columns" type="CumTotal" /></column-instance><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <filter class='categorical' column="[federated.tablecalc0].[none:paper_type:nk]"><groupfilter count='3' end='top' function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true'><groupfilter direction='DESC' expression='SUM([post_discount_revenue])' function='order' user:ui-marker='order'><groupfilter function='level-members' level='[none:paper_type:nk]' /></groupfilter></groupfilter></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[cum:sum:post_discount_revenue:qk:2]</cols>
+      </table>
+      <simple-id uuid='{A2411998-E427-5170-9C6A-2320C55A8952}' />
+    </worksheet>
+    <worksheet name="Running with Color in Grid">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[status]' role='dimension' type='nominal' /><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column datatype='string' name='[payment_cycle]' role='dimension' type='nominal' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[cum:sum:post_discount_revenue:qk]' pivot='key' type='quantitative'><table-calc aggregation="Sum" ordering-type="Rows" type="CumTotal" /></column-instance><column-instance column='[payment_cycle]' derivation='None' name='[none:payment_cycle:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column="[federated.tablecalc0].[cum:sum:post_discount_revenue:qk]" /><color column="[federated.tablecalc0].[none:payment_cycle:nk]" /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:status:nk]</rows>
+        <cols>[federated.tablecalc0].[none:paper_type:nk]</cols>
+      </table>
+      <simple-id uuid='{4CADB001-D1E9-5F4B-95A4-01F4B56AD67D}' />
+    </worksheet>
+  </worksheets>
+</workbook>
