@@ -63,6 +63,7 @@ from unshackle.ir import (
 )
 from unshackle.raw import RawStore
 from unshackle.sources import _aggexpr as ax
+from unshackle.sources import _dialect as dialect
 from unshackle.sources._semyaml import grid_rows
 from unshackle.sources import _manual
 from unshackle.sources.base import Inventory, Source
@@ -122,6 +123,12 @@ USER_FN = re.compile(r"\b(USERNAME|ISMEMBEROF|USERDOMAIN|FULLNAME|ISUSERNAME|ISF
 ATTR_FN = re.compile(r"\bATTR\s*\(", re.I)
 DATE_LIT = re.compile(r"#(\d{4}-\d{2}-\d{2})#")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# connection attributes that change what the warehouse returns, and how the migration carries them
+CONNECTION_SETTINGS = {
+    "one-time-sql": "Initial SQL (Tableau runs it on every connection it opens)",
+    "odbc-connect-string-extras": "extra connection options",
+}
+INITIAL_SQL_VARS = re.compile(r"\[(TableauServerUser(?:Full)?|TableauApp|TableauVersion|WorkbookName)\]")
 NODE_LIMIT = "NODE_LIMIT_EXCEEDED"
 SKILL = "skills/source-tableau"
 
@@ -863,6 +870,7 @@ class TDatasource:
     origin: "TDatasource | None" = None  # the published datasource a workbook's sqlproxy stub was linked to
     inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
     hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
+    settings: dict[str, list[str]] = field(default_factory=dict)  # CONNECTION_SETTINGS attribute -> values on its connections
 
 
 @dataclass
@@ -976,6 +984,11 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
         if ds.connection_class == "sqlproxy":
             ds.published = conn.get("dbname", "")
         named = {nc.get("name", ""): nc.find("connection") for nc in conn.iter("named-connection")}
+        for c in [conn, *(c for c in named.values() if c is not None)]:
+            for attr in CONNECTION_SETTINGS:
+                value = (c.get(attr) or "").strip()
+                if value and value not in ds.settings.get(attr, []):
+                    ds.settings.setdefault(attr, []).append(value)
         top = next((c for c in conn if _local(c.tag) == "relation"), None)
         if top is None:
             top = next((c for c in conn if _local(c.tag).endswith("relation")), None)
@@ -1183,6 +1196,7 @@ class _Parser:
             c for ds in data_sources for c in [ds.connection_class, *(r.connection_class for r in ds.relations.values())]
             if c not in ("federated", "sqlproxy")
         )
+        self.dialect = self.store.warehouse(self.b.datasource) or self.b.warehouse  # unshackle.toml wins over the export
         for ds in data_sources:
             self._assign_models(ds)
         self._count_names(data_sources)
@@ -1207,11 +1221,42 @@ class _Parser:
         if self.tds:
             self._tds_knowledge()
         self._metadata_only()
+        self._in_dialect(data_sources)
         self._permissions()
         for e in self._json("_errors.json") or []:
             if isinstance(e, dict):
                 self.b.warn(e.get("item", "?"), f"extract failed: {e.get('error', '')}")
         return self.b.settle_time_dimensions()
+
+    def _in_dialect(self, data_sources: list[TDatasource]) -> None:
+        """Tile, model and semantic SQL in the warehouse's dialect (sources/_dialect.py). Custom SQL stays as written."""
+        w = self.dialect
+        if w and w not in dialect.DIALECTS:
+            self.b.warn("warehouse type", f"{w!r}: tile and model SQL is written for {', '.join(dialect.DIALECTS)}; translate it for {w}")
+            return
+        keep = tuple(r.sql for ds in data_sources for r in ds.relations.values() if r.kind == "text" and r.sql)
+
+        def put(obj: Any, attr: str) -> None:
+            sql = getattr(obj, attr)
+            if not sql:
+                return
+            try:
+                setattr(obj, attr, dialect.render(sql, w, keep))
+            except dialect.Unsupported as exc:
+                note = f"{w}: {exc}; rewrite this part of the SQL for {w}"
+                obj.todo = f"{obj.todo}; {note}" if obj.todo else note
+
+        for sm in self.b.semantic_models:
+            put(sm, "sql")
+            for x in [*sm.dimensions, *sm.measures]:
+                put(x, "expr")
+        for m in self.b.metrics:
+            put(m, "expr")
+        for rf in self.b.row_filters:
+            put(rf, "predicate")
+        for d in self.b.dashboards:
+            for t in d.tiles:
+                put(t, "sql")
 
     # ------------------------------------------------------------ datasources -> models
 
@@ -1247,6 +1292,7 @@ class _Parser:
         item = f"{ds.src} datasource {ds.caption}"
         if ds.connection_class in FILE_CONNECTIONS or any(r.connection_class in FILE_CONNECTIONS for r in ds.relations.values()):
             self.b.warn(item, "connects to a file/extract, not a warehouse; point the semantic model at the warehouse table holding this data")
+        self._connection_settings(ds, item)
         mine: dict[str, _Model] = {}
         for r in ds.relations.values():
             key = f"table:{r.schema.lower()}.{r.table.lower()}" if r.kind == "table" else "sql:" + hashlib.sha1(" ".join(r.sql.split()).encode()).hexdigest()[:12]
@@ -1288,6 +1334,30 @@ class _Parser:
             if left:
                 self.b.warn(item, f"joins {len(ds.relations)} tables ({'; '.join(ds.joins)}); no relationship was made for "
                             f"{'; '.join(left)}: add foreign entities by hand", "info")
+
+    def _connection_settings(self, ds: TDatasource, item: str) -> None:
+        """Initial SQL and connection options change what the warehouse returns; the migrated SQL doesn't carry them."""
+        for attr, values in ds.settings.items():
+            for value in values:
+                if attr == "one-time-sql":
+                    msg = (f"{CONNECTION_SETTINGS[attr]}: `{' '.join(value.split())[:300]}`. The migrated SQL doesn't run it: run it in the "
+                           "warehouse session before the migrated queries (a connect hook on the notebooks' engine, dbt on-run-start), "
+                           "or fold its effect into the models")
+                    used = sorted(set(INITIAL_SQL_VARS.findall(value))) + (["parameters"] if PARAM_REF.search(value) else [])
+                    if used:
+                        msg += (f"; it uses {', '.join(used)}, which only Tableau fills in (per viewer or workbook): replace them "
+                                "(per-user filtering: skills/translate-permissions)")
+                else:
+                    msg = f"{CONNECTION_SETTINGS[attr]} `{value}`: set the same options on the warehouse connection the migrated SQL uses"
+                self.b.warn(item, msg)
+
+    @staticmethod
+    def _settings_lines(ds: TDatasource) -> list[str]:
+        lines: list[str] = []
+        for attr, values in ds.settings.items():
+            for value in values:
+                lines += ["", f"{CONNECTION_SETTINGS[attr][0].upper()}{CONNECTION_SETTINGS[attr][1:]}:", "", "```sql", value, "```"]
+        return lines
 
     def _relate(self, ds: TDatasource, mine: dict[str, _Model]) -> list[str]:
         """Join clauses -> foreign entities between the per-table models, with the join semantics in their descriptions.
@@ -3036,6 +3106,9 @@ class _Parser:
             lines += ["", "## Calculated fields", "", *calcs]
         if described:
             lines += ["", "## Field descriptions", "", *described]
+        for ds in wb.datasources.values():
+            if ds.settings:
+                lines += ["", f"## Connection settings of {ds.caption}", *self._settings_lines(ds)]
         captions = []
         for ws in wb.root.findall("worksheets/worksheet"):
             cap = _text(ws.find("layout-options/caption"))
@@ -3061,7 +3134,7 @@ class _Parser:
         for ds in self.tds:
             calcs, described = self._field_lines(ds)
             tables = ", ".join(f"`{r.schema + '.' if r.schema else ''}{r.table}`" if r.kind == "table" else "custom SQL" for r in ds.relations.values())
-            lines += ["", f"## {ds.caption}", "", f"Tables: {tables or 'none'}."]
+            lines += ["", f"## {ds.caption}", "", f"Tables: {tables or 'none'}.", *self._settings_lines(ds)]
             if calcs:
                 lines += ["", *calcs]
             if described:

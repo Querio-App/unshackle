@@ -26,6 +26,16 @@ class RawStore:
         if self.manifest_path.exists():
             self.manifest = json.loads(self.manifest_path.read_text())
 
+    def warehouse(self, datasource: str = "warehouse") -> str:
+        """The warehouse type unshackle.toml sets for `datasource` ([datasources.<name>] type), or "".
+        parse() reads it to write SQL in that warehouse's dialect; it wins over what the export reports."""
+        from unshackle.target.layout import Layout
+
+        try:
+            return Layout.load(self.repo_root).warehouses.get(datasource, "")
+        except (OSError, ValueError):
+            return ""
+
     def begin(self) -> None:
         """Start a fresh extract: files not written again are removed on save()."""
         self._fresh = True
