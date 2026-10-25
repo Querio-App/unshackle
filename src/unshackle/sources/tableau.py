@@ -4215,7 +4215,7 @@ class _Parser:
             elif param is None and formula not in ta.WINDOW and not (formula == "total" and c[0].deriv in ta.TOTAL_OF_MARKS):
                 problem = (f"{comp} recomputes {title(value)} over the scope's rows" if formula == "total"
                            else f"formula {formula!r} is not one unshackle knows")
-            elif param is None and formula == "total" and re.search(r"\nlimit \d+$", sql):
+            elif param is None and formula == "total" and (re.search(r"\nlimit \d+$", sql) or "as filter_rank" in sql):
                 problem = "Total with a Top N filter"
             if problem:
                 todos.append(f"Tableau {desc} not translated: {problem}; add it as a window column over the tile's rows "

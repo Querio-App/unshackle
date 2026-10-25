@@ -200,8 +200,8 @@ a datasource's Default Properties > Sort (`<default-sorts>`) applies where the s
 | Field (`<computed-sort using=...>`) | the aggregate (`sum(revenue) desc`), shown on the sheet or not; with other dimensions, per member over the whole view (`sum(sum(x)) over (partition by d)`), the same order in every pane |
 
 A computed sort by an `AVG`, `COUNTD`, `MEDIAN` or calc with other dimensions on the sheet, or
-by a measure unshackle can't write, stays a TODO; so does a sheet sort under a Top N filter (the
-rows keep the Top N order). Tableau's view CSV lists rows in the sheet's sort for one dimension;
+by a measure unshackle can't write, stays a TODO. Under a Top N filter the sheet's sort orders the
+N members' rows as on any other sheet (Filters, below). Tableau's view CSV lists rows in the sheet's sort for one dimension;
 with several, it orders them by its columns, so check nested sorts in the view itself.
 
 **Number formats** (`default-format` on a column, a sheet's Format > Numbers in
