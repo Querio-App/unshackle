@@ -389,3 +389,19 @@ def test_a_data_source_filter_that_cant_be_written_leaves_the_sheets_todo(tmp_pa
     assert not tiles["ds_status"].sql and "data source filter on [account_manager] not translated" in tiles["ds_status"].todo
     assert not tiles["ds_fixed_by_cycle"].sql
     assert not tiles["excl_two"].todo  # sheets on the other data source are unaffected
+
+
+def test_top_n_on_a_sheet_over_related_tables_stays_todo(tmp_path):
+    """A sheet over related tables (the logical layer) aggregates each table on its own; its top N members aren't written
+    there yet, so the sheet is a TODO rather than a sheet without its filter."""
+    fixture = Path(__file__).parent / "fixtures" / "tableau_relationships" / "workbooks" / "e8000000-0000-4000-8000-000000000001.twb"
+    flt = ("<filter class='categorical' column='[federated.rel0demo].[none:status:nk]'><groupfilter count='2' end='top' function='end' "
+           "units='records'><groupfilter direction='DESC' expression='SUM([business_size])' function='order'><groupfilter "
+           "function='level-members' level='[none:status:nk]' /></groupfilter></groupfilter></filter>\n          <aggregation")
+    xml = fixture.read_text()
+    start = xml.index('<worksheet name="Business Size by Status">')
+    cut = xml.index("<aggregation", start)
+    store = RawStore(tmp_path, "tableau")
+    store.put_text(f"workbooks/{fixture.name}", xml[:cut] + flt + xml[cut + len("<aggregation"):])
+    tile = _tiles(get_source("tableau").parse(store))["Business Size by Status"]
+    assert not tile.sql and "a top N or condition filter on a sheet over related tables" in tile.todo

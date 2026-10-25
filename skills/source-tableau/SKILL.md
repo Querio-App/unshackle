@@ -250,7 +250,8 @@ dimension filters, then measure filters (`having`).
 - TODO with the filter named: a top N by percent, hour/minute and ISO-8601 periods, a period
   to date on a date and time field (Tableau stops at the current time), a top N or condition
   as a data source filter (every sheet and FIXED grain on that data source stays TODO), and
-  a top N or condition in the context together with other top N filters. Context filters
+  a top N or condition in the context together with other top N filters, and a top N or
+  condition on a sheet over related tables. Context filters
   are in the tile's `where` and before top N, but not yet inside FIXED grains (TODO).
 
 **LODs in tiles** follow Tableau's order of operations. A FIXED grain is a CTE computed
