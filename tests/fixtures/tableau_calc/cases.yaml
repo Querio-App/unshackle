@@ -1,0 +1,377 @@
+# Tableau calculation semantics, one case per row (tests/test_tableau_calc.py runs them).
+#
+#   formula:  a Tableau formula over table t: i, j integer; r real (double); n real (decimal); s, u string;
+#             d, e date; b boolean
+#   rows:     input rows (a missing column is NULL)
+#   expected: a list (one value per row) for a row-level formula, one value for an aggregate
+#   rule:     the Tableau rule that gives the expected result
+#
+# Add a case for every function in _tableau_calc.FUNCS, with at least one NULL input.
+
+# ---------------------------------------------------------------- operators and NULL
+- formula: "[i] + [j]"
+  rows: [{i: 1, j: 2}, {i: 1}, {j: 2}]
+  expected: [3, null, null]
+  rule: "+ with a NULL operand is NULL"
+- formula: "[i] - [j] * 2"
+  rows: [{i: 7, j: 2}, {i: 7}]
+  expected: [3, null]
+  rule: "* binds tighter than -; NULL propagates"
+- formula: "[s] + [u]"
+  rows: [{s: "ab", u: "cd"}, {s: "ab"}, {u: "cd"}, {s: "", u: "cd"}]
+  expected: ["abcd", null, null, "cd"]
+  rule: "+ of two strings concatenates; NULL on either side is NULL; an empty string is a value"
+- formula: "[s] + '-' + [u]"
+  rows: [{s: "a", u: "b"}, {s: "a"}]
+  expected: ["a-b", null]
+  rule: "+ with a string literal concatenates"
+- formula: "[i] / [j]"
+  rows: [{i: 7, j: 2}, {i: -7, j: 2}, {i: 1, j: 0}, {i: 0, j: 0}, {j: 2}, {i: 7}]
+  expected: [3.5, -3.5, null, null, null, null]
+  rule: "/ of integers is a real (no integer division); a zero divisor gives NULL"
+- formula: "[r] / [j]"
+  rows: [{r: 1.5, j: 2}, {r: 1.5, j: 0}, {j: 0}]
+  expected: [0.75, null, null]
+  rule: "/ of a real; a zero divisor gives NULL"
+- formula: "[i] % [j]"
+  rows: [{i: 7, j: 3}, {i: -7, j: 3}, {i: 7, j: -3}, {i: 7}]
+  expected: [1, -1, 1, null]
+  rule: "% (modulo) takes the sign of the dividend"
+- formula: "([i] % 2) / 2"
+  rows: [{i: 7}, {i: 8}, {i: -7}, {}]
+  expected: [0.5, 0, -0.5, null]
+  rule: "parentheses keep % before /; the quotient is a real"
+- formula: "([i] > 1) = TRUE"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: [true, false, null]
+  rule: "a comparison compared with TRUE; NULL stays NULL"
+- formula: "-[i]"
+  rows: [{i: 3}, {}]
+  expected: [-3, null]
+  rule: "unary minus; NULL stays NULL"
+- formula: "[i] = [j]"
+  rows: [{i: 1, j: 1}, {i: 1, j: 2}, {i: 1}, {}]
+  expected: [true, false, null, null]
+  rule: "a comparison with NULL is NULL (NULL = NULL too)"
+- formula: "[i] <> [j]"
+  rows: [{i: 1, j: 1}, {i: 1, j: 2}, {i: 1}]
+  expected: [false, true, null]
+  rule: "<> with NULL is NULL"
+- formula: "[i] == 1"
+  rows: [{i: 1}, {i: 2}, {}]
+  expected: [true, false, null]
+  rule: "== is ="
+- formula: "[d] < [e]"
+  rows: [{d: 2024-01-01, e: 2024-01-02}, {d: 2024-01-02, e: 2024-01-01}, {d: 2024-01-01}]
+  expected: [true, false, null]
+  rule: "date comparison; NULL is NULL"
+- formula: "[b] = TRUE"
+  rows: [{b: true}, {b: false}, {}]
+  expected: [true, false, null]
+  rule: "= TRUE is a comparison: NULL = TRUE is NULL"
+- formula: "[b] = FALSE"
+  rows: [{b: true}, {b: false}, {}]
+  expected: [false, true, null]
+  rule: "= FALSE is a comparison: NULL = FALSE is NULL"
+- formula: "[b] <> TRUE"
+  rows: [{b: true}, {b: false}, {}]
+  expected: [false, true, null]
+  rule: "<> TRUE is a comparison: NULL <> TRUE is NULL"
+- formula: "NOT [b]"
+  rows: [{b: true}, {b: false}, {}]
+  expected: [false, true, null]
+  rule: "NOT NULL is NULL"
+- formula: "[b] AND [i] > 0"
+  rows: [{b: true, i: 1}, {b: false}, {i: 1}, {i: 0}]
+  expected: [true, false, null, false]
+  rule: "AND is three-valued: FALSE AND NULL is FALSE, TRUE AND NULL is NULL"
+- formula: "[b] OR [i] > 0"
+  rows: [{b: true}, {b: false, i: 0}, {i: 0}, {i: 1}]
+  expected: [true, false, null, true]
+  rule: "OR is three-valued: TRUE OR NULL is TRUE, FALSE OR NULL is NULL"
+- formula: "[b] && [i] > 0 || [i] > 5"
+  rows: [{b: true, i: 1}, {b: false, i: 6}, {b: false, i: 1}]
+  expected: [true, true, false]
+  rule: "&& and || are AND and OR"
+
+# ---------------------------------------------------------------- IF, CASE, IIF
+- formula: "IF [i] > 1 THEN 'big' ELSE 'small' END"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: ["big", "small", "small"]
+  rule: "IF with a NULL condition takes the ELSE branch"
+- formula: "IF [i] > 1 THEN 'big' END"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: ["big", null, null]
+  rule: "IF without ELSE is NULL when no branch matches"
+- formula: "IF [i] > 1 THEN 'big' ELSEIF [i] <= 1 THEN 'small' ELSE 'none' END"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: ["big", "small", "none"]
+  rule: "ELSEIF; a NULL value falls through every test to ELSE"
+- formula: "IF NOT ([i] > 1) THEN 'small' ELSE 'other' END"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: ["other", "small", "other"]
+  rule: "NOT NULL is NULL, so IF takes ELSE"
+- formula: "CASE [s] WHEN 'a' THEN 1 WHEN 'b' THEN 2 ELSE 0 END"
+  rows: [{s: "a"}, {s: "b"}, {s: "A"}, {}]
+  expected: [1, 2, 0, 0]
+  rule: "CASE compares with =: case-sensitive, NULL matches no WHEN"
+- formula: "CASE [i] WHEN 1 THEN 'one' END"
+  rows: [{i: 1}, {i: 2}, {}]
+  expected: ["one", null, null]
+  rule: "CASE without ELSE is NULL"
+- formula: "CASE WHEN [i] > 1 THEN 'big' ELSE 'small' END"
+  rows: [{i: 2}, {}]
+  expected: ["big", "small"]
+  rule: "searched CASE: a NULL test takes ELSE"
+- formula: "IIF([i] > 1, 'big', 'small')"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: ["big", "small", null]
+  rule: "IIF returns NULL when the test is NULL (unlike IF, it doesn't take the else value)"
+- formula: "IIF([i] > 1, 'big', 'small', 'unknown')"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: ["big", "small", "unknown"]
+  rule: "IIF's fourth argument is the result when the test is NULL"
+- formula: "IIF(ISNULL([i]), 0, [i])"
+  rows: [{i: 5}, {}]
+  expected: [5, 0]
+  rule: "ISNULL is never NULL, so IIF takes then/else"
+- formula: "IF [i] > 1 THEN NULL ELSE [i] END"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: [null, 1, null]
+  rule: "NULL is a literal"
+
+# ---------------------------------------------------------------- NULL functions
+- formula: "ZN([r])"
+  rows: [{r: 1.5}, {}]
+  expected: [1.5, 0]
+  rule: "ZN: NULL -> 0"
+- formula: "IFNULL([s], 'none')"
+  rows: [{s: "a"}, {s: ""}, {}]
+  expected: ["a", "", "none"]
+  rule: "IFNULL: the second value only for NULL (not for an empty string)"
+- formula: "ISNULL([s])"
+  rows: [{s: "a"}, {s: ""}, {}]
+  expected: [false, false, true]
+  rule: "ISNULL: an empty string is not NULL"
+- formula: "ISNULL([d])"
+  rows: [{d: 2024-01-01}, {}]
+  expected: [false, true]
+  rule: "ISNULL of a date"
+
+# ---------------------------------------------------------------- numbers
+- formula: "ROUND([r])"
+  rows: [{r: 2.5}, {r: 3.5}, {r: -2.5}, {r: 0.5}, {r: 2.4}, {}]
+  expected: [3, 4, -3, 1, 2, null]
+  expected_postgres: [2, 4, -2, 0, 2, null]
+  rule: "on a live connection Tableau sends ROUND(x) as the warehouse's round(): halves away from zero, except a
+    Postgres double, whose halves round to even"
+- formula: "ROUND([r])"
+  connection: extract
+  rows: [{r: 2.5}, {r: 3.5}, {r: -2.5}, {r: 0.5}, {r: 2.4}, {}]
+  expected: [3, 4, -3, 1, 2, null]
+  rule: "an extract rounds halves away from zero, whatever the warehouse"
+- formula: "ROUND([i] / [j])"
+  connection: extract
+  rows: [{i: 5, j: 2}, {i: -5, j: 2}, {i: 5, j: 0}]
+  expected: [3, -3, null]
+  rule: "an extract rounds a quotient's halves away from zero"
+- formula: "ROUND([r], 1)"
+  connection: extract
+  rows: [{r: 0.25}]
+  todo: "Tableau rounds the stored double"
+  rule: "an extract rounds the stored double to digits: a decimal tie can round either way, so it stays a TODO"
+- formula: "ROUND([i], -2)"
+  connection: extract
+  rows: [{i: 1250}, {i: -1250}, {}]
+  expected: [1300, -1300, null]
+  rule: "an integer to negative digits on an extract: exact, halves away from zero"
+- formula: "UPPER([s])"
+  connection: extract
+  rows: [{s: "abc"}, {}]
+  expected: ["ABC", null]
+  notes: ["full Unicode case mapping"]
+  rule: "UPPER on an extract maps 'ß' to 'SS'; the description says so"
+- formula: "TRIM([s])"
+  connection: extract
+  rows: [{s: " a "}, {}]
+  expected: ["a", null]
+  notes: ["also removes tabs and line breaks"]
+  rule: "TRIM on an extract also trims tabs; the description says so"
+- formula: "[s] = 'a'"
+  connection: extract
+  rows: [{s: "a"}, {s: "A"}, {}]
+  expected: [true, false, null]
+  notes: ["compares strings by code point"]
+  rule: "an extract compares strings by code point; the description names the collation difference"
+- formula: "ROUND([n])"
+  rows: [{n: 2.5}, {n: -2.5}, {n: 0.5}, {}]
+  expected: [3, -3, 1, null]
+  rule: "ROUND of a decimal rounds halves away from zero"
+- formula: "ROUND([r], 1)"
+  rows: [{r: 0.25}, {r: -0.25}, {r: 1.04}, {}]
+  expected: [0.3, -0.3, 1.0, null]
+  rule: "ROUND to digits rounds halves away from zero"
+- formula: "ROUND([n], 2)"
+  rows: [{n: 0.125}, {n: -0.125}, {}]
+  expected: [0.13, -0.13, null]
+  rule: "ROUND to digits of a decimal"
+- formula: "ROUND([i], -2)"
+  rows: [{i: 1250}, {i: 1349}, {i: -1250}, {}]
+  expected: [1300, 1300, -1300, null]
+  rule: "negative digits round left of the decimal point, halves away from zero"
+- formula: "ROUND([i] / [j])"
+  rows: [{i: 5, j: 2}, {i: -5, j: 2}, {i: 5, j: 0}]
+  expected: [3, -3, null]
+  expected_postgres: [2, -2, null]
+  rule: "a quotient is a double (as Tableau sends it to Postgres), and the warehouse's round() rounds it"
+- formula: "ROUND([r], [i])"
+  rows: [{r: 2.5, i: 0}, {r: 2.5}]
+  expected: [3, null]
+  rule: "NULL digits give NULL"
+- formula: "FLOOR([r])"
+  rows: [{r: 2.5}, {r: -2.5}, {}]
+  expected: [2, -3, null]
+  rule: "FLOOR rounds down"
+- formula: "CEILING([r])"
+  rows: [{r: 2.5}, {r: -2.5}, {}]
+  expected: [3, -2, null]
+  rule: "CEILING rounds up"
+- formula: "ABS([i])"
+  rows: [{i: -3}, {i: 3}, {}]
+  expected: [3, 3, null]
+  rule: "ABS; NULL is NULL"
+
+# ---------------------------------------------------------------- strings
+- formula: "[s] = 'Abc'"
+  rows: [{s: "Abc"}, {s: "abc"}, {s: "Abc "}, {}]
+  expected: [true, false, false, null]
+  rule: "string = is case-sensitive and doesn't ignore trailing spaces (binary collation)"
+- formula: "[s] < [u]"
+  rows: [{s: "B", u: "a"}, {s: "a", u: "b"}, {s: "a"}]
+  expected: [true, true, null]
+  rule: "string order is by code point in a binary collation: uppercase before lowercase"
+- formula: "UPPER([s])"
+  rows: [{s: "Renée"}, {s: "abc"}, {}]
+  expected: ["RENÉE", "ABC", null]
+  rule: "UPPER of non-ASCII letters; NULL is NULL"
+- formula: "LOWER([s])"
+  rows: [{s: "ÀÉÎ Abc"}, {}]
+  expected: ["àéî abc", null]
+  rule: "LOWER of non-ASCII letters"
+- formula: "LEN([s])"
+  rows: [{s: "Renée"}, {s: ""}, {s: "ab  "}, {s: "😀"}, {}]
+  expected: [5, 0, 4, 1, null]
+  rule: "LEN counts characters (code points, not bytes), trailing spaces too"
+- formula: "TRIM([s])"
+  rows: [{s: "  ab  "}, {s: "ab"}, {}]
+  expected: ["ab", "ab", null]
+  rule: "TRIM removes leading and trailing spaces"
+- formula: "UPPER([s]) = UPPER([u])"
+  rows: [{s: "Renée", u: "RENÉE"}, {s: "a"}]
+  expected: [true, null]
+  rule: "a case-insensitive comparison written with UPPER"
+
+# ---------------------------------------------------------------- dates
+- formula: "DATE([d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: [2024-03-05, null]
+  rule: "DATE of a date; NULL is NULL"
+- formula: "YEAR([d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: [2024, null]
+  rule: "YEAR; NULL is NULL"
+- formula: "MONTH([d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: [3, null]
+  rule: "MONTH; NULL is NULL"
+- formula: "DAY([d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: [5, null]
+  rule: "DAY; NULL is NULL"
+- formula: "DATEPART('year', [d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: [2024, null]
+  rule: "DATEPART('year') is YEAR"
+- formula: "YEAR([d]) + [i]"
+  rows: [{d: 2024-03-05, i: 1}, {i: 1}]
+  expected: [2025, null]
+  rule: "+ with a NULL date part is NULL"
+
+# ---------------------------------------------------------------- aggregates
+- formula: "SUM([i])"
+  rows: [{i: 1}, {i: 2}, {}]
+  expected: 3
+  rule: "SUM ignores NULLs"
+- formula: "SUM([i])"
+  rows: [{}, {}]
+  expected: null
+  rule: "SUM of only NULLs is NULL, not 0"
+- formula: "SUM(ZN([i]))"
+  rows: [{}, {}]
+  expected: 0
+  rule: "ZN inside the sum gives 0"
+- formula: "AVG([i])"
+  rows: [{i: 1}, {i: 2}, {}]
+  expected: 1.5
+  rule: "AVG ignores NULLs; AVG of integers is a real"
+- formula: "AVG([i])"
+  rows: [{i: 1}, {i: 2}, {i: 2}]
+  expected: 1.6666666666666667
+  rule: "AVG of integers is a real, not truncated"
+- formula: "COUNT([s])"
+  rows: [{s: "a"}, {s: ""}, {s: "a"}, {}]
+  expected: 3
+  rule: "COUNT counts non-NULL values (an empty string counts)"
+- formula: "COUNTD([s])"
+  rows: [{s: "a"}, {s: "A"}, {s: "a"}, {s: ""}, {}]
+  expected: 3
+  rule: "COUNTD counts distinct non-NULL values; case-sensitive; an empty string counts"
+- formula: "COUNTD([i])"
+  rows: [{}, {}]
+  expected: 0
+  rule: "COUNTD of only NULLs is 0"
+- formula: "COUNT([i])"
+  rows: [{}, {}]
+  expected: 0
+  rule: "COUNT of only NULLs is 0"
+- formula: "MIN([s])"
+  rows: [{s: "b"}, {s: "B"}, {s: "a"}, {}]
+  expected: "B"
+  rule: "MIN of strings in a binary collation: uppercase first; NULLs ignored"
+- formula: "MAX([d])"
+  rows: [{d: 2024-01-01}, {d: 2024-02-01}, {}]
+  expected: 2024-02-01
+  rule: "MAX of dates ignores NULLs"
+- formula: "MEDIAN([i])"
+  rows: [{i: 1}, {i: 2}, {i: 4}, {i: 10}, {}]
+  expected: 3
+  rule: "MEDIAN of an even count is the mean of the two middle values; NULLs ignored"
+- formula: "MEDIAN([i])"
+  rows: [{i: 1}, {i: 2}, {i: 4}]
+  expected: 2
+  rule: "MEDIAN of an odd count is the middle value"
+- formula: "MEDIAN([r])"
+  rows: [{r: 1.5}, {r: 2.0}]
+  expected: 1.75
+  rule: "MEDIAN of reals interpolates"
+- formula: "SUM(IIF([i] > 1, 1, 0))"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: 1
+  rule: "IIF is NULL for a NULL test, and SUM skips it"
+- formula: "COUNT(IIF([i] > 1, 1, 0))"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: 2
+  rule: "IIF is NULL for a NULL test, so COUNT doesn't count it"
+- formula: "COUNT(IF [i] > 1 THEN 1 ELSE 0 END)"
+  rows: [{i: 2}, {i: 1}, {}]
+  expected: 3
+  rule: "IF takes ELSE for a NULL test, so COUNT counts it"
+- formula: "SUM(ROUND([r]))"
+  rows: [{r: 0.5}, {r: 1.5}, {r: 2.5}, {}]
+  expected: 6
+  expected_postgres: 4
+  rule: "ROUND inside an aggregate, as the warehouse rounds (a Postgres double: halves to even)"
+- formula: "MIN([s] + [u])"
+  rows: [{s: "b", u: "x"}, {s: "a"}, {s: "c", u: "y"}]
+  expected: "bx"
+  rule: "string + inside an aggregate; a NULL concatenation is skipped"

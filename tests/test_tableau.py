@@ -236,11 +236,12 @@ def test_build_and_run_notebook(tmp_path: Path):
 
 def test_formula_parser():
     from unshackle.sources import _aggexpr as ax
+    from unshackle.sources._tableau_calc import Renderer
 
     node = parse_formula("CASE [Region] WHEN 'East' THEN 1 WHEN 'West' THEN 2 ELSE 0 END")
     assert ax.to_sql(node, lambda r: r.lower()) == "case when region = 'East' then 1 when region = 'West' then 2 else 0 end"
-    node = parse_formula("IIF([Profit] > 0, 'gain', 'loss')")
-    assert ax.to_sql(node, lambda r: r.lower()) == "case when profit > 0 then 'gain' else 'loss' end"
+    node = parse_formula("IIF([Profit] > 0, 'gain', 'loss')")  # NULL when the test is NULL
+    assert Renderer(lambda r: r.lower())(node) == "case when profit > 0 then 'gain' when not (profit > 0) then 'loss' end"
     node = parse_formula("IF [a] > #2024-01-01# THEN 1 END")
     assert ax.to_sql(node, lambda r: r) == "case when a > cast('2024-01-01' as date) then 1 end"
 

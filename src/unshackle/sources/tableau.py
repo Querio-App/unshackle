@@ -64,6 +64,7 @@ from unshackle.ir import (
 from unshackle.raw import RawStore
 from unshackle.sources import _aggexpr as ax
 from unshackle.sources import _dialect as dialect
+from unshackle.sources import _tableau_calc as tc
 from unshackle.sources._semyaml import grid_rows
 from unshackle.sources import _manual
 from unshackle.sources.base import Inventory, Source
@@ -734,6 +735,9 @@ class _TabParser(ax._Parser):
                 args.append(self.expr())
             self._word("end")
             return ax.Call("if", args)
+        if kind == "ident" and value.lower() == "null" and self.peek(1)[1] != "(":
+            self.take()
+            return ax.Num("null")  # the NULL literal (renders as SQL null)
         return super().primary()
 
 
@@ -890,8 +894,6 @@ def _dates(node: ax.Node, opts: _DateOpts) -> ax.Node:
 def _normalize(node: ax.Node) -> ax.Node:
     if isinstance(node, ax.Call):
         args = [_normalize(a) for a in node.args]
-        if node.name == "iif":
-            return ax.Call("if", args[:3])
         if node.name == "datepart" and len(args) == 2 and isinstance(args[0], ax.Str) and args[0].value.lower() in ("year", "month", "day"):
             return ax.Call(args[0].value.lower(), [args[1]])
         return ax.Call(node.name, args)
@@ -1014,6 +1016,7 @@ class TDatasource:
     inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
     hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
     settings: dict[str, list[str]] = field(default_factory=dict)  # CONNECTION_SETTINGS attribute -> values on its connections
+    extract: bool = False  # <extract enabled='true'>: Tableau computes on its extract (Hyper), not on the warehouse
     # Date Properties: <date-options start-of-week='monday' fiscal-year-start='july' /> (in a workbook's copy of a published
     # datasource, under <overridable-settings>), <default-calendar-type>, and a locale the datasource was authored in
     week_start: str = ""
@@ -1130,6 +1133,8 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
     conn = el.find("connection")
     if conn is not None:
         ds.connection_class = conn.get("class", "")
+        ext = el.find("extract")
+        ds.extract = ext is not None and ext.get("enabled", "true") != "false"
         if ds.connection_class == "sqlproxy":
             ds.published = conn.get("dbname", "")
         named = {nc.get("name", ""): nc.find("connection") for nc in conn.iter("named-connection")}
@@ -1285,6 +1290,7 @@ class _Parser:
         self.ds_models: dict[str, dict[str, _Model]] = {}
         self.cache: dict[tuple[str, str], _Calc] = {}
         self.metric_sql: dict[str, str] = {}
+        self.calc_notes: dict[str, set[str]] = {}  # datasource uid -> where its calcs' results depend on the connection
         self.owner: dict[str, str] = {}  # measure/metric name -> model key
         self.counts: dict[str, set[str]] = {}
         self.defs: dict[tuple[str, str], str] = {}
@@ -1360,6 +1366,10 @@ class _Parser:
             for f in list(ds.fields.values()):
                 if f.is_calc and not f.param:
                     self._calc(ds, f)
+        for ds in data_sources:
+            for note in sorted(self.calc_notes.get(ds.uid, ())):
+                for m in (self.ds_models.get(ds.uid) or {}).values():
+                    self._describe(m, note)
         for lod in self.lod_names.values():
             if lod.model is not None:
                 lod.model.sm.sql = lod.sql()
@@ -1708,10 +1718,26 @@ class _Parser:
             return _ident(g.remote)
         raise ax.FormulaError(f"[{g.label}] has no physical column")
 
+    def _sql(self, ds: TDatasource, node: ax.Node, ref: Any) -> str:
+        """Row-level SQL with Tableau's semantics (_tableau_calc), in the Postgres form the dialect pass rewrites."""
+        hyper = ds.extract or (ds.origin is not None and ds.origin.extract)
+        r = tc.Renderer(ref, lambda name: self._dtype(ds, name), hyper=hyper)
+        sql = r(node)
+        if r.notes:
+            self.calc_notes.setdefault(ds.uid, set()).update(r.notes)
+        return sql
+
+    def _classify(self, ds: TDatasource, node: ax.Node, ref: Any, metric_ref: Any) -> ax.Classified:
+        return ax.classify(node, LANG, ref, metric_ref, render=lambda n, rf: self._sql(ds, n, rf))
+
+    def _dtype(self, ds: TDatasource, name: str) -> str:
+        g = ds.fields.get(name)
+        return g.datatype if g is not None else ""
+
     def _row_sql(self, ds: TDatasource, g: TField) -> str:
         """A row-level calc's SQL again, in the current context (joined columns qualified, FIXED values joined in tiles)."""
         text = self.prepped.get((ds.uid, g.local)) or scan_formula(g.formula or "")[0]
-        return ax.strip_outer(ax.to_sql(parse_formula(text, date_opts(ds)), lambda r: self._row_ref(ds, r)))
+        return ax.strip_outer(self._sql(ds, parse_formula(text, date_opts(ds)), lambda r: self._row_ref(ds, r)))
 
     def _lod_col(self, lod: _Lod, col: str) -> str:
         """A FIXED value: its column in the grain's SQL model, or in a tile, the grain joined to the sheet's rows."""
@@ -1832,7 +1858,7 @@ class _Parser:
             self._todo(ds, f, model, msg)
             return _Calc("row", lod="mixed", todo=msg)
         try:
-            sql = ax.strip_outer(ax.to_sql(node, lambda r: self._row_ref(ds, r)))
+            sql = ax.strip_outer(self._sql(ds, node, lambda r: self._row_ref(ds, r)))
         except ax.FormulaError as exc:
             return self._todo(ds, f, model, f"formula not translated ({exc}); see skills/translate-metrics")
         if lod is not None:
@@ -1929,7 +1955,7 @@ class _Parser:
         try:
             keys = [(self._row_ref(ds, d), _name(ds.fields[d].label)) for d in dims]
             if inner is None:
-                cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+                cl = self._classify(ds, node, lambda r: self._row_ref(ds, r), lambda r: None)
             else:
                 inner_keys = [self._row_ref(ds, d) for d in inner[0].dims]
         finally:
@@ -2108,7 +2134,7 @@ class _Parser:
 
     def _aggregate(self, ds: TDatasource, f: TField, model: _Model, node: ax.Node, src: str) -> _Calc:
         try:
-            cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: self._metric_ref(ds, r))
+            cl = self._classify(ds, node, lambda r: self._row_ref(ds, r), lambda r: self._metric_ref(ds, r))
         except ax.FormulaError as exc:
             return self._todo(ds, f, model, f"aggregate not translated ({exc}); see skills/translate-metrics", True)
         name = self._namer(model, f.label)
@@ -2162,7 +2188,7 @@ class _Parser:
             tables = {id(m) for r in ax.refs(node) if (g := ds.fields.get(r)) is not None and (m := self._field_model(ds, g)) is not None}
             if len(tables) > 1:
                 raise ax.FormulaError("it reads columns of several joined tables; write one rule per table")
-            predicate = ax.strip_outer(ax.to_sql(_replace_user_fns(node), lambda r: _user_sql(r) if r.startswith("\x00") else self._row_ref(ds, r)))
+            predicate = ax.strip_outer(self._sql(ds, _replace_user_fns(node), lambda r: _user_sql(r) if r.startswith("\x00") else self._row_ref(ds, r)))
         except ax.FormulaError as exc:
             problems.append(f"not translated ({exc})")
         if groups:
@@ -2395,7 +2421,7 @@ class _Parser:
                 raise _NoSQL(f"[{f.label}] ({kind} LOD) on a shelf without an aggregation")
             outer = DERIV_AGG[d]
         try:
-            cl = ax.classify(parse_formula(inner, date_opts(ds)), LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+            cl = self._classify(ds, parse_formula(inner, date_opts(ds)), lambda r: self._row_ref(ds, r), lambda r: None)
             if cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
                 raise ax.FormulaError("the expression after ':' is not one aggregate")
             inner_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
@@ -2437,11 +2463,11 @@ class _Parser:
             agg = TABLEAU_AGGS[call.name][0]
             if len(homes) == 1 and not homes & {"", "mixed"}:
                 lod = self.lod_names[next(iter(homes))]
-                value = self._grain_sql(ds, lambda: ax.strip_outer(ax.to_sql(call.args[0], lambda r: self._row_ref(ds, r))))
+                value = self._grain_sql(ds, lambda: ax.strip_outer(self._sql(ds, call.args[0], lambda r: self._row_ref(ds, r))))
                 parts.append(("fixed", _Special("fixed", agg, lod, value=value)))
             else:
                 try:
-                    parts.append(("row", AGG_SQL[agg].format(ax.strip_outer(ax.to_sql(call.args[0], lambda r: self._row_ref(ds, r))))))
+                    parts.append(("row", AGG_SQL[agg].format(ax.strip_outer(self._sql(ds, call.args[0], lambda r: self._row_ref(ds, r))))))
                 except ax.FormulaError as exc:
                     raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
             return ax.Ref(f"{LOD_REF}part_{len(parts) - 1}")
@@ -2463,7 +2489,7 @@ class _Parser:
         if not any(kind == "fixed" for kind, _ in parts):
             return None
         try:
-            expr = ax.strip_outer(ax.to_sql(shape, lambda r: "{" + r[len(LOD_REF) + 5:] + "}"))
+            expr = ax.strip_outer(self._sql(ds, shape, lambda r: "{" + r[len(LOD_REF) + 5:] + "}"))
         except ax.FormulaError as exc:
             raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
         return _Special("expr", "", expr=expr, parts=parts)
@@ -2503,7 +2529,7 @@ class _Parser:
                 homes = {self._home(ds, r) for r in ax.refs(call)}
                 if homes - {"", "mixed"} and not homes & {"", "mixed"}:
                     raise ax.FormulaError("an aggregate of FIXED LOD values inside a larger expression; write it in the tile SQL")
-            cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), metric_ref)
+            cl = self._classify(ds, node, lambda r: self._row_ref(ds, r), metric_ref)
             if cl.kind == "agg" and cl.agg is not None:
                 return side(cl.agg)
             if cl.kind == "ratio":
@@ -3057,7 +3083,7 @@ class _Parser:
             node = parse_formula(PARAM_REF.sub(bind, clean), date_opts(ds))
             if _has_agg(node):
                 return None
-            return ax.strip_outer(ax.to_sql(node, lambda n: binds[n] if n in binds else self._row_ref(ds, n)))
+            return ax.strip_outer(self._sql(ds, node, lambda n: binds[n] if n in binds else self._row_ref(ds, n)))
         except ax.FormulaError:
             return None
 
@@ -3089,7 +3115,7 @@ class _Parser:
         if ds is None:
             raise ax.FormulaError("no datasource")
         node = parse_formula(scan_formula(expression)[0], date_opts(ds))
-        cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: self._metric_ref(ds, r))
+        cl = self._classify(ds, node, lambda r: self._row_ref(ds, r), lambda r: self._metric_ref(ds, r))
         if cl.kind == "agg" and cl.agg is not None and cl.agg.condition is None:
             return AGG_SQL[cl.agg.agg].format(cl.agg.expr)
         if cl.kind == "derived" and len(cl.metrics) == 1 and cl.expr == cl.metrics[0]:

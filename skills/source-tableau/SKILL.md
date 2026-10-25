@@ -89,7 +89,7 @@ unshackle build tableau
 | `SUM(IF [Returned] = 'Yes' THEN 1 ELSE 0 END)`, `SUM(ZN([x]))` | measure whose `expr` is the row expression |
 | `SUM([Profit]) / SUM([Sales])`, `[Calc A] / [Calc B]` | ratio metric (implied measures/metrics added when needed) |
 | `[Profit Ratio] * 100` | derived metric |
-| row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#`, `DATEPART`/`DATENAME` of week, weekday, quarter, year | dimension `expr` (time dimension with that grain for `DATETRUNC`; weeks, quarters and years follow the Date Properties, see Dates below), or measure `expr` when the calc's role is measure |
+| row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, string `+`, `NULL`, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#`, `DATEPART`/`DATENAME` of week, weekday, quarter, year | dimension `expr` (time dimension with that grain for `DATETRUNC`; weeks, quarters and years follow the Date Properties, see Dates below), or measure `expr` when the calc's role is measure (Tableau's NULL, division and ROUND rules: Calculation semantics below) |
 | custom SQL `<relation type='text'>` | `queries/<ds>-custom-sql.sql` (TODO: materialize) + semantic model named after the datasource |
 | joins (`<relation type='join'>`) on a table's key | foreign entity on the other table's model (Ossie relationship with `join_type` in `custom_extensions`); the join's semantics go in both models' descriptions |
 | `{FIXED [a] : AGG([x])}` (one FIXED dimension) | semantic model `<a>_lod` defined by its query (`select a, agg(x) ... group by 1` over the datasource's rows, joins included): Ossie's dataset `source`, and in dbt projects `models/unshackle/<a>_lod.sql`. Primary entity `a`, foreign entity `a` on the table holding it. The value is a dimension (or a measure + metric when the field is a measure); all FIXED fields at the same grain share one model |
@@ -193,6 +193,31 @@ Counting rows instead of these distinct combinations can be off by an order of m
 In the semantic layer, a calc over one grain's FIXED values is a metric on that grain's
 model (`large_account_orders` on `account_id_lod`), and a nested FIXED is a `_lod` model
 of its own.
+
+### Calculation semantics
+
+Tableau formulas render with Tableau's rules (`sources/_tableau_calc.py`, its function table
+`FUNCS`; one case per function in `tests/fixtures/tableau_calc/cases.yaml`):
+
+| Tableau | SQL |
+| --- | --- |
+| `[a] + [b]` on strings | `a \|\| b` (NULL if either is NULL) |
+| `IIF(test, a, b[, unknown])` | `case when test then a when not (test) then b [else unknown] end`: NULL when `test` is NULL, unlike `IF`/`CASE`, which take ELSE |
+| `[flag] = TRUE` | `flag = true` (NULL when `flag` is NULL) |
+| `NULL` | `null` |
+| `[a] / [b]` | `1.0 * a / nullif(b, 0)`: a real, NULL for a zero divisor; double precision on Postgres and Redshift, as Tableau sends it |
+| `ROUND(x[, n])`, live connection | the warehouse's `round()`, as Tableau sends it (on Postgres `round(cast(x as numeric), n)` with digits; without, a double's halves round to even) |
+| `ROUND(x)`, extract | `round(x, 0)`: halves away from zero |
+| `ROUND(x, n)` of a real, extract | TODO: Tableau rounds the stored double, so a decimal tie (0.25 to 1 digit) can round down |
+| `MEDIAN` | `median()` (Postgres: `percentile_cont(0.5)`): the mean of the two middle values of an even count |
+| `COUNT`, `COUNTD`, `AVG` | skip NULLs; `COUNTD` counts `''`; `AVG` of integers is a real |
+
+Strings compare with the connection's collation. On a live connection that is the
+warehouse's, so the SQL does what Tableau did. An extract (`<extract enabled='true'>`)
+compares by code point (case- and accent-sensitive, `'B' < 'a'`), maps `ß` to `SS` and a
+final `Σ` to `ς` in UPPER/LOWER, and also trims tabs: when a calc relies on these, the
+semantic model's description says so. Check string calcs on an extract against a
+warehouse whose collation is not binary (`en_US` Postgres, SQL Server `_CI_` collations).
 
 ## Finishing TODOs
 

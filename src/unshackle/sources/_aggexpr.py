@@ -454,17 +454,19 @@ def classify(
     ref_sql: Callable[[str], str],
     metric_ref: Callable[[str], str | None],
     agg_metric: Callable[[Agg], str] | None = None,
+    render: Callable[[Node, Callable[[str], str]], str] = to_sql,
 ) -> Classified:
-    """Classify an aggregate formula. `metric_ref(name)` returns a metric name if the ref is a metric."""
-    side = _side(node, dialect, ref_sql, metric_ref)
+    """Classify an aggregate formula. `metric_ref(name)` returns a metric name if the ref is a metric. `render` writes
+    an aggregate's row expression (a source with its own semantics passes its renderer)."""
+    side = _side(node, dialect, ref_sql, metric_ref, render)
     if isinstance(side, Agg):
         return Classified("agg", agg=side)
     if isinstance(side, MetricRef):
         return Classified("derived", expr=side.name, metrics=[side.name])
     ratio = _ratio(node)
     if ratio:
-        num = _side(ratio[0], dialect, ref_sql, metric_ref)
-        den = _side(ratio[1], dialect, ref_sql, metric_ref)
+        num = _side(ratio[0], dialect, ref_sql, metric_ref, render)
+        den = _side(ratio[1], dialect, ref_sql, metric_ref, render)
         if num is not None and den is not None:
             return Classified("ratio", numerator=num, denominator=den)
     # arithmetic over metric references only
@@ -477,7 +479,7 @@ def classify(
         found: list[Agg] = []
 
         def collect(n: Node) -> str | None:
-            side = _side(n, dialect, ref_sql, metric_ref)
+            side = _side(n, dialect, ref_sql, metric_ref, render)
             if isinstance(side, Agg):
                 found.append(side)
                 return f"\x00{len(found) - 1}\x00"
@@ -503,7 +505,7 @@ def _ratio(node: Node) -> tuple[Node, Node] | None:
     return None
 
 
-def _side(node: Node, dialect: str, ref_sql, metric_ref) -> Side | None:
+def _side(node: Node, dialect: str, ref_sql, metric_ref, render=to_sql) -> Side | None:
     if isinstance(node, Ref):
         name = metric_ref(node.name)
         return MetricRef(name) if name else None
@@ -518,7 +520,7 @@ def _side(node: Node, dialect: str, ref_sql, metric_ref) -> Side | None:
             value = node.args[vi]
             if any(c in AGGS[dialect] for c in calls(value)):
                 return None
-            expr = to_sql(value, ref_sql)
+            expr = render(value, ref_sql)
         else:
             expr = "1"
         cond = node.args[ci] if ci is not None else None
