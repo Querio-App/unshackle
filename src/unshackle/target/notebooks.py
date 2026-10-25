@@ -14,7 +14,7 @@ import json
 import keyword
 import re
 
-from unshackle.ir import Bundle, Dashboard, Encoding, Tile, slugify, snake
+from unshackle.ir import Bundle, Dashboard, Encoding, Reference, Tile, slugify, snake
 from unshackle.target.files import one_line_comment, unique_rel
 from unshackle.target.layout import Layout
 
@@ -166,6 +166,60 @@ def _composed_chart(ident: str, tile: Tile) -> list[str]:
     return _todos(notes) + lines + [")", f"{ident}_chart"]
 
 
+def _label_expr(ref: Reference) -> str:
+    """Vega expression for a reference line's label: its text with the value formatted in place of {value}."""
+    value = f"format(datum[{ref.field!r}], ',.2~f')"
+    pieces = []
+    for i, part in enumerate(ref.label.split("{value}")):
+        if i:
+            pieces.append(value)
+        if part:
+            pieces.append(repr(part.replace("{{", "{").replace("}}", "}")))
+    return " + ".join(pieces) or "''"
+
+
+def _reference_layers(ident: str, tile: Tile) -> list[str]:
+    """Rule (a tick per cell for cell scope), band and label layers for the tile's reference lines."""
+    out = []
+    for ref in tile.references:
+        other = "x" if ref.channel == "y" else "y"
+        enc_cls = CHANNEL_CLASS[ref.channel]
+        cell = tile.encodings.get(other) if ref.scope == "cell" else None
+        cell_arg = f"{other}={CHANNEL_CLASS[other]}({_py_str(_shorthand(cell))}), " if cell and cell.type in ("nominal", "ordinal") else ""
+        value = f"{ref.channel}={enc_cls}({_py_str(ref.field + ':Q')})"
+        if ref.band_to:
+            out.append(f"alt.Chart({ident}).mark_rect(opacity=0.15).encode({cell_arg}{value}, {ref.channel}2={_py_str(ref.band_to)}),")
+            continue
+        mark = "mark_tick(color='black', thickness=2)" if cell_arg else "mark_rule(color='black')"
+        out.append(f"alt.Chart({ident}).{mark}.encode({cell_arg}{value}),")
+        if ref.label:
+            out.append(f"alt.Chart({ident}).mark_text(align='left', dx=4, dy=-6).encode({cell_arg}{value}, text='label:N')"
+                       f".transform_calculate(label={_py_str(_label_expr(ref))}),")
+    return out
+
+
+def _with_references(ident: str, tile: Tile, lines: list[str]) -> list[str]:
+    """The chart with the source's reference lines layered on it; a faceted chart is layered first, then faceted."""
+    if not tile.references:
+        return lines
+    if tile.layers or lines[-1] != f"{ident}_chart":
+        cols = ", ".join(dict.fromkeys(r.band_to or r.field for r in tile.references))
+        return _todos([f"reference lines are columns of {ident} ({cols}): draw them as rule layers"]) + lines
+    layers = [f"    {x}" for x in _reference_layers(ident, tile)]
+    facets = {ch: e for ch, e in tile.encodings.items() if ch in FACETS}
+    if not facets:
+        return lines[:-1] + [f"{ident}_chart = alt.layer(", f"    {ident}_chart,", *layers, ")", f"{ident}_chart"]
+    flat = Tile(tile.id, kind=tile.kind, mark=tile.mark, encodings={ch: e for ch, e in tile.encodings.items() if ch not in FACETS})
+    body = [x for x in _single_chart(ident, flat) if not x.startswith("# TODO")][1:-2]  # the chart expression
+    fargs, notes = _encode_args(facets)
+    out = [x for x in lines if x.startswith("# TODO")] + _todos(notes)
+    out += [f"{ident}_chart = (", "    alt.layer(", *[f"    {x}" for x in body[:-1]], f"    {body[-1]},", *[f"    {x}" for x in layers]]
+    out += ["    )", "    .facet(", *[f"        {a}," for a in fargs], "    )"]
+    if tile.title:
+        out.append(f"    .properties(title={_py_str(tile.title)})")
+    return out + [")", f"{ident}_chart"]
+
+
 def _cell_id(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "-", value)[:64] or "cell"
 
@@ -256,7 +310,8 @@ def build_notebook(d: Dashboard, tool: str) -> dict:
             cells.append(_code(f"{ident}-sql", lines + [ident]))
             continue
         cells.append(_code(f"{ident}-sql", lines))
-        cells.append(_code(f"{ident}-chart", _composed_chart(ident, tile) if tile.layers else _single_chart(ident, tile)))
+        chart = _composed_chart(ident, tile) if tile.layers else _single_chart(ident, tile)
+        cells.append(_code(f"{ident}-chart", _with_references(ident, tile, chart)))
     layout = [[idents[i] for i in row if i in idents] for row in d.layout or [[t.id] for t in d.tiles]]
     seen: set[str] = set()
     for cell in cells:  # ids are cut at 64 characters, so long titles can collide

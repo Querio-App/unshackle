@@ -136,6 +136,18 @@ class Layer:
 
 
 @dataclass
+class Reference:
+    """A reference line from the source chart. Its value is a column of the tile's data, repeated on every row of the
+    line's scope (the whole chart, a pane or a cell)."""
+
+    field: str
+    channel: Literal["x", "y"] = "y"
+    scope: Literal["table", "pane", "cell"] = "table"
+    label: str = ""  # text drawn next to the line; "{value}" stands for its value; "" draws none
+    band_to: str = ""  # a band: shaded from `field` to this column
+
+
+@dataclass
 class Tile:
     id: str
     title: str = ""
@@ -151,6 +163,7 @@ class Tile:
     # layer: overlaid on shared axes; dual_axis: overlaid with independent y; hconcat/vconcat: side by side.
     layers: list[Layer] = field(default_factory=list)
     compose: Literal["layer", "dual_axis", "hconcat", "vconcat"] = "layer"
+    references: list[Reference] = field(default_factory=list)
 
 
 @dataclass
