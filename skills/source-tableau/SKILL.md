@@ -59,17 +59,22 @@ workbooks (`class='sqlproxy'`) are extracted too.
 Without a PAT, import the workbook and data source files:
 
 ```
-unshackle import tableau "Superstore Sales.twbx" "Sales Targets.tdsx" more-workbooks/
+unshackle import tableau "Superstore Sales.twbx" "Sales Targets.tdsx" more-workbooks/ [--with-data]
 unshackle build tableau
 ```
 
 - **Where to get them:** in Tableau Cloud / Server, the workbook's or data source's
   actions menu (`...`) > Download (needs the Download Workbook/Save a Copy
   capability). In Tableau Desktop, File > Export Packaged Workbook writes a `.twbx`.
-- Accepts `.twb`, `.twbx`, `.tds`, `.tdsx` and folders of them. Only the XML inside a
-  packaged file is kept; extracts (`.hyper`) and images are dropped.
-- Name each file after the workbook: the file name becomes the workbook name (and
-  notebook slug), since project, owner and description only come from the REST API.
+- Accepts `.twb`, `.twbx`, `.tds`, `.tdsx` and folders of them, from Tableau 8.2 on (the
+  XML versions `8.2` to `10.x` and `18.1`, which every release since 2018.1 writes). The XML
+  inside a packaged file is kept; images are dropped. Data that lives only in Tableau
+  (extracts, Excel and CSV files) is dropped too, unless `--with-data` copies it to Parquet as
+  `extract --with-data` does (below; the `tableau` extra): `extracts/<file name>.json` lists
+  the tables, and what could not be copied is in the report. A plain `.twb`/`.tds` holds no data.
+- Name each file after the workbook or data source (Tableau's downloads are): the file name
+  becomes the workbook name (and notebook slug), and a data source's name when its XML has
+  none, which is how workbooks find the published data sources they use.
 - The same parser runs, so models, calculations, worksheets and dashboards come out
   as they do from `extract`. Missing: view counts, workbook permissions (no Cedar
   permits; user filters in the workbook are kept), Metadata API lineage and the view
@@ -511,7 +516,26 @@ openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
   belongs in Git; running `init` again doesn't add it back once the folder exists.
 
 Without `--with-data` they keep their file's table and the report says to copy the data or
-point the model at a warehouse table holding it.
+point the model at a warehouse table holding it. Files downloaded by hand: `unshackle import
+tableau --with-data` on the `.twbx`/`.tdsx` does the same copy.
+
+**Cross-database joins** (a data source with several named connections whose tables come from
+different servers, databases or files): Tableau joins them itself, one SQL query can't. The
+report names the connections. Whatever reads tables of two databases is a TODO: the tile of a
+sheet over the join (unless the sheet uses the first table only and every join is a left join
+on the other table's key, which can't change its rows), FIXED LODs over the joined rows, and
+sheets over related tables (relationships) from both; no foreign entity joins them. Sheets on
+one database keep their SQL. Load the tables into one warehouse (or a federated query engine),
+point the models at them and write the joins. An extract copied with `--with-data` is one
+table, so the join is gone.
+
+**Older and newer XML**: data sources with no tables (the connection has no relation) are
+reported, not skipped silently. When Desktop writes the table tree twice
+(`_.fcp.ObjectModelEncapsulateLegacy.true...relation` and a legacy copy, 2020.2+), the current
+one is read. A logical table's row count (`[__tableau_internal_object_id__].[cnt:<table>:qk]`
+on a shelf, "<table> (Count)") counts that table's rows; in a formula over related tables it is
+a TODO. A calculation with the name of one of the table's columns is reported and skipped:
+add it under another name.
 
 **Warehouse dialect**: tile, LOD model and semantic SQL is written for the warehouse type
 in `unshackle.toml` (`[datasources.warehouse] type`), else the one the connection classes

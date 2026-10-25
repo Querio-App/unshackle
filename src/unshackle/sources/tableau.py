@@ -14,7 +14,8 @@ Raw layout under migration/raw/tableau/:
     views/<id>.csv           GET .../views/{id}/data for the top-N most viewed views (parity)
     permissions/<id>.json    GET .../workbooks/{id}/permissions
     extracts/<id>.json       `extract --with-data`: tables of data that lives only in Tableau (extracts, Excel, CSV)
-                             copied to Parquet under the repo's data folder (sources/_tableau_data.py)
+                             copied to Parquet under the repo's data folder (sources/_tableau_data.py); with
+                             `import --with-data`, <id> is the packaged file's name and copy errors are listed here
     _errors.json             [{"item", "error"}] anything extract could not fetch
 
 parse() reads the XML only (never the network). Deterministic: tables and columns
@@ -33,6 +34,7 @@ import copy
 import csv
 import hashlib
 import io
+import json
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -128,6 +130,9 @@ USER_NS = "http://www.tableausoftware.com/xml/user"
 STORY = "unshackle-story-point"  # marks a filter a story point captured (copied into its worksheet)
 BRACKETED = re.compile(r"\[((?:[^\]]|\]\])*)\]")
 DS_REF = re.compile(r"\[((?:[^\]]|\]\])+)\]\.\[((?:[^\]]|\]\])+)\]")
+# a logical table's row count (2020.2+, "<table> (Count)"): [ds].[__tableau_internal_object_id__].[cnt:<object id>:qk] on a
+# shelf, [__tableau_internal_object_id__].[<object id>] in a formula
+OBJECT_COUNT = re.compile(r"\[__tableau_internal_object_id__\]\.\[((?:[^\]]|\]\])+)\]")
 PARAM_REF = re.compile(r"\[Parameters\]\.\[((?:[^\]]|\]\])+)\]")
 PARAM_ARG = "\x01"  # a workbook parameter in a parsed formula: [\x01<its local name>]
 LOD = re.compile(r"\{\s*(FIXED|INCLUDE|EXCLUDE)\b", re.I)
@@ -315,26 +320,33 @@ class TableauSource(Source):
     def _copy_data(self, store: RawStore, kind: str, item: dict[str, Any], xml: bytes, errors: list[dict[str, str]]) -> None:
         """--with-data: the data sources of a workbook or published data source whose data lives only in Tableau ->
         Parquet under the repo's data folder (sources/_tableau_data.py), listed in extracts/<id>.json."""
-        from unshackle.target.layout import Layout
-
         name = item.get("name", item["id"])
         if not _data_sources(xml, name):
             return
         label = f"{kind} {name} ({item['id']})"
         try:
             package = self.client().get(self._api(f"/{kind}s/{item['id']}/content"), params={"includeExtract": "true"}, headers={"Accept": "*/*"}).content
-            # the package's own .tds/.twb names the files inside it (the plain download names the server's copies)
-            sources = _data_sources(unpack(package, ".tds" if kind == "datasource" else ".twb"), name)
+            tables, errs = self._package_data(store, package, ".tds" if kind == "datasource" else ".twb", name)
         except (SourceError, zipfile.BadZipFile) as exc:
             errors.append({"item": f"{label} data", "error": f"download with includeExtract=true: {str(exc)[:400]}"})
             return
+        store.put_json(f"extracts/{item['id']}.json", {"item": label, "tables": tables, "errors": errs})
+        errors += [{"item": f"{label} data", "error": e} for e in errs]
+
+    def _package_data(self, store: RawStore, package: bytes, ext: str, name: str) -> tuple[list[dict[str, Any]], list[str]]:
+        """The data in a .twbx/.tdsx that lives only in Tableau -> Parquet: (tables for extracts/<id>.json, errors). The
+        package's own .tds/.twb names the files inside it (a plain download names the server's copies)."""
+        from unshackle.target.layout import Layout
+
+        sources = _data_sources(unpack(package, ext), name)
+        if not sources:
+            return [], []
         rel_root = Layout.load(store.repo_root).rel("data", "tableau")
         tables, errs = tdata.write_tables(package, [s[:4] for s in sources], store.repo_root / rel_root, rel_root, self._data_names)
         origin = {s[0]: "extract" if s[4] else "connection" for s in sources}
         for t in tables:
             t["from"] = origin[t["datasource"]]
-        store.put_json(f"extracts/{item['id']}.json", {"item": label, "tables": tables, "errors": errs})
-        errors += [{"item": f"{label} data", "error": e} for e in errs]
+        return tables, errs
 
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
@@ -528,6 +540,22 @@ class TableauSource(Source):
                 out[f"{kind[0]}/{p.stem}{kind[1]}"] = unpack(p.read_bytes(), kind[1])
             except zipfile.BadZipFile as exc:
                 raise SourceError(f"{p.name}: not a valid packaged file ({exc})") from exc
+        return out
+
+    def import_data(self, store: RawStore, path: Path) -> dict[str, bytes]:
+        """`import --with-data`: data packaged in .twbx/.tdsx files that lives only in Tableau (extracts, Excel, CSV) ->
+        Parquet, as `extract --with-data` does, listed in extracts/<file name>.json next to the file's .twb/.tds."""
+        tdata.check_installed()
+        out: dict[str, bytes] = {}
+        for _, p in _manual.files_of(path):
+            ext = {".twbx": ".twb", ".tdsx": ".tds"}.get(p.suffix.lower())
+            package = p.read_bytes() if ext else b""
+            if package[:2] != b"PK":
+                continue  # a plain .twb/.tds carries no data
+            tables, errs = self._package_data(store, package, ext, p.stem)
+            if tables or errs:
+                doc = {"item": f"{'workbook' if ext == '.twb' else 'datasource'} {p.name}", "tables": tables, "errors": errs}
+                out[f"extracts/{p.stem}.json"] = (json.dumps(doc, indent=2, sort_keys=True) + "\n").encode()
         return out
 
     # ------------------------------------------------------------ parse
@@ -1347,6 +1375,7 @@ class TRelation:
     database: str = ""
     sql: str = ""
     connection_class: str = ""
+    connection: str = ""  # the named connection it reads (class, server or file, database); "" when the data source has one
 
 
 @dataclass
@@ -1538,6 +1567,7 @@ class _Ref:
     special: str = ""
     table_calc: str = ""
     forecast: str = ""  # forecast-column-type of a column-instance Tableau's forecast adds to
+    obj: str = ""  # special "records" of one logical table: its object id
 
 
 class _NoSQL(Exception):
@@ -1561,8 +1591,9 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                 if value and value not in ds.settings.get(attr, []):
                     ds.settings.setdefault(attr, []).append(value)
         top = next((c for c in conn if _local(c.tag) == "relation"), None)
-        if top is None:
-            top = next((c for c in conn if _local(c.tag).endswith("relation")), None)
+        if top is None:  # Desktop 2020.2+ may write it twice, `_.fcp.ObjectModelEncapsulateLegacy.true...relation` and a legacy copy
+            tops = [c for c in conn if _local(c.tag).endswith("relation")]
+            top = next((c for c in tops if ".true..." in c.tag), tops[0] if tops else None)
         if ds.connection_class == "sqlproxy":
             top = None  # <relation name='sqlproxy' table='[sqlproxy]'> is a stub; the tables are in the published .tds
         for rel in _leaf_relations(top, ds):
@@ -1577,6 +1608,7 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                 database=parts[-3] if len(parts) >= 3 else (cattrs.get("dbname", "") if cattrs is not None else ""),
                 sql=(rel.text or "").strip() if rel.get("type") == "text" else "",
                 connection_class=(cattrs.get("class", "") if cattrs is not None else ""),
+                connection=_connection_label(nc) if nc is not None else "",
             )
             ds.relations.setdefault(r.name, r)
             ds.extract = ds.extract or r.connection_class in HYPER_ENGINE
@@ -1747,6 +1779,26 @@ def extract_only(ds: TDatasource) -> str:
     return ""
 
 
+def _connection_label(c: ET.Element) -> str:
+    """A named connection as the database it reads: class, server (or file) and database."""
+    where = c.get("server", "") + (f":{c.get('port')}" if c.get("server") and c.get("port") else "")
+    where = where or "/".join(p for p in (c.get("directory", ""), c.get("filename", "")) if p)
+    return " ".join(p for p in (c.get("class", ""), where, c.get("dbname", "")) if p)
+
+
+def connections(ds: TDatasource, relations: Any = None) -> list[str]:
+    """The databases a data source's tables (or the named ones) come from when several connections hold them (a
+    cross-database join); [] when one connection holds them all."""
+    found = {r.connection for n in (ds.relations if relations is None else relations) if (r := ds.relations.get(n)) is not None}
+    return sorted(found - {""}) if len(found - {""}) > 1 else []
+
+
+def _cross_db(conns: list[str]) -> str:
+    return (f"its tables come from {len(conns)} connections ({'; '.join(conns)}) that Tableau joins across databases; one SQL query "
+            "reads them only from one warehouse: load them into one warehouse (or a federated query engine), point the models at "
+            "those tables and write the join in the SQL")
+
+
 def _leaf_relations(rel: ET.Element | None, ds: TDatasource) -> list[ET.Element]:
     if rel is None:
         return []
@@ -1836,6 +1888,11 @@ class _Parser:
                 if isinstance(t, dict) and t.get("table") and t.get("parquet"):
                     self.copied.setdefault((Path(rel).stem, t.get("datasource", "")), {})[t.get("relation", "")] = t
         self.copied_used: dict[str, dict[str, Any]] = {}
+        self.manual = self.store.exists(_manual.IMPORT_META)  # `unshackle import`: files downloaded by hand
+        if self.manual:  # extract lists copy errors in _errors.json; an import keeps them with its copies
+            for rel in self.store.glob("extracts/*.json"):
+                for e in (self._json(rel) or {}).get("errors") or []:
+                    self.b.warn(f"{rel} data", f"not copied: {e}")
 
     def _json(self, rel: str) -> Any:
         if not self.store.exists(rel):
@@ -1860,7 +1917,8 @@ class _Parser:
                 continue
             did = Path(rel).stem
             meta = self.published.get(did) or {}
-            ds = read_datasource(root, f"{rel}#", rel, caption=meta.get("name", ""))
+            # a file downloaded by hand is named after its data source (Tableau names the download so)
+            ds = read_datasource(root, f"{rel}#", rel, caption=meta.get("name") or (did if self.manual else ""))
             ds.caption = meta.get("name") or ds.caption
             ds.published = meta.get("contentUrl", "") or ds.published
             self.tds.append(ds)
@@ -2033,7 +2091,7 @@ class _Parser:
             if t is None:
                 missing.append(r.name)
                 continue
-            r.schema, r.table, r.database, r.kind, r.connection_class = tdata.SCHEMA, t["table"], "", "table", "duckdb"
+            r.schema, r.table, r.database, r.kind, r.connection_class, r.connection = tdata.SCHEMA, t["table"], "", "table", "duckdb", ""
             self.copied_used[t["table"]] = t
             done.append(f"{tdata.SCHEMA}.{t['table']} ({t['parquet']}, {t.get('rows', '?')} rows)")
             for note in t.get("notes") or []:
@@ -2066,14 +2124,24 @@ class _Parser:
     def _assign_models(self, ds: TDatasource) -> None:
         item = f"{ds.src} datasource {ds.caption}"
         reason = extract_only(ds)
+        how = ("`unshackle import tableau --with-data` on the packaged file (.twbx, .tdsx) that holds it" if self.manual
+               else "`unshackle extract tableau --with-data`")
         if reason and ds.origin is None:  # a workbook's copy of a published data source: the published one says it
             self.b.warn(item, f"{reason}: its data is only in Tableau, no warehouse table holds it. Copy it to Parquet with "
-                        "`unshackle extract tableau --with-data` and build again, or point the semantic model at a warehouse table "
-                        "holding this data")
+                        f"{how} and build again, or point the semantic model at a warehouse table holding this data")
+        if not ds.relations and ds.connection_class != "sqlproxy" and ds.origin is None:
+            self.b.warn(item, "defines no tables (its connection has no relation), so nothing was migrated from it")
+        conns = connections(ds)
+        if conns and ds.origin is None:
+            extract = f"; or copy the extract Tableau answers from with {how}" if ds.extract_ds is not None else ""
+            self.b.warn(item, f"{_cross_db(conns)}{extract}")
         self._connection_settings(ds, item)
         mine: dict[str, _Model] = {}
+        names = [(r.schema.lower(), r.table.lower()) for r in ds.relations.values() if r.kind == "table"]
         for r in ds.relations.values():
             key = f"table:{r.schema.lower()}.{r.table.lower()}" if r.kind == "table" else "sql:" + hashlib.sha1(" ".join(r.sql.split()).encode()).hexdigest()[:12]
+            if conns and r.kind == "table" and names.count((r.schema.lower(), r.table.lower())) > 1:
+                key += f"@{r.connection}"  # the same table name in two of its databases: two tables
             model = self.models.get(key)
             if model is None:
                 base = _name(r.table if r.kind == "table" else ds.caption)
@@ -2156,6 +2224,9 @@ class _Parser:
             if ma is None or mb is None or ma is mb:
                 left.append(f"{kind} join {ra}.{ca} = {rb}.{cb}")
                 continue
+            if connections(ds, [ra, rb]):
+                left.append(f"{kind} join {ra}.{ca} = {rb}.{cb} (across databases)")
+                continue
             if mb.pk and cb.lower() == mb.pk.lower():
                 many, fk, one, key = ma, ca, mb, cb
             elif ma.pk and ca.lower() == ma.pk.lower():
@@ -2197,6 +2268,9 @@ class _Parser:
             (ca, cb), ma, mb = cols[0], mine.get(ra), mine.get(rb)
             if ma is None or mb is None or ma is mb:
                 left.append(label)
+                continue
+            if connections(ds, [ra, rb]):
+                left.append(f"{label} (across databases)")
                 continue
             if mb.pk and cb.lower() == mb.pk.lower():
                 many, fk, one, key = ma, ca, mb, cb
@@ -2294,6 +2368,10 @@ class _Parser:
         if prev is not None and f.formula is not None and " ".join(prev.split()) != " ".join(f.formula.split()):
             self.b.warn(f"{ds.src} datasource {ds.caption} field {f.label}",
                         f"`{name}` already exists in semantic model {model.sm.name} with a different formula; this one was skipped")
+        elif prev is None and f.formula:
+            self.b.warn(f"{ds.src} datasource {ds.caption} field {f.label}",
+                        f"`{name}` is already a column of semantic model {model.sm.name}; this calculation was skipped: add it under "
+                        "another name")
         return True
 
     def _register(self, model: _Model, name: str) -> None:
@@ -2533,6 +2611,12 @@ class _Parser:
         tc = TABLE_CALC.search(bare)
         if tc:
             return self._todo(ds, f, model, f"Tableau table calculation {tc.group(1).upper()}() depends on the view: compute it as window SQL in the notebook tile (skills/translate-dashboards), not a metric; see skills/translate-metrics")
+        if OBJECT_COUNT.search(code):
+            if ds.related:
+                return self._todo(ds, f, model, "counts the rows of a logical table ([__tableau_internal_object_id__]), which with "
+                                                f"relationships is computed on that table's rows: write it in the tile SQL; see {SKILL}")
+            clean = OBJECT_COUNT.sub("1", clean)  # one logical table: COUNT of its object id counts its rows
+            _, code, bare, _ = scan_formula(clean)
         other = sorted({_unesc(d) for d, _ in DS_REF.findall(code) if _unesc(d) != "Parameters"})
         if other:
             return self._todo(ds, f, model, f"references another datasource ({', '.join(other)}): data blending; join the tables in SQL or through entities; see {SKILL}")
@@ -2889,6 +2973,8 @@ class _Parser:
     def _rows(self, ds: TDatasource) -> tuple[str, str, bool]:
         """(FROM clause, custom SQL CTE body, joined) for all of a datasource's rows, as Tableau sees them."""
         joined = self._ds_join(ds)
+        if joined and connections(ds):
+            raise ax.FormulaError(f"the datasource's join reads several databases: {_cross_db(connections(ds))}")
         if joined:
             return joined, "", True
         models = self.ds_models.get(ds.uid) or {}
@@ -3226,6 +3312,13 @@ class _Parser:
             ds = wb.datasources.get(dsname)
             ref = _Ref(ds, dsname, inst)
             parts = inst.split(":")
+            count = OBJECT_COUNT.match(text or "", m.start(2) - 1) if inst == "__tableau_internal_object_id__" else None
+            if count is not None:  # the row count of one logical table
+                ref.instance = f"{inst}].[{_unesc(count.group(1))}"
+                ref.special, ref.deriv = "records", "cnt"
+                ref.obj = next((o for o in (ds.objects if ds else {}) if o in _unesc(count.group(1)).split(":")), "")
+                out.append(ref)
+                continue
             if dsname == "Parameters":
                 ref.special = "parameter"
                 ref.field = wb.params.get(inst)
@@ -3971,6 +4064,8 @@ class _Parser:
             while t != root:
                 need.add(t)
                 t = parent[t][0]
+        if cross := connections(ds, need | {root}):
+            raise _NoSQL(f"the sheet reads related tables from several databases: {_cross_db(cross)} ({SKILL})")
         return [(parent[t][0], t, parent[t][1]) for t in order if t in need]
 
     def _rel_from(self, ds: TDatasource, rel: str) -> str:
@@ -4003,6 +4098,9 @@ class _Parser:
 
         def home(c: tuple) -> str:
             r = c[0]
+            obj = ds.objects.get(r.obj) if r.special == "records" else None
+            if obj is not None and not obj.join and len(obj.relations) == 1:
+                return obj.relations[0]  # a logical table's own count: its rows
             if r.special == "records":
                 raise _NoSQL("Number of Records on a data source with relationships: each logical table has its own count; count the rows of one table")
             tables = self._tables_of(ds, r.field) if r.field is not None else set()
@@ -4376,6 +4474,10 @@ class _Parser:
         if ds is None or not ds.join_steps:
             return "", ""
         join = self._ds_join(ds)
+        cross = connections(ds)
+        cross_todo = f"the sheet reads the datasource's join: {_cross_db(cross)} ({SKILL})" if cross else ""
+        if not join and cross:
+            return "", cross_todo
         if not join:
             return "", (f"the datasource joins tables ({'; '.join(ds.joins)}) in a way unshackle can't write as SQL: Tableau computes this "
                         f"sheet over the joined rows, which can drop or repeat rows; add the join to the tile SQL ({SKILL})")
@@ -4391,7 +4493,7 @@ class _Parser:
                     safe = False
             if safe:
                 return "", ""
-        return join, ""
+        return ("", cross_todo) if cross else (join, "")
 
     def _needs_rows(self, ds: TDatasource, r: _Ref) -> bool:
         """A FIXED LOD is computed over the joined rows, so a sheet that shows one keeps the join."""
