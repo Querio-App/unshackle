@@ -237,9 +237,10 @@ dimension filters, then measure filters (`having`).
   table calculation, `RANK()`/`INDEX()` filter). Their groupfilters nest from the inside out: a
   list, then a wildcard, then a condition, then the top N.
 - Relative dates relative to today use the dashboard parameter `as_of` (`:as_of`; `None`
-  = the warehouse's `current_date`). Tableau uses its own today (the server's date), so
-  set `as_of` when comparing with a view exported on another day, or across a time zone
-  boundary. Weeks follow the Week start (unknown -> TODO); with a Fiscal year start,
+  = the warehouse's `current_date`). Tableau Cloud evaluates relative dates against the
+  UTC date (Tableau Server: the server's date), so a warehouse in another time zone can be
+  a day off around midnight: pin `:as_of` to compare with a view, and when the view was
+  exported on another day. Weeks follow the Week start (unknown -> TODO); with a Fiscal year start,
   quarter and year periods stay TODO (as DATETRUNC does). Ties on extracts break by the
   member's ascending order; a live connection may break them in the database's order.
 - Extract and data source filters also become row filters in the semantic layer (`groups:
