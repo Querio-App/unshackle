@@ -66,6 +66,33 @@ Raw files under `migration/raw/superset/`:
 Superset masks database passwords in exports; unshackle also drops `encrypted_extra`
 (service-account JSON and the like).
 
+### Without API access: the export ZIP
+
+```
+unshackle import superset dashboard_export_<timestamp>.zip   # or the unzipped folder
+unshackle build superset
+```
+
+Download it from Superset's UI: select dashboards (or charts, or datasets) on their list
+page and choose **Export**; the CLI's `superset export-dashboards` writes the same bundle.
+Pass several zips or folders at once. unshackle finds the folder holding `metadata.yaml`,
+copies `databases/`, `datasets/`, `charts/`, `dashboards/` and `queries/` to `export/`
+(dropping `encrypted_extra` and SSH tunnel settings) and writes `_import.json`.
+
+The export carries datasets, metrics, calculated columns, chart form data, dashboard
+layout and native filters, so the semantic layer and notebook structure match an extract.
+It does not carry:
+
+- **compiled chart SQL**: every chart tile gets a TODO to write its SQL from
+  `source_config` (the form data); charts that are on no dashboard are reported and
+  skipped. Select filters are listed per tile instead of bound as `:params`.
+- **roles and row-level security**: no Cedar policies or row filters; recreate them by
+  hand or run `unshackle extract superset`.
+- **usage, ids and the instance URL**: no view counts, and nothing links back to Superset.
+
+`migration/report.md` lists these under "imported manually". With API access later,
+`unshackle extract superset` replaces the imported files.
+
 ## What is deterministic
 
 | Superset | Becomes |
@@ -173,5 +200,3 @@ them with `columns:`.
   a `Referer`.
 - The 6.x Docker images ship without database drivers: add `psycopg2-binary` (or your
   warehouse's driver) to the image, as `tests/live/superset/Dockerfile` does.
-- No ZIP import yet: extract needs API access. Importing a Superset export ZIP someone
-  downloads by hand is a planned follow-up.
