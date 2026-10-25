@@ -712,7 +712,7 @@ def _member_sql(v: str | None) -> str | None:
         return "'" + v[1:-1].replace('""', '"').replace("'", "''") + "'"
     if v.startswith("#") and v.endswith("#"):
         return f"'{v[1:-1]}'"
-    if re.fullmatch(r"-?\d+(?:\.\d+)?", v) or v.lower() in ("true", "false"):
+    if re.fullmatch(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", v) or v.lower() in ("true", "false"):
         return v.lower() if v.lower() in ("true", "false") else v
     return "'" + v.replace("'", "''") + "'"
 
@@ -884,6 +884,20 @@ def _member_py(v: str | None) -> Any:
     if v.lower() in ("true", "false"):
         return v.lower() == "true"
     return v
+
+
+RANGE_TOLERANCE = 1.1e-14  # relative: Tableau keeps values this close to a range filter's bound (it cuts between 1.0e-14 and 1.2e-14)
+
+
+def _range_bound(bound: str, op: str, fractional: bool) -> str:
+    """A range filter's bound. Tableau writes it as the exact double (`%.17g`, often a member's own value, as when the range
+    spans the data) and keeps values within RANGE_TOLERANCE of it, which also absorbs the last bits an aggregate's double
+    differs by between engines (summation order). An integer bound on integer values compares as written."""
+    lit = _member_sql(bound) or "null"
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", bound) or (not fractional and re.fullmatch(r"-?\d+", bound)):
+        return lit
+    tol = abs(float(bound)) * RANGE_TOLERANCE
+    return f"{lit} {'-' if op == '>=' else '+'} {tol:.3g}" if tol else lit
 
 
 def _in_sql(expr: str, values: list[str | None], exclude: bool) -> str:
@@ -4618,7 +4632,7 @@ class _Parser:
             parts = []
             for bound, op in ((lo, ">="), (hi, "<=")):
                 if bound is not None and bound.strip():
-                    parts.append(f"{expr} {op} {_member_sql(bound.strip()) or 'null'}")
+                    parts.append(f"{expr} {op} {_range_bound(bound.strip(), op, is_agg or (f is not None and f.datatype != 'integer'))}")
             if inc == "non-null":
                 parts.append(f"{expr} is not null")
             if not parts:

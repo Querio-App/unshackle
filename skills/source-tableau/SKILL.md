@@ -223,7 +223,7 @@ dimension filters, then measure filters (`having`).
 | --- | --- |
 | list of values (`member`/`union`) | `x in (...)`; with Null selected, `or x is null` |
 | excluded values (`except`) | `(x not in (...) or x is null)`: Tableau keeps NULL rows unless Null is excluded too |
-| range (`quantitative`, `range`) | `>=` / `<=`; `included-values` `non-null`, `null`, `in-range-or-null` |
+| range (`quantitative`, `range`) | `>=` / `<=`; `included-values` `non-null`, `null`, `in-range-or-null`. Tableau writes a bound as the exact double (`%.17g`, often a member's own value when the range spans the data) and keeps values within about 1e-14 of it (relative), so the SQL widens it by 1.1e-14 (`>= -0.2168640535982099 - 2.39e-15`): an aggregate's last bits differ between engines. Integer bounds on integer fields compare as written |
 | wildcard (contains, starts with, ends with, exact) | the expression Tableau stores (`CONTAINS(LOWER([x]), LOWER('an'))`) as a row predicate; `CONTAINS` is case-sensitive, so the older form without `LOWER` stays so |
 | condition (`SUM([Quantity]) > 140`) | a `filter_N` CTE of the members (`group by` the field, `having` the condition), and `x in (select member from filter_N)` |
 | top N / bottom N (by any aggregate or formula; count from a parameter -> `:param`) | the same CTE with `row_number() over (order by <agg> desc, x)`: exactly N members, a tie at the boundary goes to the members first in ascending order |

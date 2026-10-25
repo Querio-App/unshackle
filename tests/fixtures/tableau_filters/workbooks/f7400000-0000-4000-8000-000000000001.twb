@@ -873,6 +873,33 @@
         <cols></cols>
       </table>
     </worksheet>
+    <worksheet name="range_on_bound">
+      <table>
+        <view>
+          <datasources>
+            <datasource name='federated.filters0plain' />
+          </datasources>
+          <datasource-dependencies datasource='federated.filters0plain'>
+            <column datatype='string' name='[account_manager]' role='dimension' type='nominal' /><column datatype='real' name='[discount_percentage]' role='measure' type='quantitative' /><column-instance column='[account_manager]' derivation='None' name='[none:account_manager:nk]' pivot='key' type='nominal' /><column-instance column='[discount_percentage]' derivation='Avg' name='[avg:discount_percentage:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='quantitative' column='[federated.filters0plain].[avg:discount_percentage:qk]' included-values='in-range'>
+            <min>9.4287919463087277</min>
+            <max>12.06140845070423</max>
+          </filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Text' />
+            <encodings><text column='[federated.filters0plain].[avg:discount_percentage:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.filters0plain].[none:account_manager:nk]</rows>
+        <cols></cols>
+      </table>
+    </worksheet>
     <worksheet name="cond_dimfilter">
       <table>
         <view>
@@ -1215,6 +1242,7 @@
     <window class='worksheet' name='top2_panes' />
     <window class='worksheet' name='top2_tier_null' />
     <window class='worksheet' name='cond_qty' />
+    <window class='worksheet' name='range_on_bound' />
     <window class='worksheet' name='cond_dimfilter' />
     <window class='worksheet' name='cond_formula' />
     <window class='worksheet' name='wild_lower' />

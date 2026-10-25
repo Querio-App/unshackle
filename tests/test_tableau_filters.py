@@ -267,6 +267,33 @@ def test_conditions_and_wildcards(con, rows, tiles):
     assert cases["wild_lower"][0] != cases["wild_case"][0]
 
 
+def test_range_bounds_on_a_members_value(con, rows, tiles):
+    """Tableau writes a range filter's bounds as exact doubles (`%.17g`), often a member's own value when the range spans the
+    data, and keeps values within about 1e-14 (relative) of a bound. Another engine's double for the same aggregate can differ
+    in its last bits (summation order), so an exact comparison would drop the members on the bounds. The bounds here are the
+    lowest-but-one and highest-but-one managers' AVG(discount_percentage) as another engine computed them, 2 ulps above this
+    engine's; neither is exactly representable as the decimal written."""
+    avg = {}
+    for m, *_ in by(rows, [M], QTY):
+        vals = [float(r["discount_percentage"]) for r in rows if r[M] == m and r["discount_percentage"] is not None]
+        avg[m] = sum(vals) / len(vals)
+    lo, hi = 9.4287919463087277, 12.06140845070423
+    on_lo, on_hi = sorted(avg, key=avg.get)[1], sorted(avg, key=avg.get)[-2]
+    assert 0 < lo - avg[on_lo] < 1e-14 * lo and 0 < hi - avg[on_hi] < 1e-14 * hi  # on the bound, just not bit for bit
+    tol = 1.1e-14
+    keep = {m for m, v in avg.items() if lo - abs(lo) * tol <= v <= hi + abs(hi) * tol}
+    assert on_lo in keep and on_hi in keep and len(keep) == len(avg) - 2  # the lowest and the highest are out
+    tile = tiles["range_on_bound"]
+    assert not tile.todo and {r[0] for r in run(con, tile)} == keep
+    assert "having avg(orders.discount_percentage) >= 9.4287919463087277 - 1.04e-13" in tile.sql
+    assert "avg(orders.discount_percentage) <= 12.06140845070423 + 1.33e-13" in tile.sql
+
+
+def test_integer_bounds_on_integer_values_compare_as_written(tmp_path):
+    rules = {rf.name: rf.predicate for rf in _parse(tmp_path).row_filters}
+    assert rules["orders_filtered_quantity_extract"] == "quantity >= 2"
+
+
 # ------------------------------------------------------------------ extract and data source filters
 
 
