@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "workbook": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "Dunder Mifflin Sales"
+    },
+    "granteeCapabilities": [
+      {
+        "group": {
+          "id": "00000000-0000-4000-8000-000000000004"
+        },
+        "capabilities": {
+          "capability": [
+            {
+              "name": "Read",
+              "mode": "Allow"
+            },
+            {
+              "name": "ExportData",
+              "mode": "Allow"
+            },
+            {
+              "name": "Write",
+              "mode": "Deny"
+            }
+          ]
+        }
+      },
+      {
+        "group": {
+          "id": "00000000-0000-4000-8000-000000000007"
+        },
+        "capabilities": {
+          "capability": [
+            {
+              "name": "Read",
+              "mode": "Allow"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

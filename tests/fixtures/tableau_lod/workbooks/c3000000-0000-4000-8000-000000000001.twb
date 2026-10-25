@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8' ?>
-<workbook version='18.1'>
+<workbook version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
   <datasources>
     <datasource caption='Dunder Mifflin LOD' inline='true' name='federated.lod0demo' version='18.1'>
       <connection class='federated'>
@@ -147,6 +147,12 @@
     <column caption="Revenue Share" datatype="real" name="[Calculation_109]" role="measure" type="quantitative">
       <calculation class='tableau' formula="SUM([post_discount_revenue]) / SUM([Calculation_101])" />
     </column>
+    <column caption="Large Account Orders" datatype="integer" name="[Calculation_110]" role="measure" type="quantitative">
+      <calculation class='tableau' formula="IF [Calculation_101] &gt;= 1000000 THEN 1 ELSE 0 END" />
+    </column>
+    <column caption="Cycle Avg Account Revenue" datatype="real" name="[Calculation_111]" role="measure" type="quantitative">
+      <calculation class='tableau' formula="{FIXED [payment_cycle] : AVG({FIXED [account_id] : SUM([post_discount_revenue])})}" />
+    </column>
     </datasource>
   </datasources>
   <worksheets>
@@ -238,6 +244,39 @@
         <panes><pane><mark class="Bar" /></pane></panes>
         <rows>[federated.lod0demo].[none:status:nk]</rows>
         <cols>[federated.lod0demo].[usr:Calculation_109:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Large Account Orders by Payment Cycle">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin LOD' name='federated.lod0demo' /></datasources>
+        </view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.lod0demo].[none:payment_cycle:nk]</rows>
+        <cols>[federated.lod0demo].[sum:Calculation_110:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Cycle Avg Account Revenue">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin LOD' name='federated.lod0demo' /></datasources>
+        </view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.lod0demo].[none:payment_cycle:nk]</rows>
+        <cols>[federated.lod0demo].[avg:Calculation_111:qk]</cols>
+      </table>
+    </worksheet>
+    <worksheet name="Account Revenue by Payment Cycle (Cancelled)">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin LOD' name='federated.lod0demo' /></datasources>
+          <filter class='categorical' column='[federated.lod0demo].[none:status:nk]'>
+            <groupfilter function='member' level='[none:status:nk]' member='&quot;CANCELLED&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+        </view>
+        <panes><pane><mark class="Bar" /></pane></panes>
+        <rows>[federated.lod0demo].[none:payment_cycle:nk]</rows>
+        <cols>[federated.lod0demo].[avg:Calculation_101:qk]</cols>
       </table>
     </worksheet>
   </worksheets>
