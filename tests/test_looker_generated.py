@@ -217,7 +217,8 @@ def evidence_tiles(repo: Path, dialect: str) -> dict:
     elements = "".join(
         f"  - name: {name}\n    model: evidence\n    explore: {explore}\n    type: looker_grid\n    fields: [{', '.join(fields)}]\n"
         + (f"    sorts: [{', '.join(sorts)}]\n" if sorts else "")
-        for name, (explore, fields, sorts) in TILES.items()
+        + ("    filters:\n" + "".join(f"      {k}: \"{v}\"\n" for k, v in filters.items()) if filters else "")
+        for name, (explore, fields, sorts, filters) in ALL_TILES.items()
     )
     store.put_text("lookml/ev.dashboard.lookml", f"- dashboard: ev\n  title: Evidence\n  elements:\n{elements}")
     (d,) = get_source("looker").parse(store).dashboards
@@ -228,9 +229,9 @@ def assert_lookers_numbers(case: str, cols: list[str], rows: list[tuple]) -> Non
     """Rows of a tile's SQL against Looker's result for the same query on the same rows."""
     ours = [dict(zip(cols, r)) for r in rows]
     theirs = looker(case)
-    key = lambda r: str(r.get("ev_orders_customer", r.get("ev_orders.customer")))  # noqa: E731
+    key = lambda r: str(next((v for k, v in r.items() if k.endswith("customer")), ""))  # noqa: E731
     in_order = ours
-    if TILES[case][2]:  # NULL sorts first in BigQuery and last in most warehouses: compare by customer
+    if ALL_TILES[case][2]:  # NULL sorts first in BigQuery and last in most warehouses: compare by customer
         ours, theirs = sorted(ours, key=key), sorted(theirs, key=key)
     assert len(ours) == len(theirs)
     for o, t in zip(ours, theirs):
@@ -245,6 +246,18 @@ def assert_lookers_numbers(case: str, cols: list[str], rows: list[tuple]) -> Non
         for row in in_order:
             running += float(row["ev_orders_total_shipping"])
             assert float(row["ev_orders_shipping_running"]) == pytest.approx(running)
+
+
+# Liquid (#29): the derived table's {% condition %} and the measure's {% parameter %} / _parameter_value,
+# rendered for the tile's values (Looker's defaults when the tile sets none)
+LIQUID_TILES = {
+    "liquid_default": ("ev_liquid", ["ev_liquid.customer", "ev_liquid.count", "ev_liquid.chosen_total", "ev_liquid.chosen_label"],
+                       ["ev_liquid.customer"], {}),
+    "liquid_set": ("ev_liquid", ["ev_liquid.customer", "ev_liquid.count", "ev_liquid.chosen_total", "ev_liquid.chosen_label"],
+                   ["ev_liquid.customer"], {"ev_liquid.customer_filter": "-acme", "ev_liquid.metric_choice": "shipping"}),
+    "liquid_user_attribute": ("ev_liquid", ["ev_liquid.customer", "ev_liquid.user_locale", "ev_liquid.count"], [], {}),
+}
+ALL_TILES = {**{k: (*v, {}) for k, v in TILES.items()}, **LIQUID_TILES}
 
 
 @pytest.fixture(scope="module")
@@ -265,5 +278,22 @@ def test_tile_sql_parses_in_each_dialect(tmp_path, dialect):
     import sqlglot
 
     for case, tile in evidence_tiles(tmp_path, dialect).items():
+        if case == "liquid_user_attribute":
+            continue  # a TODO by design
         assert tile.sql, (case, tile.todo)
         sqlglot.parse_one(tile.sql, read=dialect)
+
+
+@pytest.mark.parametrize("case", ["liquid_default", "liquid_set"])
+def test_liquid_tiles_return_lookers_numbers(tiles, db, case):
+    tile = tiles[case]
+    assert tile.sql, tile.todo
+    assert "{%" not in tile.sql and "{{" not in tile.sql
+    cur = db.execute(tile.sql)
+    assert_lookers_numbers(case, [c[0] for c in cur.description], cur.fetchall())
+
+
+def test_liquid_user_attributes_stay_todo_in_tiles(tiles):
+    """Looker renders the viewing user's value; a notebook has no user."""
+    tile = tiles["liquid_user_attribute"]
+    assert not tile.sql and "_user_attributes" in tile.todo

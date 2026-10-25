@@ -546,6 +546,120 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string") -> str | None:
     return " AND ".join(c for c in (eq, ne and f"({ne} OR {ref} IS NULL)") if c)
 
 
+LIQUID_TAG = re.compile(r"(\{%.*?%\}|\{\{.*?\}\})", re.S)
+LIQUID_COND = re.compile(r"""^([\w.]+)\._parameter_value\s*(==|!=)\s*(['"])(.*?)\3$""")
+
+
+class Liquid:
+    """Looker's Liquid in SQL, rendered for one query: the parts checked against Looker's own SQL
+    (tests/fixtures/looker_generated/liquid_*): `{% parameter p %}` and `{{ p._parameter_value }}` of an
+    unquoted parameter, `{% if p._parameter_value == 'x' %}` branches, `{% condition f %} sql {% endcondition %}`
+    with the filter's expression (`1=1` without one), comments. Anything else is a problem."""
+
+    def __init__(self, parser: "_Parser", values: dict[str, str]):
+        self.p, self.values = parser, values  # "view.field" -> the query's filter value
+
+    def _lookup(self, view: str, name: str, kind: str) -> tuple[str, dict[str, Any]] | None:
+        qual, _, short = name.rpartition(".")
+        v = qual or view
+        f = self.p._field(v, short, (kind,))
+        return None if f is None else (f"{v}.{short}", f)
+
+    def param(self, view: str, name: str, problems: list[str]) -> str | None:
+        found = self._lookup(view, name, "parameters")
+        if found is None:
+            problems.append(f"Liquid reads {name}, which is not a parameter")
+            return None
+        key, f = found
+        if str(f.get("type", "string")) != "unquoted":
+            problems.append(f"parameter {name} is type: {f.get('type', 'string')}; only unquoted parameters are checked against Looker")
+            return None
+        value = self.values.get(key, f.get("default_value"))
+        if value is None:
+            problems.append(f"parameter {name} has no value in this query and no default_value")
+            return None
+        return str(value)
+
+    def render(self, view: str, sql: str) -> tuple[str, list[str]]:
+        problems: list[str] = []
+        parts = LIQUID_TAG.split(sql)
+        out, _ = self._block(view, parts, 0, problems, ())
+        return out, problems
+
+    def _block(self, view: str, parts: list[str], i: int, problems: list[str], stop: tuple[str, ...]) -> tuple[str, int]:
+        out = []
+        while i < len(parts):
+            part = parts[i]
+            if not LIQUID_TAG.fullmatch(part):
+                out.append(part)
+                i += 1
+                continue
+            body = part.strip("{}%-").strip() if part.startswith("{%") else ""
+            word, arg = (body.split() + ["", ""])[:2]
+            if word in stop:
+                return "".join(out), i
+            i += 1
+            if part.startswith("{{"):
+                expr = part.strip("{}-").strip()
+                if expr.endswith("._parameter_value"):
+                    out.append(self.param(view, expr[: -len("._parameter_value")], problems) or "")
+                else:
+                    problems.append(f"Liquid output {part} is not translated")
+            elif word == "parameter":
+                out.append(self.param(view, arg, problems) or "")
+            elif word == "comment":
+                _, i = self._block(view, parts, i, [], ("endcomment",))
+                i += 1
+            elif word == "condition":
+                name = arg
+                inner, i = self._block(view, parts, i, problems, ("endcondition",))
+                i += 1
+                found = self._lookup(view, name, "filters")
+                if found is None:
+                    problems.append(f"{{% condition {name} %}} reads a field that is not a filter")
+                    continue
+                key, f = found
+                value = self.values.get(key)
+                if value in (None, ""):
+                    out.append("1=1")
+                    continue
+                cond = looker_filter_sql(inner.strip(), str(value), str(f.get("type", "string")))
+                if cond is None:
+                    problems.append(f"filter {name}: {value!r} is not translated (a Looker filter expression)")
+                else:
+                    out.append(f"({cond})")
+            elif word == "if":
+                taken = None
+                cond = body[2:].strip()
+                while True:
+                    text, i = self._block(view, parts, i, problems, ("elsif", "else", "endif"))
+                    if taken is None and self._test(view, cond, problems):
+                        taken = text
+                    tag = parts[i].strip("{}%-").strip() if i < len(parts) else "endif"
+                    i += 1
+                    if tag.startswith("endif"):
+                        break
+                    cond = tag[5:].strip() if tag.startswith("elsif") else "true"
+                out.append(taken or "")
+            else:
+                problems.append(f"Liquid tag {{% {word} %}} is not translated")
+        if stop:
+            problems.append(f"Liquid block is missing {{% {stop[-1]} %}}")
+        return "".join(out), i
+
+    def _test(self, view: str, cond: str, problems: list[str]) -> bool:
+        if cond == "true":
+            return True
+        m = LIQUID_COND.match(cond)
+        if not m:
+            problems.append(f"Liquid condition {cond!r} is not translated")
+            return False
+        value = self.param(view, m.group(1), problems)
+        if value is None:
+            return False
+        return (value == m.group(4)) == (m.group(2) == "==")
+
+
 def tier_sql(expr: str, field: dict[str, Any]) -> str | None:
     """Looker's CASE for a tier dimension (integer and classic styles, as Looker labels them); None otherwise."""
     try:
@@ -803,6 +917,9 @@ class _Parser:
                     self.fields[f"{vname}.{g['name']}_{tf}"] = ("time", g["name"], tf)
             for m in v.get("measures", []):
                 self.fields[f"{vname}.{m['name']}"] = ("measure", m["name"], "")
+            for kind in ("parameter", "filter"):  # values for Liquid, not columns
+                for f in v.get(f"{kind}s", []):
+                    self.fields.setdefault(f"{vname}.{f['name']}", (kind, f["name"], ""))
 
     def _assign_metric_names(self) -> None:
         counts: dict[str, int] = {}
@@ -826,9 +943,9 @@ class _Parser:
                 n = self.metric_names[key] = f"{n}_{i}"
             taken.add(n)
 
-    def _field(self, vname: str, name: str) -> dict[str, Any] | None:
+    def _field(self, vname: str, name: str, kinds: tuple[str, ...] = ("dimensions", "measures", "dimension_groups")) -> dict[str, Any] | None:
         v = self.views.get(vname) or {}
-        for kind in ("dimensions", "measures", "dimension_groups"):
+        for kind in kinds:
             for f in v.get(kind, []):
                 if f["name"] == name:
                     return f
@@ -843,13 +960,20 @@ class _Parser:
     def table_name(self, vname: str) -> str:
         return _plain_table((self.views.get(vname) or {}).get("sql_table_name", "") or "")
 
-    def query_table(self, vname: str) -> tuple[str, str, str]:
+    def query_table(self, vname: str, q: _Query | None = None) -> tuple[str, str, str]:
         """(table, note, problem): the table to read in a query, as LookML writes it (quoting kept).
-        A derived table is read under the name it is materialized as."""
+        A derived table is read under the name it is materialized as; one with Liquid is rendered for
+        the query and inlined, as Looker does."""
         v = self.views.get(vname) or {}
         raw = str(v.get("sql_table_name") or "")
         if raw and TABLE_NAME.fullmatch(raw) and not LIQUID.search(raw):
             return raw.strip(), "", ""
+        dt_sql = str((v.get("derived_table") or {}).get("sql") or "")
+        if q is not None and LIQUID.search(dt_sql):
+            rendered, problems = Liquid(self, q.liquid).render(vname, dt_sql)
+            if problems or LIQUID.search(rendered) or "${" in rendered:
+                return snake(vname), "", f"derived table {vname}: " + ("; ".join(problems) or "reads other views (${...}) inside Liquid")
+            return f"({rendered.strip()})", "", ""
         if v.get("derived_table") or raw:
             return snake(vname), f"reads {vname}, a derived table: materialize it as `{snake(vname)}` first (see its query in queries/)", ""
         return snake(vname), "", f"view {vname} has no table"
@@ -880,6 +1004,10 @@ class _Parser:
         and `${other.f}` reads the joined view `other`, which `q` then joins.
         """
         problems: list[str] = []
+        if LIQUID.search(sql or "") and q is not None:
+            sql, problems = Liquid(self, q.liquid).render(vname, sql)
+            if problems:
+                return sql, problems
         if LIQUID.search(sql or ""):
             return sql, ["uses Liquid templating"]
         if CONSTANT.search(sql or ""):
@@ -1779,6 +1907,31 @@ class _Parser:
                      binds: dict[str, tuple[bool, Any, str]]) -> tuple[str, list[str], list[str]]:
         """The element's query as SQL over the explore: (sql, problems, notes)."""
         q = _Query(self, ex)
+        # parameters and templated filters first: Liquid in the fields reads them
+        tile_filters = el.get("filters") or {}
+        templated = set()
+
+        def kind_of(field: Any) -> tuple[str | None, str, str]:
+            qual, _, name = str(field).rpartition(".")
+            view = q.view_of(qual or ex["name"])
+            return view, name, self.fields.get(f"{view}.{name}", ("",))[0]
+
+        for field, value in (tile_filters.items() if isinstance(tile_filters, dict) else []):
+            view, name, kind = kind_of(field)
+            if kind in ("parameter", "filter"):
+                templated.add(str(field))
+                if kind == "filter" and (self._field(view or "", name, ("filters",)) or {}).get("sql"):
+                    q.problems.append(f"filter field {field} has its own sql:, which Looker adds to the WHERE clause")
+                q.liquid[f"{view}.{name}"] = str(value)
+        for fname, field in (el.get("listen") or {}).items():
+            view, name, kind = kind_of(field)
+            if kind in ("parameter", "filter") and str(fname) in fdefs:
+                templated.add(str(field))
+                default = fdefs[str(fname)].get("default_value")
+                if default not in (None, ""):
+                    q.liquid.setdefault(f"{view}.{name}", str(default))
+                q.notes.append(f"dashboard filter {fname!r} sets {field}, which Liquid reads: the SQL is written for its default "
+                               f"({default!r}); changing the filter in the notebook does not change it")
         dims: list[tuple[str, str]] = []
         meas: list[tuple[str, str]] = []
         kinds: dict[str, str] = {}
@@ -1809,10 +1962,10 @@ class _Parser:
             else:
                 (having if kind == "measure" else where).append(cond)
 
-        tile_filters = el.get("filters") or {}
         for field, value in (tile_filters.items() if isinstance(tile_filters, dict) else []):
-            add(str(field), value, "tile")
-        listen = el.get("listen") or {}
+            if str(field) not in templated:
+                add(str(field), value, "tile")
+        listen = {k: v for k, v in (el.get("listen") or {}).items() if str(v) not in templated}
         filtered = set(map(str, tile_filters)) | set(map(str, listen.values()))
         qualify = lambda f: f if "." in f else f"{ex['name']}.{f}"  # noqa: E731
         for field, value in _filter_pairs(ex.get("always_filter") or {}):
@@ -2064,6 +2217,7 @@ class _Query:
         self.aggs: list[tuple[str, str, str, str]] = []  # (alias, aggregation, field, placeholder) for the fan-out check
         self.held: dict[str, tuple[str, str]] = {}  # placeholder -> (SQL used, symmetric SQL); fanout() picks symmetric when rows repeat
         self.windows: dict[str, tuple[str, str]] = {}  # placeholder -> (percent_of_total / running_total, measure SQL)
+        self.liquid: dict[str, str] = {}  # "view.parameter_or_filter" -> the query's value, for Liquid
         self.tz: set[str] = set()  # timeframes Looker converts to the query time zone
         self.in_measure = 0
         self.problems: list[str] = []
@@ -2129,6 +2283,8 @@ class _Query:
         if kind[0] == "time":
             sql, p = self.p._timeframe(view, kind[1], kind[2], "query", frozenset(), self, a)
             return sql, "time", problems + p
+        if kind[0] in ("parameter", "filter"):
+            return "", kind[0], problems
         f = self.p._field(view, name) or {}
         if kind[0] == "measure":
             sql, p = self.measure(a, view, f, frozenset({f"{a}.{name}"}))
@@ -2206,20 +2362,20 @@ class _Query:
                 token = f"__window{len(self.windows)}__"
                 self.windows[token] = (mtype, inner)
                 return token, problems + p
-            if mtype == "number":
+            if mtype in ("number", "string", "date"):  # the SQL as written; Looker casts a date measure to a date
                 if conds:
-                    problems.append(f"measure {ref} is type: number with filters")
+                    problems.append(f"measure {ref} is type: {mtype} with filters")
                 expr, p = self.p._expand(view, m.get("sql") or "", "query", seen, self, a)
                 if AGG_FN.search(REF.sub("", m.get("sql") or "")):
                     self.aggs.append((a, "sql", ref, ""))  # aggregates written in SQL: assume rows must not repeat
-                return f"({expr})", problems + p
+                return (f"CAST(({expr}) AS DATE)" if mtype == "date" else f"({expr})"), problems + p
             return "", problems + [f"measure {ref} is type: {mtype}"]
         finally:
             self.in_measure -= 1
 
     def _table(self, view: str, problems: list[str]) -> str:
         """The view's table; its note goes to `notes`, its problem to `problems`."""
-        table, note, problem = self.p.query_table(view)
+        table, note, problem = self.p.query_table(view, self)
         self.notes += [note] if note else []
         problems += [problem] if problem else []
         return table
