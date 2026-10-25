@@ -1,7 +1,7 @@
 # Tableau calculation semantics, one case per row (tests/test_tableau_calc.py runs them).
 #
 #   formula:  a Tableau formula over table t: i, j integer; r real (double); n real (decimal); s, u string;
-#             d, e date; b boolean
+#             d, e date; ts, tt datetime; b boolean
 #   rows:     input rows (a missing column is NULL)
 #   expected: a list (one value per row) for a row-level formula, one value for an aggregate
 #   rule:     the Tableau rule that gives the expected result
@@ -375,3 +375,453 @@
   rows: [{s: "b", u: "x"}, {s: "a"}, {s: "c", u: "y"}]
   expected: "bx"
   rule: "string + inside an aggregate; a NULL concatenation is skipped"
+
+# ---------------------------------------------------------------- date functions
+- formula: "DATEDIFF('month', [d], [e])"
+  rows: [{d: 2024-01-31, e: 2024-02-01}, {d: 2024-02-01, e: 2024-02-29}, {d: 2024-03-01, e: 2024-01-31}, {d: 2024-01-31}]
+  expected: [1, 0, -2, null]
+  rule: "DATEDIFF counts the month boundaries crossed, not whole months elapsed; negative when the end is earlier"
+- formula: "DATEDIFF('year', [d], [e])"
+  rows: [{d: 2023-12-31, e: 2024-01-01}, {d: 2024-01-01, e: 2024-12-31}, {e: 2024-01-01}]
+  expected: [1, 0, null]
+  rule: "DATEDIFF('year') counts January 1sts crossed"
+- formula: "DATEDIFF('quarter', [d], [e])"
+  rows: [{d: 2024-03-31, e: 2024-04-01}, {d: 2024-04-01, e: 2023-12-31}, {d: 2024-04-01}]
+  expected: [1, -2, null]
+  rule: "DATEDIFF('quarter') counts quarter starts crossed"
+- formula: "DATEDIFF('day', [d], [e])"
+  rows: [{d: 2024-02-28, e: 2024-03-01}, {d: 2023-02-28, e: 2023-03-01}, {d: 2024-03-01, e: 2024-02-28}, {d: 2024-03-01}]
+  expected: [2, 1, -2, null]
+  rule: "DATEDIFF('day') counts midnights crossed (leap day included)"
+- formula: "DATEDIFF('weekday', [d], [e])"
+  rows: [{d: 2024-03-02, e: 2024-03-05}, {}]
+  expected: [3, null]
+  rule: "DATEDIFF('weekday') and ('dayofyear') count days"
+- formula: "DATEDIFF('day', [ts], [tt])"
+  rows: [{ts: 2024-01-01 23:59:59, tt: 2024-01-02 00:00:01}, {ts: 2024-01-01 23:59:59}]
+  expected: [1, null]
+  rule: "DATEDIFF('day') of datetimes counts midnights, two seconds apart is one day"
+- formula: "DATEDIFF('hour', [ts], [tt])"
+  rows: [{ts: 2024-01-01 23:59:59, tt: 2024-01-02 00:00:01}, {ts: 2024-01-02 00:00:01, tt: 2024-01-01 23:59:59}, {ts: 2024-01-01 10:00:00, tt: 2024-01-03 09:59:59}, {tt: 2024-01-01 10:00:00}]
+  expected: [1, -1, 47, null]
+  rule: "DATEDIFF('hour') counts hour boundaries crossed"
+- formula: "DATEDIFF('minute', [ts], [tt])"
+  rows: [{ts: 2024-01-01 10:00:59, tt: 2024-01-01 10:01:00}, {ts: 2024-01-01 10:00:00}]
+  expected: [1, null]
+  rule: "DATEDIFF('minute') counts minute boundaries crossed"
+- formula: "DATEDIFF('second', [ts], [tt])"
+  rows: [{ts: 2024-01-01 10:00:00, tt: 2024-01-01 10:01:30}, {ts: 2024-12-31 23:59:59, tt: 2025-01-01 00:00:00}, {}]
+  expected: [90, 1, null]
+  rule: "DATEDIFF('second') counts seconds"
+- formula: "DATEDIFF('hour', [d], [e])"
+  rows: [{d: 2024-01-01, e: 2024-01-03}, {d: 2024-01-01}]
+  expected: [48, null]
+  rule: "DATEDIFF('hour') of dates counts from midnight"
+- formula: "DATEDIFF('week', [d], [e], 'monday')"
+  rows: [{d: 2024-03-02, e: 2024-03-03}, {d: 2024-03-03, e: 2024-03-04}, {d: 2024-03-10, e: 2024-03-02}, {d: 2024-03-02}]
+  expected: [0, 1, -1, null]
+  rule: "DATEDIFF('week') counts week starts crossed; the fourth argument names the first day of the week"
+- formula: "DATEDIFF('week', [d], [e], 'sunday')"
+  rows: [{d: 2024-03-02, e: 2024-03-03}, {d: 2024-03-03, e: 2024-03-09}, {d: 2024-03-10, e: 2024-03-02}, {e: 2024-03-02}]
+  expected: [1, 0, -2, null]
+  rule: "Sunday weeks: Saturday to Sunday crosses one week start"
+- formula: "DATEDIFF('week', [d], [e])"
+  rows: [{d: 2024-03-02, e: 2024-03-03}]
+  todo: "Week start"
+  rule: "DATEDIFF('week') follows the data source's Week start, which this one doesn't set (no locale either)"
+- formula: "SUM(DATEDIFF('day', [d], [e]))"
+  rows: [{d: 2024-01-01, e: 2024-01-11}, {d: 2024-01-01}, {d: 2024-02-01, e: 2024-01-30}]
+  expected: 8
+  rule: "a DATEDIFF inside an aggregate; NULL differences are skipped"
+- formula: "DATEADD('month', [i], [d])"
+  rows: [{i: 1, d: 2024-01-31}, {i: -1, d: 2024-03-31}, {i: 12, d: 2023-02-28}, {d: 2024-01-31}, {i: 1}]
+  expected: [2024-02-29, 2024-02-29, 2024-02-28, null, null]
+  rule: "DATEADD of months keeps the day, or the month's last day when it has fewer; a NULL increment or date is NULL"
+- formula: "DATEADD('year', 1, [d])"
+  rows: [{d: 2024-02-29}, {d: 2023-03-01}, {}]
+  expected: [2025-02-28, 2024-03-01, null]
+  rule: "DATEADD of a year from a leap day is February 28"
+- formula: "DATEADD('quarter', [i], [d])"
+  rows: [{i: 1, d: 2024-11-30}, {i: -2, d: 2024-08-31}, {d: 2024-11-30}]
+  expected: [2025-02-28, 2024-02-29, null]
+  rule: "a quarter is three months"
+- formula: "DATEADD('week', 2, [d])"
+  rows: [{d: 2024-02-20}, {}]
+  expected: [2024-03-05, null]
+  rule: "a week is seven days"
+- formula: "DATEADD('day', [i], [d])"
+  rows: [{i: -1, d: 2024-03-01}, {i: 366, d: 2024-01-01}, {i: 1}]
+  expected: [2024-02-29, 2025-01-01, null]
+  rule: "DATEADD of days"
+- formula: "DATEADD('hour', 5, [d])"
+  rows: [{d: 2024-01-01}, {}]
+  expected: [2024-01-01 05:00:00, null]
+  rule: "DATEADD returns a datetime: hours added to a date start at midnight"
+- formula: "DATEADD('minute', [i], [ts])"
+  rows: [{i: 90, ts: 2024-01-01 23:00:00}, {i: -1, ts: 2024-01-01 00:00:00}, {ts: 2024-01-01 23:00:00}]
+  expected: [2024-01-02 00:30:00, 2023-12-31 23:59:00, null]
+  rule: "DATEADD of minutes crosses midnight and years"
+- formula: "DATEADD('day', [r], [d])"
+  rows: [{r: 1.5, d: 2024-01-01}]
+  todo: "whole numbers"
+  rule: "Tableau rejects a fractional DATEADD increment"
+- formula: "DATEPART('hour', [ts])"
+  rows: [{ts: 2024-01-01 13:45:30}, {ts: 2024-01-01 00:00:00}, {}]
+  expected: [13, 0, null]
+  rule: "DATEPART('hour') of a datetime"
+- formula: "DATEPART('minute', [ts]) * 100 + DATEPART('second', [ts])"
+  rows: [{ts: 2024-01-01 13:45:30}, {}]
+  expected: [4530, null]
+  rule: "DATEPART('minute') and ('second')"
+- formula: "DATEPART('hour', [d])"
+  rows: [{d: 2024-01-01}, {}]
+  expected: [0, null]
+  rule: "a date's hour is 0"
+- formula: "DATEPART('dayofyear', [d])"
+  rows: [{d: 2024-12-31}, {d: 2023-12-31}, {d: 2024-03-01}, {}]
+  expected: [366, 365, 61, null]
+  rule: "DATEPART('dayofyear') counts from January 1 (leap years have 366)"
+- formula: "DATENAME('day', [d]) + '/' + DATENAME('dayofyear', [d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: ["5/65", null]
+  rule: "DATENAME of a number part is the number as text, without leading zeros"
+- formula: "DATENAME('hour', [ts])"
+  rows: [{ts: 2024-03-05 07:08:09}, {}]
+  expected: ["7", null]
+  rule: "DATENAME('hour')"
+- formula: "DATENAME('month', [d])"
+  rows: [{d: 2024-03-05}]
+  todo: "English locale"
+  rule: "DATENAME('month') is in the locale's language, and this data source records no locale"
+- formula: "MAKEDATE([i], [j], 1)"
+  rows: [{i: 2024, j: 2}, {i: 2024, j: 13}, {i: 2024, j: 0}, {j: 1}, {i: 2024}]
+  expected: [2024-02-01, 2025-01-01, 2023-12-01, null, null]
+  rule: "MAKEDATE rolls an out-of-range month into the next or previous year (as an extract computes it)"
+- formula: "MAKEDATE(2023, 2, [i])"
+  rows: [{i: 28}, {i: 29}, {i: 0}, {}]
+  expected: [2023-02-28, 2023-03-01, 2023-01-31, null]
+  rule: "MAKEDATE rolls an out-of-range day over: February 29, 2023 is March 1"
+- formula: "MAKEDATETIME([d], [ts])"
+  rows: [{d: 2024-03-05, ts: 2000-01-01 07:59:30}, {ts: 2000-01-01 07:59:30}, {d: 2024-03-05}]
+  expected: [2024-03-05 07:59:30, null, null]
+  rule: "MAKEDATETIME takes the date of the first argument and the time of day of the second"
+- formula: "DATEDIFF('day', [d], TODAY()) >= 0"
+  rows: [{d: 2024-01-01}, {}]
+  expected: [true, null]
+  rule: "TODAY() is the current date (a live connection sends CURRENT_DATE)"
+- formula: "DATEDIFF('day', [d], TODAY()) >= 0"
+  connection: extract
+  rows: [{d: 2024-01-01}]
+  expected: [true]
+  notes: ["Tableau's clock and time zone"]
+  rule: "an extract's TODAY() is Tableau's date; the description says so"
+- formula: "DATEDIFF('second', [ts], NOW())"
+  rows: [{ts: 2024-01-01 00:00:00}]
+  todo: "Tableau's clock"
+  rule: "NOW() is Tableau's clock in Tableau's time zone: TODO"
+- formula: "ISDATE([s])"
+  rows: [{s: "2024-02-29"}]
+  todo: "locale"
+  rule: "ISDATE parses with the locale: TODO"
+- formula: "DATEPARSE('yyyy-MM-dd', [s])"
+  rows: [{s: "2024-02-29"}]
+  todo: "ICU date format"
+  rule: "DATEPARSE takes an ICU format: TODO"
+
+# ---------------------------------------------------------------- IN, two-argument MIN/MAX
+- formula: "[s] IN ('a', 'b')"
+  rows: [{s: "a"}, {s: "c"}, {s: "A"}, {}]
+  expected: [true, false, false, false]
+  rule: "IN compares with = (case-sensitive) and is FALSE, not NULL, for a NULL value"
+- formula: "[i] IN (1, 2)"
+  rows: [{i: 1}, {i: 3}, {}]
+  expected: [true, false, false]
+  rule: "IN of numbers; NULL is not in the list"
+- formula: "MIN([i], [j])"
+  rows: [{i: 3, j: 1}, {i: -3, j: 1}, {i: 3}, {j: 1}]
+  expected: [1, -3, null, null]
+  rule: "MIN(a, b) is the smaller one, NULL when either is NULL"
+- formula: "MAX([s], [u]) + MIN([s], [u])"
+  rows: [{s: "b", u: "B"}, {s: "b"}]
+  expected: ["bB", null]
+  rule: "MAX/MIN of strings in a binary order: 'B' < 'b'"
+- formula: "MAX([d], [e])"
+  rows: [{d: 2024-01-01, e: 2023-12-31}, {d: 2024-01-01}]
+  expected: [2024-01-01, null]
+  rule: "MAX of two dates"
+- formula: "SUM(MIN([i], [j]))"
+  rows: [{i: 3, j: 1}, {i: 2, j: 5}, {j: 1}]
+  expected: 3
+  rule: "two-argument MIN is row-level inside an aggregate; its NULLs are skipped"
+
+# ---------------------------------------------------------------- string functions
+- formula: "CONTAINS([s], [u])"
+  rows: [{s: "Renée", u: "né"}, {s: "ABC", u: "b"}, {s: "abc", u: ""}, {u: "a"}, {s: "abc"}]
+  expected: [true, false, true, null, null]
+  rule: "CONTAINS is case-sensitive; every string contains ''; NULL is NULL"
+- formula: "STARTSWITH([s], [u])"
+  rows: [{s: "abc", u: "ab"}, {s: "abc", u: ""}, {s: "abc", u: "A"}, {s: " abc", u: "a"}, {s: "ab", u: "abc"}, {u: "a"}]
+  expected: [true, true, false, true, false, null]
+  rule: "STARTSWITH on a live connection ignores the string's leading spaces (Tableau sends LTRIM)"
+- formula: "STARTSWITH([s], [u])"
+  connection: extract
+  rows: [{s: "abc", u: "ab"}, {s: " abc", u: "a"}, {u: "a"}]
+  expected: [true, false, null]
+  rule: "an extract's STARTSWITH keeps leading spaces"
+- formula: "ENDSWITH([s], [u])"
+  rows: [{s: "abc", u: "bc"}, {s: "abc  ", u: "c"}, {s: "abc", u: "c  "}, {s: "abc", u: ""}, {u: "a"}]
+  expected: [true, true, false, true, null]
+  rule: "ENDSWITH on a live connection ignores the string's trailing spaces (not the substring's)"
+- formula: "ENDSWITH([s], [u])"
+  connection: extract
+  rows: [{s: "abc", u: "bc"}, {s: "abc  ", u: "c"}, {u: "a"}]
+  expected: [true, false, null]
+  rule: "an extract's ENDSWITH keeps trailing spaces"
+- formula: "FIND([s], [u])"
+  rows: [{s: "abcabc", u: "c"}, {s: "abc", u: "z"}, {s: "abc", u: ""}, {s: "Renée", u: "é"}, {u: "a"}]
+  expected: [3, 0, 1, 4, null]
+  rule: "FIND is 1-based, 0 when not found, 1 for ''; positions count characters"
+- formula: "FIND([s], 'c', [i])"
+  rows: [{s: "abcabc", i: 4}, {s: "abcabc", i: 3}, {s: "abcabc", i: 0}, {s: "abcabc", i: -2}, {s: "abc", i: 10}, {s: "abc"}, {i: 1}]
+  expected: [6, 3, 3, 3, 0, null, null]
+  rule: "FIND's start skips earlier matches; a start below 1 is 1; past the end is 0"
+- formula: "FIND([s], 'e', 3)"
+  rows: [{s: "Renée"}, {}]
+  expected: [5, null]
+  rule: "FIND from a literal start"
+- formula: "LEFT([s], [i])"
+  rows: [{s: "abc", i: 2}, {s: "abc", i: 0}, {s: "abc", i: -1}, {s: "abc", i: 10}, {s: "😀ab", i: 1}, {s: "abc"}, {i: 1}]
+  expected: ["ab", "", null, "abc", "😀", null, null]
+  rule: "LEFT counts characters; a negative count is NULL; past the end is the whole string"
+- formula: "RIGHT([s], [i])"
+  rows: [{s: "abc", i: 2}, {s: "abc", i: -1}, {s: "abc", i: 10}, {i: 1}]
+  expected: ["bc", null, "abc", null]
+  rule: "RIGHT; a negative count is NULL"
+- formula: "LEFT([s], 2) + RIGHT([s], 1)"
+  rows: [{s: "abc"}, {}]
+  expected: ["abc", null]
+  rule: "LEFT/RIGHT with literal counts"
+- formula: "MID([s], [i])"
+  rows: [{s: "abcdef", i: 2}, {s: "abc", i: 5}, {s: "abcdef", i: 0}, {s: "abc"}, {i: 2}]
+  expected: ["bcdef", "", "abcdef", null, null]
+  rule: "MID is 1-based; a start below 1 is 1; past the end is ''"
+- formula: "MID([s], [i], [j])"
+  rows: [{s: "abcdef", i: 2, j: 3}, {s: "abcdef", i: 0, j: 2}, {s: "abcdef", i: -1, j: 3}, {s: "abc", i: 2, j: 0}, {s: "abc", i: 2, j: -1}, {s: "abc", j: 2}]
+  expected: ["bcd", "ab", "abc", "", "", null]
+  rule: "MID's length counts from the start (moved to 1); a negative length is '' on a live connection"
+- formula: "MID([s], [i], [j])"
+  connection: extract
+  rows: [{s: "abcdef", i: 2, j: 3}, {s: "abc", i: 2, j: -1}, {s: "abc", j: 2}]
+  expected: ["bcd", null, null]
+  rule: "an extract's MID with a negative length is NULL"
+- formula: "MID([s], 2, 3)"
+  rows: [{s: "Renée Rhino"}, {}]
+  expected: ["ené", null]
+  rule: "MID with literal start and length"
+- formula: "REPLACE([s], 'aa', 'b')"
+  rows: [{s: "aaaa"}, {s: "aaa"}, {s: "abc"}, {}]
+  expected: ["bb", "ba", "abc", null]
+  rule: "REPLACE replaces every non-overlapping match, left to right"
+- formula: "REPLACE([s], [u], 'x')"
+  rows: [{s: "abc", u: ""}, {s: "abc", u: "B"}, {s: "abc"}]
+  expected: ["abc", "abc", null]
+  rule: "REPLACE of '' changes nothing; it is case-sensitive; NULL is NULL"
+- formula: "SPLIT([s], '-', 2)"
+  rows: [{s: "a-b-c"}, {s: "abc"}, {s: "a--b"}, {}]
+  expected: ["b", "", "", null]
+  rule: "SPLIT's token n (1-based); a missing or empty token is ''"
+- formula: "SPLIT([s], '-', -1) + '|' + SPLIT([s], '-', -3) + '|' + SPLIT([s], '-', -4)"
+  rows: [{s: "a-b-c"}, {s: "abc"}, {}]
+  expected: ["c|a|", "abc||", null]
+  rule: "a negative token counts from the end"
+- formula: "SPLIT([s], 'XY', 2)"
+  rows: [{s: "aXYbXYc"}, {}]
+  expected: ["b", null]
+  rule: "SPLIT with a longer delimiter"
+- formula: "SPLIT([s], 'aa', -1)"
+  rows: [{s: "xaaay"}, {}]
+  expected: ["y", null]
+  rule: "a live connection splits from the end for a negative token (Tableau sends REVERSE)"
+- formula: "SPLIT([s], 'aa', -1)"
+  connection: extract
+  rows: [{s: "xaaay"}]
+  todo: "overlapping"
+  rule: "an extract splits from the start ('x', 'ay'), which the reversed form can't reproduce for a longer delimiter"
+- formula: "SPLIT([s], '-', [i])"
+  rows: [{s: "a-b", i: 1}]
+  todo: "token number"
+  rule: "SPLIT's token must be a literal"
+- formula: "LTRIM([s]) + '|' + RTRIM([s])"
+  rows: [{s: "  ab  "}, {}]
+  expected: ["ab  |  ab", null]
+  rule: "LTRIM/RTRIM remove leading/trailing spaces"
+- formula: "LTRIM([s])"
+  connection: extract
+  rows: [{s: " a"}]
+  expected: ["a"]
+  notes: ["also removes tabs and line breaks"]
+  rule: "an extract's LTRIM also removes tabs; the description says so"
+- formula: "SPACE([i])"
+  rows: [{i: 3}, {i: 0}, {i: -2}, {}]
+  expected: ["   ", "", null, null]
+  rule: "SPACE(n) is n spaces; a negative n is NULL"
+
+# ---------------------------------------------------------------- conversion
+- formula: "STR([i]) + '|' + STR([d])"
+  rows: [{i: -3, d: 2024-03-05}, {i: 1}]
+  expected: ["-3|2024-03-05", null]
+  rule: "STR of an integer; STR of a date is YYYY-MM-DD"
+- formula: "STR([r])"
+  rows: [{r: 2.5}, {r: 0.1}, {}]
+  expected: ["2.5", "0.1", null]
+  rule: "STR of a real on a live connection is the warehouse's text for it (Tableau sends a cast)"
+- formula: "STR([r])"
+  connection: extract
+  rows: [{r: 2.5}]
+  todo: "its own way"
+  rule: "an extract formats reals its own way (3 for 3.0, 1e-05): TODO"
+- formula: "STR([b])"
+  rows: [{b: true}]
+  todo: "boolean"
+  rule: "STR of a boolean is 1/0 live and true/false on an extract: TODO"
+- formula: "INT([r])"
+  rows: [{r: 2.7}, {r: -2.7}, {r: 0.5}, {}]
+  expected: [2, -2, 0, null]
+  rule: "INT truncates toward zero"
+- formula: "INT([b]) + INT([i])"
+  rows: [{b: true, i: 2}, {b: false, i: 2}, {i: 2}]
+  expected: [3, 2, null]
+  rule: "INT of TRUE is 1, of FALSE 0; of an integer the integer"
+- formula: "INT([d])"
+  rows: [{d: 2024-03-05}, {d: 1900-01-01}, {}]
+  expected: [45354, 0, null]
+  rule: "INT of a date counts days from January 1, 1900"
+- formula: "INT([s])"
+  rows: [{s: "42"}, {s: "3.7"}, {s: "-3.7"}, {}]
+  expected: [42, 3, -3, null]
+  rule: "INT of a string on a live connection: the number, truncated (Tableau sends a cast)"
+- formula: "INT([s])"
+  connection: extract
+  rows: [{s: "42"}]
+  todo: "isn't a number"
+  rule: "an extract's INT of text that isn't a number is NULL, which a cast doesn't do: TODO"
+- formula: "FLOAT([i]) / 2 + FLOAT([b])"
+  rows: [{i: 3, b: true}, {i: 3, b: false}, {b: true}]
+  expected: [2.5, 1.5, null]
+  rule: "FLOAT of an integer and of a boolean"
+- formula: "FLOAT([s])"
+  rows: [{s: "2.5"}, {}]
+  expected: [2.5, null]
+  rule: "FLOAT of a string on a live connection"
+- formula: "FLOAT([s])"
+  connection: extract
+  rows: [{s: "2.5"}]
+  todo: "isn't a number"
+  rule: "an extract's FLOAT of bad text is NULL: TODO"
+
+# ---------------------------------------------------------------- math
+- formula: "DIV([i], [j])"
+  rows: [{i: 7, j: 2}, {i: -7, j: 2}, {i: 7, j: -2}, {i: 7, j: 0}, {j: 2}]
+  expected: [3, -3, -3, null, null]
+  rule: "DIV is integer division truncated toward zero; a zero divisor is NULL"
+- formula: "DIV([r], 2)"
+  rows: [{r: 7.5}]
+  todo: "integers"
+  rule: "DIV takes integers"
+- formula: "POWER([i], [r])"
+  rows: [{i: 2, r: 10}, {i: 2, r: -1}, {i: 0, r: 0}, {i: -8, r: 0.5}, {i: -2, r: 3}, {i: 0, r: -1}, {r: 2}]
+  expected: [1024, 0.5, 1, null, -8, null, null]
+  rule: "POWER; a negative base to a fraction and 0 to a negative power are NULL"
+- formula: "SQRT([r])"
+  rows: [{r: 16}, {r: 0}, {r: -1}, {}]
+  expected: [4, 0, null, null]
+  rule: "SQRT of a negative number is NULL"
+- formula: "LOG([r])"
+  rows: [{r: 1000}, {r: 1}, {r: 0}, {r: -1}, {}]
+  expected: [3, 0, null, null, null]
+  rule: "LOG is base 10; 0 and negative numbers give NULL"
+- formula: "LOG([r], [i])"
+  rows: [{r: 8, i: 2}, {r: 1024, i: 2}, {r: 8, i: 1}, {r: 8, i: -2}, {r: 0, i: 2}, {r: 8}]
+  expected: [3, 10, null, null, null, null]
+  rule: "LOG(x, base); a base of 1 or <= 0 gives NULL"
+- formula: "FLOOR(LOG([r], 10))"
+  rows: [{r: 1000}]
+  expected: [3]
+  rule: "LOG to a base is exact at powers of the base"
+- formula: "LN([r])"
+  rows: [{r: 1}, {r: 0}, {r: -1}, {}]
+  expected: [0, null, null, null]
+  rule: "LN of 0 or a negative number is NULL"
+- formula: "EXP([r])"
+  rows: [{r: 0}, {}]
+  expected: [1, null]
+  rule: "EXP"
+- formula: "SIGN([r])"
+  rows: [{r: -2.5}, {r: 0}, {r: 3}, {}]
+  expected: [-1, 0, 1, null]
+  rule: "SIGN is -1, 0 or 1"
+
+# ---------------------------------------------------------------- regular expressions
+- formula: "REGEXP_MATCH([s], 'b')"
+  rows: [{s: "abc"}, {s: "ABC"}, {}]
+  expected: [true, false, null]
+  rule: "REGEXP_MATCH finds the pattern anywhere, case-sensitively"
+- formula: "REGEXP_MATCH([s], '^b')"
+  rows: [{s: "abc"}, {s: "bc"}, {}]
+  expected: [false, true, null]
+  rule: "anchors"
+- formula: 'REGEXP_MATCH([s], ''\d'')'
+  rows: [{s: "a1"}, {s: "ab"}, {}]
+  expected: [true, false, null]
+  rule: "a live connection uses the warehouse's regular expressions (Tableau sends ~ to Postgres)"
+- formula: 'REGEXP_MATCH([s], ''^[a-z]+[.]'')'
+  connection: extract
+  rows: [{s: "jim.halpert@example.com"}, {s: "jim@example.com"}, {}]
+  expected: [true, false, null]
+  rule: "an extract's pattern that every engine reads alike is translated"
+- formula: 'REGEXP_MATCH([s], ''\w'')'
+  connection: extract
+  rows: [{s: "é"}]
+  todo: "ICU"
+  rule: "an extract matches with ICU (\\w, \\b are Unicode-aware there): TODO"
+- formula: "REGEXP_EXTRACT([s], '([0-9]+)')"
+  rows: [{s: "abc123"}, {s: "a1b22"}, {s: "abc"}, {}]
+  expected: ["123", "1", null, null]
+  rule: "REGEXP_EXTRACT returns the capturing group of the first match; NULL when nothing matches"
+- formula: "REGEXP_EXTRACT([s], '@(.*)$')"
+  connection: extract
+  rows: [{s: "jim@example.com"}, {s: "jim"}]
+  expected: ["example.com", null]
+  notes: ["matches line breaks with `.`"]
+  rule: "an extract's REGEXP_EXTRACT with one quantifier is translated; its `.` also matches line breaks (the description says so)"
+- formula: "REGEXP_EXTRACT([s], 'b')"
+  rows: [{s: "abc"}]
+  todo: "capturing group"
+  rule: "a pattern without exactly one group: TODO"
+- formula: "REGEXP_REPLACE([s], 'X', '-')"
+  rows: [{s: "aXbXc"}, {s: "abc"}, {}]
+  expected: ["a-b-c", "abc", null]
+  rule: "REGEXP_REPLACE replaces every match"
+- formula: 'REGEXP_REPLACE([s], ''(b)'', ''[\1]'')'
+  rows: [{s: "abc"}, {}]
+  expected: ["a[b]c", null]
+  rule: "a live connection writes the warehouse's backreferences (\\1 in Postgres)"
+- formula: "REGEXP_REPLACE([s], '(b)', '[$1]')"
+  connection: extract
+  rows: [{s: "abc"}, {}]
+  expected: ["a[b]c", null]
+  rule: "an extract writes ICU backreferences ($1), translated to the warehouse's"
+
+# ---------------------------------------------------------------- datetime literals
+- formula: "DATEDIFF('hour', [ts], #2024-01-02 00:00:01#) + DATEPART('second', #2024-01-01 13:45:30#)"
+  rows: [{ts: 2024-01-01 23:59:59}, {}]
+  expected: [31, null]
+  rule: "#YYYY-MM-DD HH:MM:SS# is a datetime literal"
+- formula: "DATETIME([d])"
+  rows: [{d: 2024-03-05}, {}]
+  expected: [2024-03-05, null]
+  rule: "DATETIME of a date is its midnight"
+- formula: "DATETIME([s])"
+  rows: [{s: "2024-03-05 07:00:00"}]
+  todo: "locale"
+  rule: "DATETIME of a string column parses with the locale: TODO"

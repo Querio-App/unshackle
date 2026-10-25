@@ -151,10 +151,11 @@ def test_null_keys_join_like_tableau(tmp_path: Path):
 def test_render_per_dialect():
     sql = ("select \"Order Date\" as d, 'it''s \\ here' as s, date_trunc('week', x) as w, extract(dow from x) as dow, "
            "extract(isodow from x) as iso, extract(week from x) as wk, avg(q) as a, 1.0 * a / nullif(b, 0) as r, median(q) as m from t")
-    assert dialect.render(sql, "duckdb") == sql and dialect.render(sql, "snowflake") == sql and dialect.render(sql, "") == sql
+    assert dialect.render(sql, "duckdb") == sql and dialect.render(sql, "") == sql
+    assert dialect.render(sql, "snowflake") == sql.replace("\\", "\\\\")  # a backslash escapes in Snowflake and Redshift literals
     assert dialect.render(sql, "postgres") == (sql.replace("median(q)", "percentile_cont(0.5) within group (order by q)")
                                                .replace("1.0 * a", "cast(1.0 as double precision) * a"))
-    assert dialect.render(sql, "redshift") == (sql.replace("avg(q)", "avg(cast(q as double precision))")
+    assert dialect.render(sql, "redshift") == (sql.replace("\\", "\\\\").replace("avg(q)", "avg(cast(q as double precision))")
                                                .replace("1.0 * a", "cast(1.0 as double precision) * a"))
     databricks = dialect.render(sql, "databricks")
     assert "`Order Date` as d" in databricks and r"'it\'s \\ here' as s" in databricks

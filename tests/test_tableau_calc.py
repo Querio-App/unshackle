@@ -45,6 +45,8 @@ COLUMNS = {
     "d": ("date", 7, "date", "date"),
     "e": ("date", 7, "date", "date"),
     "b": ("boolean", 11, "boolean", "boolean"),
+    "ts": ("datetime", 135, "timestamp", "timestamp"),
+    "tt": ("datetime", 135, "timestamp", "timestamp"),
 }
 CONNECTIONS = ("live", "extract")
 
@@ -83,16 +85,20 @@ def _tds(engine: str, connection: str) -> str:
     )
 
 
-def _sql(tmp_path: Path, engine: str) -> dict[int, str]:
-    """Each case's SQL as the Tableau source writes it for `engine` (cases that expect a TODO are checked here)."""
+def _sql(tmp_path: Path, engine: str, warehouse: str = "") -> dict[int, str]:
+    """Each case's SQL as the Tableau source writes it for `engine` (cases that expect a TODO are checked here), or for
+    `warehouse` (unshackle.toml), leaving out what has no form there."""
     out: dict[int, str] = {}
     for connection in CONNECTIONS:
-        root = tmp_path / engine / connection
+        root = tmp_path / (warehouse or engine) / connection
         raw = root / "migration" / "raw" / "tableau" / "datasources"
         raw.mkdir(parents=True)
         (raw / "calc.tds").write_text(_tds(engine, connection))
+        if warehouse:
+            (root / "unshackle.toml").write_text(f'[datasources.warehouse]\ntype = "{warehouse}"\n')
         b = get_source("tableau").parse(RawStore(root, "tableau"))
         assert b.warehouse == engine
+        w = warehouse or b.warehouse
         sm = next(m for m in b.semantic_models if m.name == "t")
         dims = {d.name: d for d in sm.dimensions}
         measures = {m.name: m for m in sm.measures}
@@ -106,11 +112,18 @@ def _sql(tmp_path: Path, engine: str) -> dict[int, str]:
             if "todo" in case:
                 assert case["todo"] in todos.get(name, ""), f"{case['formula']}: expected a TODO, got {todos.get(name)!r}"
                 continue
+            if warehouse and todos.get(name, "").startswith(f"{warehouse}:"):
+                continue  # no form in this warehouse: a TODO says so
             assert name not in todos, f"{case['formula']}: {todos[name]}"
             if _is_agg(case):
                 m = measures[name]
                 # the measure's expression is in the warehouse's dialect already; the aggregate as the semantic layer writes it
-                out[k] = _dialect.render(AGG_SQL[m.agg].format("unshackle_x"), b.warehouse).replace("unshackle_x", m.expr or m.name)
+                try:
+                    agg = _dialect.render(AGG_SQL[m.agg].format("unshackle_x"), w)
+                except _dialect.Unsupported:
+                    assert warehouse, case["formula"]
+                    continue
+                out[k] = agg.replace("unshackle_x", m.expr or m.name)
             else:
                 out[k] = dims[name].expr
     return out
@@ -142,6 +155,8 @@ def _literal(v) -> str:
         return "true" if v else "false"
     if isinstance(v, (int, float)):
         return repr(v)
+    if isinstance(v, dt.datetime):
+        return f"timestamp '{v.isoformat(sep=' ')}'"
     if isinstance(v, dt.date):
         return f"date '{v.isoformat()}'"
     return "'" + str(v).replace("'", "''") + "'"
@@ -183,8 +198,9 @@ def test_every_function_has_a_case_with_a_null():
     for case in CASES:
         assert case.get("rule"), case["formula"]
         assert "expected" in case or "todo" in case, case["formula"]
-    for name in set(tc.FUNCS) | {"round", "iif"}:
-        mine = [c for c in CASES if f"{name.upper()}(" in c["formula"].upper() and "todo" not in c]
+    for name in set(tc.FUNCS) | set(tc.SPECIAL) | {"round", "iif"}:
+        call = {"min2": "MIN(", "max2": "MAX(", "in": " IN ("}.get(name, f"{name.upper()}(")
+        mine = [c for c in CASES if call in c["formula"].upper() and "todo" not in c]
         assert mine, f"no case for {name.upper()}"
         assert any(_has_null(c) for c in mine), f"no NULL case for {name.upper()}"
 
@@ -213,6 +229,29 @@ def test_cases_in_postgres(tmp_path: Path):
         # assume a binary order with Unicode case mapping (a database created with --locale=C.UTF-8).
         create = "create temporary table t (k integer, " + ", ".join(f"{c} {t[3]}" for c, t in COLUMNS.items()) + ")"
         failures = _run("postgres", execute, create, sqls)
+    assert not failures, "\n".join(failures)
+
+
+@pytest.mark.parametrize("warehouse", ["redshift", "snowflake", "bigquery", "databricks"])
+def test_cases_in_other_dialects(tmp_path: Path, warehouse: str):
+    """Every case's SQL parses in the warehouse's dialect. The Redshift, BigQuery and Databricks forms, run in DuckDB
+    through sqlglot, give the expected results, except the regular expressions: sqlglot maps them to DuckDB's, which
+    return '' for no match and replace only the first one."""
+    sqlglot = pytest.importorskip("sqlglot")
+    duckdb = pytest.importorskip("duckdb")
+    sqls = _sql(tmp_path, "postgres", warehouse)
+    run: dict[int, str] = {}
+    for k, sql in sqls.items():
+        try:
+            sqlglot.parse_one(f"select {sql} from t", read=warehouse)
+        except sqlglot.errors.ParseError as exc:
+            pytest.fail(f"{CASES[k]['formula']}: {sql} does not parse as {warehouse}: {exc}")
+        if warehouse != "snowflake" and "REGEXP_" not in CASES[k]["formula"]:
+            duck = sqlglot.transpile(f"select {sql} from t", read=warehouse, write="duckdb")[0]
+            run[k] = duck[len("SELECT "):duck.rindex(" FROM t")]
+    con = duckdb.connect()
+    create = "create table t (k integer, " + ", ".join(f"{c} {t[2]}" for c, t in COLUMNS.items()) + ")"
+    failures = _run("duckdb", lambda q: con.execute(q).fetchall() if q.lstrip().startswith("select") else con.execute(q), create, run)
     assert not failures, "\n".join(failures)
 
 

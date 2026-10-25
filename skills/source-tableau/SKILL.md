@@ -89,7 +89,7 @@ unshackle build tableau
 | `SUM(IF [Returned] = 'Yes' THEN 1 ELSE 0 END)`, `SUM(ZN([x]))` | measure whose `expr` is the row expression |
 | `SUM([Profit]) / SUM([Sales])`, `[Calc A] / [Calc B]` | ratio metric (implied measures/metrics added when needed) |
 | `[Profit Ratio] * 100` | derived metric |
-| row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, string `+`, `NULL`, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#`, `DATEPART`/`DATENAME` of week, weekday, quarter, year | dimension `expr` (time dimension with that grain for `DATETRUNC`; weeks, quarters and years follow the Date Properties, see Dates below), or measure `expr` when the calc's role is measure (Tableau's NULL, division and ROUND rules: Calculation semantics below) |
+| row calc: `IF/ELSEIF/ELSE/END`, `CASE`, `IIF`, arithmetic, string `+`, `NULL`, `ZN`, `IFNULL`, `ISNULL`, `DATETRUNC('month', [d])`, `UPPER/LOWER/TRIM/ABS/ROUND`, `#2024-01-01#`, `#2024-01-01 10:00:00#`, `DATEPART`/`DATENAME` of week, weekday, quarter, year, and the functions under Calculation semantics (dates, strings, conversion, math, `IN`, regular expressions) | dimension `expr` (time dimension with that grain for `DATETRUNC`; weeks, quarters and years follow the Date Properties, see Dates below), or measure `expr` when the calc's role is measure (Tableau's NULL, division and ROUND rules: Calculation semantics below) |
 | custom SQL `<relation type='text'>` | `queries/<ds>-custom-sql.sql` (TODO: materialize) + semantic model named after the datasource |
 | joins (`<relation type='join'>`) on a table's key | foreign entity on the other table's model (Ossie relationship with `join_type` in `custom_extensions`); the join's semantics go in both models' descriptions |
 | `{FIXED [a] : AGG([x])}` (one FIXED dimension) | semantic model `<a>_lod` defined by its query (`select a, agg(x) ... group by 1` over the datasource's rows, joins included): Ossie's dataset `source`, and in dbt projects `models/unshackle/<a>_lod.sql`. Primary entity `a`, foreign entity `a` on the table holding it. The value is a dimension (or a measure + metric when the field is a measure); all FIXED fields at the same grain share one model |
@@ -211,12 +211,27 @@ Tableau formulas render with Tableau's rules (`sources/_tableau_calc.py`, its fu
 | `ROUND(x, n)` of a real, extract | TODO: Tableau rounds the stored double, so a decimal tie (0.25 to 1 digit) can round down |
 | `MEDIAN` | `median()` (Postgres: `percentile_cont(0.5)`): the mean of the two middle values of an even count |
 | `COUNT`, `COUNTD`, `AVG` | skip NULLs; `COUNTD` counts `''`; `AVG` of integers is a real |
+| `DATEDIFF(part, a, b[, start_of_week])` | boundaries crossed, not time elapsed: `year`/`quarter`/`month` from the parts, `day` `cast(b as date) - cast(a as date)`, `hour`/`minute`/`second` from the days and clock parts; `week` counts week starts (the Week start or the fourth argument; TODO when unknown) |
+| `DATEADD(part, n, d)` | `d + (n) * interval '1 month'` (a quarter is 3 months, a week 7 days), a datetime; months keep the day or clamp to the month's end; a fractional `n` is TODO (Tableau rejects it) |
+| `DATEPART`/`DATENAME` of `hour`, `minute`, `second`, `dayofyear`, `day`; `DATENAME('month')` | `extract(...)` as an integer (a date's hour is 0); DATENAME is the number as text; month names in English when the locale is English, else TODO |
+| `MAKEDATE(y, m, d)`, `MAKEDATETIME(d, t)`, `DATETIME(d)` | MAKEDATE rolls over (Feb 29, 2023 is Mar 1; month 13 is January) as an extract does (a live Postgres connection rejects it); MAKEDATETIME is the date at the time of day of `t`; DATETIME of a string column is TODO (locale) |
+| `TODAY()`; `NOW()`, `ISDATE`, `DATEPARSE` | `current_date` (on an extract Tableau's own clock: the description says so); the others stay TODO (Tableau's clock and time zone; locale and ICU date formats) |
+| `[x] IN (a, b)` | `coalesce(x in (a, b), false)`: FALSE, not NULL, for a NULL `x`; IN with a set is TODO |
+| `MIN(a, b)`, `MAX(a, b)` | `case when a is null or b is null then null when a < b then a else b end` (row-level, NULL if either is NULL) |
+| `CONTAINS`, `FIND(s, sub[, start])` | `position(sub in s)`: 1-based, 0 when absent, `''` is found at 1; a start below 1 is 1 |
+| `STARTSWITH`, `ENDSWITH` | `left(s, length(sub)) = sub` / `right(...)`; on a live connection the string's leading (trailing) spaces are ignored, as Tableau sends `LTRIM`/`RTRIM` |
+| `LEFT`, `RIGHT`, `MID`, `SPACE` | counts are whole numbers; a negative count is NULL (`MID`'s negative length: `''` live, NULL on an extract); a start below 1 is 1 |
+| `REPLACE`, `SPLIT(s, d, n)`, `LTRIM`, `RTRIM` | `replace()`; `split_part()` (`''` past the end), a negative `n` reversed (`reverse(split_part(reverse(s), reverse(d), -n))`; on an extract TODO for delimiters longer than one character); LTRIM/RTRIM like TRIM |
+| `STR`, `INT`, `FLOAT` | STR of integers, dates and (live) reals casts to text; INT truncates toward zero, of a boolean 1/0, of a date the days since 1900-01-01; INT/FLOAT of a string cast live and stay TODO on an extract (bad text is NULL there); STR of a real on an extract, of a datetime or boolean: TODO |
+| `DIV`, `POWER`, `SQRT`, `LOG(x[, base])`, `LN`, `EXP`, `SIGN` | integer division toward zero (NULL for 0); NULL outside the domain (negative base to a fraction, `0` to a negative power, roots and logs of x <= 0, base 1 or <= 0); LOG is base 10 |
+| `REGEXP_MATCH`, `REGEXP_EXTRACT`, `REGEXP_REPLACE` | live: the warehouse's regular expressions, as Tableau sends them (`~`, `regexp_match(...)[1]`, `regexp_replace(..., 'g')`); extract (ICU): translated only for patterns every engine reads alike (no `\d \w \s \b`, classes or `(?`; for EXTRACT/REPLACE no alternation and one quantifier), `$1` becomes `\1`; REGEXP_EXTRACT needs one capturing group |
 
 Strings compare with the connection's collation. On a live connection that is the
 warehouse's, so the SQL does what Tableau did. An extract (`<extract enabled='true'>`)
 compares by code point (case- and accent-sensitive, `'B' < 'a'`), maps `ß` to `SS` and a
 final `Σ` to `ς` in UPPER/LOWER, and also trims tabs: when a calc relies on these, the
-semantic model's description says so. Check string calcs on an extract against a
+semantic model's description says so (also: LTRIM/RTRIM trim tabs, `.` in an extract's regular
+expression matches line breaks). Check string calcs on an extract against a
 warehouse whose collation is not binary (`en_US` Postgres, SQL Server `_CI_` collations).
 
 ## Finishing TODOs
@@ -323,7 +338,13 @@ and divides in double precision (`avg(cast(x as double precision))`,
 `cast(1.0 as double precision) * a / nullif(b, 0)`), because its `avg()` of integers and
 decimals and its decimal division truncate to the input's scale, while Tableau computes
 them as floats. `is not distinct from` (NULL keys of FIXED/EXCLUDE joins) runs on all of
-them. A tile BigQuery has no form for (`MEDIAN`) keeps its SQL with a TODO. Custom SQL is
+them. Calculation functions get each warehouse's form: day differences (`date_diff`,
+`datediff`), `dateadd`/`datetime_add`/`timestampadd` for date arithmetic, `make_date`, the
+regular-expression functions, base-10 `log`, `split_part` (BigQuery `split`); Snowflake and
+Redshift literals double their backslashes; BigQuery casts to `datetime` and Databricks to
+`timestamp_ntz`. A tile BigQuery has no form for (`MEDIAN`) keeps its SQL with a TODO, as do
+`LOG` with a base on Redshift, `MAKEDATETIME` on Databricks and backreferences in
+`REGEXP_REPLACE` on Databricks and Redshift. Custom SQL is
 left as written. Other warehouse types (SQL Server, Oracle, MySQL) get a warning: translate
 the SQL by hand.
 
