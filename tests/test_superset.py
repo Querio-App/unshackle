@@ -14,7 +14,7 @@ from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources.superset import SupersetSource, _layout, ratio_parts, simple_aggregate
 
-FIXTURES = Path(__file__).parent / "fixtures" / "superset"  # extracted from Superset 6.1.0 (tests/live/test_superset_live.py)
+FIXTURES = Path(__file__).parent / "fixtures" / "superset"  # extracted from Superset 6.1.0
 RAW = Path("migration/raw/superset")
 STATUS = "(status = :status OR :status IS NULL)"
 

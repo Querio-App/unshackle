@@ -154,9 +154,8 @@ over all of the datasource's rows (before the sheet's dimension filters):
 | a FIXED aggregate inside an expression (`SUM([x]) / SUM([Account Revenue])`) | each aggregate at its own level (`SUM([x])` over the rows, `SUM([Account Revenue])` as above), then the expression per mark |
 | a FIXED nested in a FIXED (`{FIXED [cycle] : AVG({FIXED [account] : SUM([x])})}`) | a grain of its own: the inner value once per distinct (cycle, account) of the datasource's rows, aggregated per cycle |
 
-Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions. These
-rules are checked against Tableau Cloud's own numbers (`tests/fixtures/tableau_live_lod`):
-counting rows instead can be off by an order of magnitude.
+Aggregated LODs get their own CTEs joined to a `base` CTE on the sheet's dimensions.
+Counting rows instead of these distinct combinations can be off by an order of magnitude.
 
 In the semantic layer, a calc over one grain's FIXED values is a metric on that grain's
 model (`large_account_orders` on `account_id_lod`), and a nested FIXED is a `_lod` model

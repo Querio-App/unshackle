@@ -168,8 +168,7 @@ Use each cell's `qNum` (not the formatted `qText`); dates are day numbers since
 create a session object with a one-measure `qHyperCubeDef`. A row filter can be
 checked without impersonating anyone: a set expression on the reduction field reduces
 the same associated data, so `Sum({<PAPER_TYPE={'COPY','PRINTER'}>} revenue)` must
-equal the SQL with that user's predicate. `tests/live/test_qlik_live.py` does all of
-this.
+equal the SQL with that user's predicate.
 
 ## Gotchas
 

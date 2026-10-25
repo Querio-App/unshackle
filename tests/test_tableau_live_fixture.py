@@ -18,7 +18,7 @@ from unshackle.sources import get_source
 from unshackle.verify import compare
 
 FIX = Path(__file__).parent / "fixtures" / "tableau_live"
-DATA = Path(__file__).parent / "live" / "data" / "dunder_mifflin"
+DATA = Path(__file__).parent / "data" / "dunder_mifflin"
 WB = "00000000-0000-4000-8000-000000000008"
 VIEW = {  # sheet -> view CSV saved by `unshackle extract`
     "Revenue by Paper Type": "00000000-0000-4000-8000-000000000009",

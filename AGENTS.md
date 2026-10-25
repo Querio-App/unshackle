@@ -30,9 +30,9 @@ open a pull request. Never delete a `TODO(unshackle)` without resolving it.
   are fine when the source chart needs them.
 - Run `uv pip install -e ".[dev]" && pytest` and `./examples/tableau-demo/run.sh`
   before pushing.
-- Live end-to-end tests are in `tests/live/` (skipped unless `UNSHACKLE_LIVE=1`); see
-  `tests/live/README.md`. Self-hosted tools run in Docker; hosted tools need their own
-  credentials in the environment.
+- Tests are offline: parsers run on saved exports in `tests/fixtures/`, and generated SQL runs
+  in DuckDB on the fictional Dunder Mifflin data (`tests/data/dunder_mifflin/`). Expected
+  numbers are computed in the test from the tool's documented semantics, not copied from a tool.
 - Fixtures and test data never contain real hostnames, site or tenant names, account ids,
   emails or tokens. Replace them with `example.*` values before committing.
 
@@ -44,5 +44,5 @@ open a pull request. Never delete a `TODO(unshackle)` without resolving it.
 - PR descriptions are plain and factual: what changed, how it was tested, what stays TODO.
   Pull requests and issues written with a coding agent end with the line
   `Assisted by Claude Code` (or the equivalent for your agent).
-- Changes that touch the same files as an open PR (`CHANGELOG.md`, `pyproject.toml` extras,
-  `tests/live/README.md`) are rebased on `main` after that PR merges.
+- Changes that touch the same files as an open PR (`CHANGELOG.md`, `pyproject.toml` extras)
+  are rebased on `main` after that PR merges.

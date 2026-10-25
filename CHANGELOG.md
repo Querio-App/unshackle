@@ -3,41 +3,34 @@
 ## Unreleased
 
 - The PyPI page links to the repository, issues and changelog.
+- Tests run offline only: the Dunder Mifflin data moved to `tests/data/dunder_mifflin/`, and the
+  `live` extra and test marker are gone.
 - Redash: multi-value enum and query dropdown parameters in `IN ({{ p }})` translate to `IN :p` with a
   list default (bound with SQLAlchemy's expanding parameters); static widget values with several values are
   joined as Redash does. Parameters spliced as raw SQL or inside a longer string get TODOs that say what to do.
 - Qlik Sense source (Qlik Cloud): `unshackle extract qlik` through the engine (QIX) and REST APIs with an
   OAuth machine-to-machine client or an API key, `unshackle import qlik` for `qlik app unbuild` folders. Plain
   script loads, master measures (set modifiers with listed values, ratios, variables), sheets and inline
-  Section Access translate; the rest of the load script, Aggr/TOTAL and searches are TODOs. Verified live.
+  Section Access translate; the rest of the load script, Aggr/TOTAL and searches are TODOs.
 - ThoughtSpot: formulas with the two-word `unique count ( x )` parse, and `nullif ( a , b )`
   translates (a divisor `nullif ( b , 0 )` keeps the formula a ratio metric).
 - Superset: `unshackle import superset` reads the export ZIP Superset's UI downloads (or
   the unzipped folder). Chart SQL, roles, row-level security and usage aren't in the
   export; tiles get a TODO and the report lists those gaps.
 - Metabase: date, number and string dashboard filters on query-builder questions bind as
-  notebook parameters (dates as `<slug>_from` / `<slug>_to`, number ranges as `_min` / `_max`),
-  checked against Metabase's own dashboard results in the live test. Relative date defaults,
+  notebook parameters (dates as `<slug>_from` / `<slug>_to`, number ranges as `_min` / `_max`).
+  Relative date defaults,
   `timestamptz` columns and the time-grouping filter keep a TODO.
-- Tableau: three more LOD shapes translate, each checked against Tableau Cloud's numbers:
-  an aggregate of a calc over FIXED values (`SUM(IF [Account Revenue] >= 1000000 THEN 1
+- Tableau: three more LOD shapes translate: an aggregate of a calc over FIXED values (`SUM(IF [Account Revenue] >= 1000000 THEN 1
   ELSE 0 END)`; a metric on the FIXED grain's model, and tiles), a FIXED aggregate inside
   an expression (`SUM([Sales]) / SUM([Account Revenue])`; tiles), and a FIXED nested in a
   FIXED (a `_lod` model of its own). Tableau takes the FIXED values once per distinct
   combination of the view's and the FIXED dimensions, and so does the generated SQL.
-- Tableau: the live test publishes a second workbook with 12 LOD sheets (FIXED, INCLUDE,
-  EXCLUDE, FIXED on two dimensions, a FIXED date as a dimension, a FIXED value under a
-  dimension filter) and checks the tiles against Tableau Cloud's own view data; the run is
-  kept as fixtures (`tests/fixtures/tableau_live_lod`). All 9 sheets with tile SQL match.
-  Tableau's numbers also settle how it aggregates a calc over FIXED values, a FIXED inside
-  a ratio and a nested FIXED: once per distinct combination of the view's and the FIXED
-  dimensions, not per row. Those sheets stay TODO; the TODO now says so.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.
 - The README banner no longer draws window buttons.
-- Tableau: live test against a Tableau Cloud site (`tests/live/test_tableau_live.py`) and
-  its real export as fixtures (`tests/fixtures/tableau_live`). Fixed: view CSVs failed
+- Tableau: fixed: view CSVs failed
   with `406` (`Accept: text/csv`); workbooks on a published data source got no tables
   (the `sqlproxy` stub relation was read as a table); calcs of a published data source
   were translated twice (duplicate LOD queries and row filters); a column's default
@@ -55,8 +48,7 @@
   `QUICKSIGHT_JSON`) with `Describe*` calls as a fallback, `unshackle import quicksight
   <file.qs>`, tile SQL generated from datasets, calculated fields and filter groups,
   permissions, column-level security and row-level security. Install with
-  `unshackle[quicksight]`. Fixtures are a real export; the live test checks the migrated
-  SQL on Athena.
+  `unshackle[quicksight]`.
 - Heat maps: tiles can use the `rect` mark.
 - Sigma: data model elements sourced from another data model's element become semantic models on
   that element's table; union elements become a `UNION ALL` query plus a semantic model when

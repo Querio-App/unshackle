@@ -11,7 +11,7 @@ from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources.redash import RedashSource, render
 
-FIXTURES = Path(__file__).parent / "fixtures" / "redash"  # extracted from Redash 26.9.0 (tests/live/test_redash_live.py)
+FIXTURES = Path(__file__).parent / "fixtures" / "redash"  # extracted from Redash 26.9.0
 RAW = Path("migration/raw/redash")
 
 

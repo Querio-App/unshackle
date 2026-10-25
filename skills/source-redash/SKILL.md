@@ -151,8 +151,6 @@ target:
 keys: [region, mode]
 ```
 
-`tests/live/test_redash_live.py` runs this end to end against Redash in Docker.
-
 ## Gotchas
 
 - Postgres text columns come back with `"type": null` in query results; only numbers,

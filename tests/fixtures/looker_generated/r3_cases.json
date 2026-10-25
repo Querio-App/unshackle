@@ -1,0 +1,115 @@
+{
+  "dialect": {
+    "fields": [
+      "ev_l.id",
+      "ev_l.dialect_name",
+      "ev_l.dialect_branch"
+    ],
+    "sorts": [
+      "ev_l.id"
+    ]
+  },
+  "liquid_none": {
+    "fields": [
+      "ev_l.id",
+      "ev_l.range_start",
+      "ev_l.range_end",
+      "ev_l.flag_filtered",
+      "ev_l.flag_in_query",
+      "ev_l.flag_selected",
+      "ev_l.p_str_param",
+      "ev_l.p_str_branch",
+      "ev_l.p_num_param"
+    ],
+    "sorts": [
+      "ev_l.id"
+    ]
+  },
+  "liquid_values": {
+    "fields": [
+      "ev_l.id",
+      "ev_l.s",
+      "ev_l.range_start",
+      "ev_l.range_end",
+      "ev_l.flag_filtered",
+      "ev_l.flag_in_query",
+      "ev_l.flag_selected",
+      "ev_l.p_str_param",
+      "ev_l.p_str_branch",
+      "ev_l.p_num_param"
+    ],
+    "sorts": [
+      "ev_l.id"
+    ],
+    "filters": {
+      "ev_l.s": "-zzz",
+      "ev_l.date_f": "2026-12-01 to 2027-01-01",
+      "ev_l.p_str": "O'Brien",
+      "ev_l.p_num": "5"
+    }
+  },
+  "date_start_month": {
+    "fields": [
+      "ev_l.id",
+      "ev_l.range_start",
+      "ev_l.range_end"
+    ],
+    "sorts": [
+      "ev_l.id"
+    ],
+    "filters": {
+      "ev_l.date_f": "2026-12"
+    }
+  },
+  "date_start_relative": {
+    "fields": [
+      "ev_l.id",
+      "ev_l.range_start",
+      "ev_l.range_end"
+    ],
+    "sorts": [
+      "ev_l.id"
+    ],
+    "filters": {
+      "ev_l.date_f": "7 days"
+    }
+  },
+  "filter_field_sql": {
+    "fields": [
+      "ev_l.count"
+    ],
+    "filters": {
+      "ev_l.f_sql": "-apple"
+    }
+  },
+  "filter_quoted": {
+    "fields": [
+      "ev_l.count"
+    ],
+    "filters": {
+      "ev_l.s": "\"Levi's\""
+    }
+  },
+  "filter_apostrophe": {
+    "fields": [
+      "ev_l.count"
+    ],
+    "filters": {
+      "ev_l.s": "Levi's,O'Brien"
+    }
+  },
+  "hour_timeframes": {
+    "fields": [
+      "ev_l.id",
+      "ev_l.at_time",
+      "ev_l.at_hour",
+      "ev_l.at_minute",
+      "ev_l.at_time_of_day",
+      "ev_l.at_hour_of_day",
+      "ev_l.in_range"
+    ],
+    "sorts": [
+      "ev_l.id"
+    ]
+  }
+}

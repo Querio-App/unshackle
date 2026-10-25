@@ -24,7 +24,7 @@ from unshackle.sources.quicksight import (
 
 FIXTURES = Path(__file__).parent / "fixtures" / "quicksight"  # a real asset bundle export; see its README
 RAW = Path("migration/raw/quicksight")
-DATA = Path(__file__).parent / "live" / "data" / "dunder_mifflin"
+DATA = Path(__file__).parent / "data" / "dunder_mifflin"
 ACCOUNT = "123456789012"
 CREATE = {"dataset": "CreateDataSet", "datasource": "CreateDataSource", "dashboard": "CreateDashboard", "analysis": "CreateAnalysis"}
 # Keys the asset bundle has that botocore's model doesn't: shape -> members (sent back to QuickSight, they are dropped).

@@ -199,4 +199,4 @@ them with `columns:`.
   `GET /api/v1/security/csrf_token/`, sent as `X-CSRFToken` with the session cookie and
   a `Referer`.
 - The 6.x Docker images ship without database drivers: add `psycopg2-binary` (or your
-  warehouse's driver) to the image, as `tests/live/superset/Dockerfile` does.
+  warehouse's driver) to the image.

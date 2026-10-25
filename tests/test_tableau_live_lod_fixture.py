@@ -16,7 +16,7 @@ from unshackle.sources import get_source
 from unshackle.verify import compare
 
 FIX = Path(__file__).parent / "fixtures" / "tableau_live_lod"
-DATA = Path(__file__).parent / "live" / "data" / "dunder_mifflin"
+DATA = Path(__file__).parent / "data" / "dunder_mifflin"
 VIEW = {  # sheet -> (view CSV saved by `unshackle extract`, the sheet's dimensions)
     "Revenue by Account Tier": ("00000000-0000-4000-8000-000000000004", ["account_tier"]),
     "Average Account Revenue": ("00000000-0000-4000-8000-000000000006", []),
