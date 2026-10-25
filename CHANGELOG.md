@@ -3,6 +3,9 @@
 ## Unreleased
 
 - The PyPI page links to the repository, issues and changelog.
+- Redash: multi-value enum and query dropdown parameters in `IN ({{ p }})` translate to `IN :p` with a
+  list default (bound with SQLAlchemy's expanding parameters); static widget values with several values are
+  joined as Redash does. Parameters spliced as raw SQL or inside a longer string get TODOs that say what to do.
 - The CLI shows a banner and a ship pushing through the ice while `migrate`, `inventory`,
   `extract`, `import` and `build` run, then a one-line summary. Interactive terminals only;
   `--quiet`, `NO_COLOR`, CI and piped output stay plain.
