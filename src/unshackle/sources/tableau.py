@@ -3479,9 +3479,9 @@ class _Parser:
             if tl is not None and tl.get("enabled") != "false":
                 todos.append(ta.trend_todo(tl, title(chosen.get("x")), title(chosen.get("y"))))
         what = self._totals_wanted(table, rows, cols)[3]
-        if what and not sql and not any(t.startswith("Tableau totals") for t in todos):
-            todos.append(f"Tableau totals ({what}) not added: the tile has no SQL yet; add them as grouping sets of the tile "
-                         f"query, each the sheet's aggregate at the total's level ({SKILL})")
+        if what and not any(t.startswith("Tableau totals") for t in todos):  # no SQL yet, or a sheet over related tables
+            todos.append(f"Tableau totals ({what}) not added: {'the tile has no SQL yet' if not sql else 'unshackle writes no totals for this sheet'}; "
+                         f"check Analysis > Totals > Total All Using in Tableau and add them as grouping sets of the tile query ({SKILL})")
         lines = ta.reference_lines(panes)
         if not lines:
             return sql, []
