@@ -310,7 +310,7 @@ def test_notebook_runs_with_every_chart(tmp_path: Path, con):
     con.execute("detach wh")
     (nb,) = (repo / "notebooks").glob("*.ipynb")
     src = nb.read_text()
-    assert "mark_rect()" in src and "mark_geoshape(" in src and "us-atlas" in src and ".project(type='mercator')" in src
+    assert "mark_rect()" in src and "mark_geoshape(" in src and "us-atlas@3.0.1/states-10m.json" in src and ".project(type='mercator')" in src
     assert "resolve_scale(y='independent')" in src and "sort=['Distinct count of order_id', 'quantity'" in src
     html = run_notebook(nb, url=f"duckdb:///{db}").read_text()
     charts = sum(1 for t in b.dashboards[0].tiles if t.kind == "chart")

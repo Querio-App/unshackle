@@ -51,8 +51,8 @@ MARK_METHOD = {
 }
 # Map shapes (TopoJSON with a `name` property per feature): (URL, feature collection, projection)
 GEO_SHAPES = {
-    "us_states": ("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json", "states", "albersUsa"),
-    "countries": ("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json", "countries", "equalEarth"),
+    "us_states": ("https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-10m.json", "states", "albersUsa"),
+    "countries": ("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json", "countries", "equalEarth"),
 }
 RESERVED = {"alt", "pd", "os", "text", "engine", "create_engine", "base"}
 PARAM = re.compile(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)")

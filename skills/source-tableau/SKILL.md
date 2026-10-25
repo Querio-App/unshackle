@@ -498,7 +498,9 @@ or text/date measures on the card.
 `transform_lookup(lookup='properties.name', ...)` on the field (Tableau also matches codes
 and other spellings, so the TODO asks to check the names; places with no shape, such as
 Canadian provinces next to US states, are not drawn). A symbol map (circles) is drawn filled,
-with a TODO. Cities, ZIP codes and other roles: the data as a table with a TODO.
+with a TODO. Cities, ZIP codes and other roles: the data as a table with a TODO. Map tiles fetch their shapes from
+the jsDelivr CDN when the chart is rendered (`us-atlas@3.0.1/states-10m.json`, `world-atlas@2.0.2/countries-110m.json`,
+versions pinned in `target/notebooks.py`); offline or behind a firewall, host those files and change the URLs.
 
 **Custom SQL datasources**: materialize the query as a SQL model/dbt model named
 after the semantic model (`returns_custom_sql`); the tile SQL already inlines it as a
