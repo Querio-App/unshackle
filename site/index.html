@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>unshackle: get your BI out of the BI tool</title>
+<meta name="description" content="An open-source command-line tool that moves metrics, queries, dashboards and permissions out of your BI tool and into open formats in a Git repository.">
+<meta property="og:title" content="unshackle">
+<meta property="og:description" content="Move your BI definitions out of the BI tool and into open formats in Git.">
+<meta property="og:image" content="https://unshackle.sh/banner.svg">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛓</text></svg>">
+<style>
+  :root { --bg: #0d1117; --fg: #c9d1d9; --dim: #8b949e; --line: #30363d; --accent: #58a6ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  main { max-width: 820px; margin: 0 auto; padding: 48px 20px 32px; }
+  img.banner { width: 100%; height: auto; display: block; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin: 40px 0 8px; }
+  h2 { font-size: 1rem; font-weight: 600; margin: 40px 0 8px; color: var(--dim);
+       text-transform: uppercase; letter-spacing: .08em; }
+  p { margin: 0 0 12px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #161b22; border: 1px solid var(--line); border-radius: 8px;
+        padding: 14px 16px; overflow-x: auto; margin: 0 0 12px; }
+  pre .p { color: var(--dim); user-select: none; }
+  ul { margin: 0; padding-left: 20px; }
+  .tools { color: var(--fg); }
+  .links a { margin-right: 20px; }
+  footer { border-top: 1px solid var(--line); margin-top: 48px; padding-top: 16px;
+           color: var(--dim); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <img class="banner" src="banner.svg" alt="unshackle: the Endurance in the ice">
+
+  <h1>Get your BI out of the BI tool.</h1>
+  <p>unshackle is an open-source command-line tool. It reads the metrics, queries,
+     dashboards and permissions from your BI tool and writes them as open formats
+     in a Git repository. What it can't translate faithfully, it marks as a TODO
+     instead of guessing.</p>
+  <p class="links"><a href="https://github.com/Querio-App/unshackle">GitHub</a>
+     <a href="https://pypi.org/project/unshackle/">PyPI</a>
+     <a href="https://github.com/Querio-App/unshackle/blob/main/CONTRIBUTING.md">Contribute</a></p>
+
+  <h2>Install</h2>
+<pre><span class="p">$ </span>uv tool install "unshackle[run]"
+<span class="p">$ </span>unshackle tools
+<span class="p">$ </span>unshackle migrate tableau</pre>
+  <p>No API access? Download the files from the tool and run <code>unshackle import</code>.</p>
+
+  <h2>Reads</h2>
+  <p class="tools">Looker · Tableau · Power BI · Qlik Sense · Amazon QuickSight · Metabase ·
+     Lightdash · Apache Superset · Redash · Omni · Hex · Sigma · ThoughtSpot</p>
+
+  <h2>Writes</h2>
+  <ul>
+    <li><a href="https://github.com/apache/ossie">Apache Ossie</a> semantic models, and MetricFlow in dbt projects</li>
+    <li>Jupyter notebooks with SQL tiles and Altair (Vega-Lite) charts</li>
+    <li>SQL queries, table and column descriptions</li>
+    <li>Cedar policies and SQL row filters</li>
+  </ul>
+
+  <h2>Check the numbers</h2>
+  <p><code>unshackle verify</code> runs the migrated SQL against your warehouse and
+     compares it with the results from the old tool.</p>
+
+  <footer>Apache 2.0. No telemetry, no account.
+    Built and maintained by <a href="https://querio.ai">Querio</a>.</footer>
+</main>
+</body>
+</html>
