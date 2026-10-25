@@ -1,0 +1,62 @@
+{
+  "resourceType": "dataset",
+  "dataSetId": "region-entitlements",
+  "name": "Region entitlements",
+  "physicalTableMap": {
+    "pt-entitlements": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "region_entitlements",
+        "inputColumns": [
+          {
+            "name": "UserName",
+            "type": "STRING"
+          },
+          {
+            "name": "GroupName",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_region",
+            "type": "STRING"
+          }
+        ]
+      }
+    }
+  },
+  "logicalTableMap": {
+    "lt-entitlements": {
+      "alias": "region_entitlements",
+      "source": {
+        "physicalTableId": "pt-entitlements"
+      }
+    }
+  },
+  "importMode": "DIRECT_QUERY",
+  "useAs": "RLS_RULES",
+  "tags": [
+    {
+      "key": "team",
+      "value": "analytics"
+    }
+  ],
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/pbeesly",
+      "actions": [
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:ListIngestions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DeleteDataSet",
+        "quicksight:CreateIngestion",
+        "quicksight:CancelIngestion",
+        "quicksight:UpdateDataSetPermissions"
+      ]
+    }
+  ]
+}

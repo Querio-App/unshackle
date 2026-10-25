@@ -1,0 +1,353 @@
+{
+  "resourceType": "dataset",
+  "dataSetId": "order-lines",
+  "name": "Order lines",
+  "physicalTableMap": {
+    "pt-orders": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "orders",
+        "inputColumns": [
+          {
+            "name": "order_id",
+            "type": "STRING"
+          },
+          {
+            "name": "status",
+            "type": "STRING"
+          },
+          {
+            "name": "purchased_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "cancelled_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "returned_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "product_id",
+            "type": "STRING"
+          },
+          {
+            "name": "quantity",
+            "type": "INTEGER"
+          },
+          {
+            "name": "pre_discount_revenue",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "discount_percentage",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "post_discount_revenue",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "days_to_close",
+            "type": "INTEGER"
+          },
+          {
+            "name": "order_contact_name",
+            "type": "STRING"
+          },
+          {
+            "name": "order_contact_email",
+            "type": "STRING"
+          },
+          {
+            "name": "account_id",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_id",
+            "type": "STRING"
+          }
+        ]
+      }
+    },
+    "pt-accounts": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "accounts",
+        "inputColumns": [
+          {
+            "name": "account_id",
+            "type": "STRING"
+          },
+          {
+            "name": "account_name",
+            "type": "STRING"
+          },
+          {
+            "name": "business_size",
+            "type": "INTEGER"
+          },
+          {
+            "name": "payment_cycle",
+            "type": "STRING"
+          },
+          {
+            "name": "account_manager",
+            "type": "STRING"
+          }
+        ]
+      }
+    },
+    "pt-products": {
+      "relationalTable": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin",
+        "catalog": "AwsDataCatalog",
+        "schema": "dunder_mifflin",
+        "name": "products",
+        "inputColumns": [
+          {
+            "name": "product_id",
+            "type": "STRING"
+          },
+          {
+            "name": "product_name",
+            "type": "STRING"
+          },
+          {
+            "name": "paper_type",
+            "type": "STRING"
+          },
+          {
+            "name": "price",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    }
+  },
+  "logicalTableMap": {
+    "lt-orders": {
+      "alias": "orders",
+      "source": {
+        "physicalTableId": "pt-orders"
+      }
+    },
+    "lt-accounts": {
+      "alias": "accounts",
+      "dataTransforms": [
+        {
+          "renameColumnOperation": {
+            "columnName": "account_id",
+            "newColumnName": "account_id[accounts]"
+          }
+        }
+      ],
+      "source": {
+        "physicalTableId": "pt-accounts"
+      }
+    },
+    "lt-products": {
+      "alias": "products",
+      "dataTransforms": [
+        {
+          "renameColumnOperation": {
+            "columnName": "product_id",
+            "newColumnName": "product_id[products]"
+          }
+        },
+        {
+          "renameColumnOperation": {
+            "columnName": "price",
+            "newColumnName": "unit_price"
+          }
+        }
+      ],
+      "source": {
+        "physicalTableId": "pt-products"
+      }
+    },
+    "lt-orders-accounts": {
+      "alias": "Orders with accounts",
+      "source": {
+        "joinInstruction": {
+          "leftOperand": "lt-orders",
+          "rightOperand": "lt-accounts",
+          "type": "LEFT",
+          "rightJoinKeyProperties": {
+            "uniqueKey": true
+          },
+          "onClause": "{account_id} = {account_id[accounts]}"
+        }
+      }
+    },
+    "lt-order-lines": {
+      "alias": "Order lines",
+      "source": {
+        "joinInstruction": {
+          "leftOperand": "lt-orders-accounts",
+          "rightOperand": "lt-products",
+          "type": "LEFT",
+          "rightJoinKeyProperties": {
+            "uniqueKey": true
+          },
+          "onClause": "{product_id} = {product_id[products]}"
+        }
+      },
+      "dataTransforms": [
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "order_size",
+                "columnId": "calc-order-size",
+                "expression": "ifelse({quantity} >= 150, 'bulk', 'standard')"
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "purchase_month",
+                "columnId": "calc-purchase-month",
+                "expression": "truncDate('MM', {purchased_at})"
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "account_label",
+                "columnId": "calc-account-label",
+                "expression": "concat({account_name}, ' - ', toString({business_size}))"
+              }
+            ]
+          }
+        },
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "revenue_per_unit_price",
+                "columnId": "calc-revenue-per-unit-price",
+                "expression": "{post_discount_revenue} / {unit_price}"
+              }
+            ]
+          }
+        },
+        {
+          "castColumnTypeOperation": {
+            "columnName": "days_to_close",
+            "newColumnType": "DECIMAL"
+          }
+        },
+        {
+          "filterOperation": {
+            "conditionExpression": "{status} <> 'VOID'"
+          }
+        },
+        {
+          "projectOperation": {
+            "projectedColumns": [
+              "order_id",
+              "status",
+              "purchased_at",
+              "cancelled_at",
+              "product_id",
+              "quantity",
+              "pre_discount_revenue",
+              "post_discount_revenue",
+              "days_to_close",
+              "order_contact_name",
+              "order_contact_email",
+              "account_id",
+              "account_name",
+              "business_size",
+              "payment_cycle",
+              "account_manager",
+              "product_name",
+              "paper_type",
+              "unit_price",
+              "order_size",
+              "purchase_month",
+              "account_label",
+              "revenue_per_unit_price"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "importMode": "DIRECT_QUERY",
+  "fieldFolders": {
+    "Revenue": {
+      "description": "Revenue before and after discounts",
+      "columns": [
+        "pre_discount_revenue",
+        "post_discount_revenue"
+      ]
+    }
+  },
+  "columnLevelPermissionRules": [
+    {
+      "principals": [
+        "arn:aws:quicksight:us-east-1:111122223333:group/default/Accounting"
+      ],
+      "columnNames": [
+        "order_contact_name",
+        "order_contact_email"
+      ]
+    }
+  ],
+  "rowLevelPermissionTagConfiguration": {
+    "status": "ENABLED",
+    "tagRules": [
+      {
+        "tagKey": "account_manager",
+        "columnName": "account_manager",
+        "matchAllValue": "*"
+      }
+    ]
+  },
+  "tags": [
+    {
+      "key": "team",
+      "value": "analytics"
+    }
+  ],
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:group/default/Analysts",
+      "actions": [
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:ListIngestions"
+      ]
+    },
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/pbeesly",
+      "actions": [
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:ListIngestions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DeleteDataSet",
+        "quicksight:CreateIngestion",
+        "quicksight:CancelIngestion",
+        "quicksight:UpdateDataSetPermissions"
+      ]
+    }
+  ]
+}

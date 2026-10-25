@@ -1,0 +1,102 @@
+{
+  "resourceType": "dataset",
+  "dataSetId": "shipments",
+  "name": "Shipments",
+  "physicalTableMap": {
+    "pt-shipments": {
+      "customSql": {
+        "dataSourceArn": "arn:aws:quicksight:us-east-1:111122223333:datasource/dunder-mifflin",
+        "name": "Shipments",
+        "sqlQuery": "SELECT o.order_id, o.purchased_at, o.post_discount_revenue, s.shipping_region, s.shipping_mode, s.shipping_cost\nFROM dunder_mifflin.orders o\nJOIN dunder_mifflin.shippings s ON s.shipping_id = o.shipping_id",
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "STRING"
+          },
+          {
+            "name": "purchased_at",
+            "type": "DATETIME"
+          },
+          {
+            "name": "post_discount_revenue",
+            "type": "DECIMAL"
+          },
+          {
+            "name": "shipping_region",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_mode",
+            "type": "STRING"
+          },
+          {
+            "name": "shipping_cost",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    }
+  },
+  "logicalTableMap": {
+    "lt-shipments": {
+      "alias": "Shipments",
+      "source": {
+        "physicalTableId": "pt-shipments"
+      },
+      "dataTransforms": [
+        {
+          "createColumnsOperation": {
+            "columns": [
+              {
+                "columnName": "cost_share",
+                "columnId": "calc-cost-share",
+                "expression": "{shipping_cost} / {post_discount_revenue}"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "importMode": "DIRECT_QUERY",
+  "rowLevelPermissionDataSet": {
+    "namespace": "default",
+    "arn": "arn:aws:quicksight:us-east-1:111122223333:dataset/region-entitlements",
+    "permissionPolicy": "GRANT_ACCESS",
+    "formatVersion": "VERSION_2",
+    "status": "ENABLED"
+  },
+  "tags": [
+    {
+      "key": "team",
+      "value": "analytics"
+    }
+  ],
+  "permissions": [
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:group/default/Sales",
+      "actions": [
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:ListIngestions"
+      ]
+    },
+    {
+      "principal": "arn:aws:quicksight:us-east-1:111122223333:user/default/pbeesly",
+      "actions": [
+        "quicksight:DescribeDataSet",
+        "quicksight:DescribeDataSetPermissions",
+        "quicksight:PassDataSet",
+        "quicksight:DescribeIngestion",
+        "quicksight:ListIngestions",
+        "quicksight:UpdateDataSet",
+        "quicksight:DeleteDataSet",
+        "quicksight:CreateIngestion",
+        "quicksight:CancelIngestion",
+        "quicksight:UpdateDataSetPermissions"
+      ]
+    }
+  ]
+}
