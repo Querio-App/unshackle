@@ -114,6 +114,7 @@ INTERNAL_FIELDS = {"Number of Records", "__tableau_internal_object_id__", ":Meas
 BRACKETED = re.compile(r"\[((?:[^\]]|\]\])*)\]")
 DS_REF = re.compile(r"\[((?:[^\]]|\]\])+)\]\.\[((?:[^\]]|\]\])+)\]")
 PARAM_REF = re.compile(r"\[Parameters\]\.\[((?:[^\]]|\]\])+)\]")
+PARAM_ARG = "\x01"  # a workbook parameter in a parsed formula: [\x01<its local name>]
 LOD = re.compile(r"\{\s*(FIXED|INCLUDE|EXCLUDE)\b", re.I)
 LOD_PARTS = re.compile(r"\s*\{\s*(FIXED|INCLUDE|EXCLUDE)\s+((?:\[(?:[^\]]|\]\])+\]\s*,?\s*)+):(.+)\}\s*", re.S | re.I)
 LOD_REF = "__unshackle_lod_"
@@ -581,6 +582,33 @@ def _param_value(raw: str | None, datatype: str) -> Any:
         return int(v) if datatype == "integer" or re.fullmatch(r"-?\d+", v) else float(v)
     except ValueError:
         return v
+
+
+def _param_unesc(v: str) -> str:
+    return re.sub(r"\\(.)", r"\1", v)
+
+
+def _param_domain(p: "TField") -> str:
+    """A parameter's allowed values, as the parameters cell's comment: its list (with aliases) or range."""
+    members, aliases = p.extra.get("members") or [], p.extra.get("aliases") or {}
+    if p.extra.get("domain") == "list" and members:
+        shown = [f"{_param_value(m, p.datatype)!r}" + (f" ({aliases[m]})" if aliases.get(m) else "") for m in members]
+        return "one of " + ", ".join(shown)
+    rng = p.extra.get("range") or {}
+    lo, hi = (_param_value(rng.get(k), p.datatype) for k in ("min", "max"))
+    if p.extra.get("domain") != "range" or (lo is None and hi is None):
+        return ""
+    out = f"from {lo!r} to {hi!r}" if lo is not None and hi is not None else f"at least {lo!r}" if lo is not None else f"at most {hi!r}"
+    step = rng.get("granularity")
+    if step:
+        out += f", step {_param_value(step, 'real' if '.' in step else 'integer')!r}" + (f" {rng['period-type-v2']}" if rng.get("period-type-v2") else "")
+    return out
+
+
+def param_bind(p: "TField") -> str:
+    """A workbook parameter in SQL: the bind :name, set in the notebook's parameters cell (dates come as text, so cast)."""
+    bind = ":" + _name(p.label)
+    return f"cast({bind} as {'date' if p.datatype == 'date' else 'timestamp'})" if p.datatype in TIME_TYPES else bind
 
 
 def _member_sql(v: str | None) -> str | None:
@@ -1063,6 +1091,7 @@ class _Calc:
     # where the SQL lives: "" the datasource's rows, a FIXED grain's name (its SQL model's columns),
     # or "mixed" (row fields and FIXED values together: tile SQL only, through a join)
     lod: str = ""
+    params: tuple[str, ...] = ()  # workbook parameters it reads (itself or through other calcs): SQL for tiles only, with binds
 
 
 @dataclass(eq=False)
@@ -1207,8 +1236,12 @@ def read_datasource(el: ET.Element, uid: str, src: str, workbook: str = "", capt
                 f.extra = {"of": _unbracket(calc.get("column")), "bins": bins}
         if col.get("param-domain-type") or el.get("name") == "Parameters":
             f.param = True
-            f.value = col.get("value", "")
-            f.extra = {**f.extra, "members": [m.get("value", "") for m in col.iter("member")]}
+            # the value attribute escapes % as \%; with no value attribute the current value is the calculation's literal
+            f.value = _param_unesc(col.get("value", "")) if col.get("value") is not None else f.formula or ""
+            rng = col.find("range")
+            f.extra = {**f.extra, "members": [_param_unesc(m.get("value", "")) for m in col.iter("member")],
+                       "aliases": {_param_unesc(m.get("value", "")): m.get("alias", "") for m in col.iter("member") if m.get("alias")},
+                       "domain": col.get("param-domain-type", ""), "range": dict(rng.attrib) if rng is not None else {}}
     for grp in el.findall("group"):
         local = _unbracket(grp.get("name"))
         if local and local not in ds.fields:
@@ -1694,6 +1727,11 @@ class _Parser:
         return j is not None and ds is not None and (ds is j or ds is j.origin or ds.origin is j)
 
     def _row_ref(self, ds: TDatasource, name: str) -> str:
+        if name.startswith(PARAM_ARG):
+            p = self.params_for(ds).get(name[1:].replace("\x02", "]"))
+            if p is None:
+                raise ax.FormulaError(f"unknown parameter [{name[1:]}]")
+            return param_bind(p)
         if name in self.inline:
             return self._lod_col(*self.inline[name])
         g = ds.fields.get(name)
@@ -1718,10 +1756,10 @@ class _Parser:
             return _ident(g.remote)
         raise ax.FormulaError(f"[{g.label}] has no physical column")
 
-    def _sql(self, ds: TDatasource, node: ax.Node, ref: Any) -> str:
+    def _sql(self, ds: TDatasource, node: ax.Node, ref: Any, dtype: Any = None) -> str:
         """Row-level SQL with Tableau's semantics (_tableau_calc), in the Postgres form the dialect pass rewrites."""
         hyper = ds.extract or (ds.origin is not None and ds.origin.extract)
-        r = tc.Renderer(ref, lambda name: self._dtype(ds, name), hyper=hyper)
+        r = tc.Renderer(ref, dtype or (lambda name: self._dtype(ds, name)), hyper=hyper)
         sql = r(node)
         if r.notes:
             self.calc_notes.setdefault(ds.uid, set()).update(r.notes)
@@ -1731,6 +1769,9 @@ class _Parser:
         return ax.classify(node, LANG, ref, metric_ref, render=lambda n, rf: self._sql(ds, n, rf))
 
     def _dtype(self, ds: TDatasource, name: str) -> str:
+        if name.startswith(PARAM_ARG):
+            p = self.params_for(ds).get(name[1:].replace("\x02", "]"))
+            return p.datatype if p is not None else ""
         g = ds.fields.get(name)
         return g.datatype if g is not None else ""
 
@@ -1796,10 +1837,8 @@ class _Parser:
         if USER_FN.search(bare):
             self._row_filter(ds, f, model, clean)
             return _Calc("security", todo="user filter")
-        wbp = self.params_for(ds)
-        params = [wbp[p].label if p in wbp else p for p in (_unesc(x) for x in PARAM_REF.findall(code))]
-        if params:
-            return self._todo(ds, f, model, f"uses parameter(s) {', '.join(f'[{p}]' for p in params)}: a parameter becomes a notebook parameter (:name, set in the parameters cell) or one metric per value; see {SKILL}")
+        if PARAM_REF.search(code):
+            return self._param_calc(ds, f, model, stack)
         spans = lod_spans(clean)
         if spans:
             res = self._lods_in(ds, f, model, clean, spans, stack)
@@ -1833,6 +1872,8 @@ class _Parser:
                 dep = self._calc(ds, g, stack)
                 if dep.kind in ("todo", "security"):
                     return self._todo(ds, f, model, f"depends on [{g.label}], which is not translated yet; finish that first (skills/translate-metrics)")
+                if dep.params:
+                    return self._param_calc(ds, f, model, stack)
                 if dep.kind == "agg" and dep.lod:
                     return self._todo(ds, f, model, f"depends on [{g.label}], an aggregate of FIXED LOD values: write it in the tile SQL "
                                                     "or as a metric on the FIXED grain's semantic model; see skills/translate-metrics")
@@ -1881,6 +1922,125 @@ class _Parser:
                 model.sm.dimensions.append(Dimension(name, "categorical", sql, f.description, f.label))
             model.elements.add(name)
         return _Calc("row", sql=sql)
+
+    # ------------------------------------------------------------ parameters
+
+    def _param_calc(self, ds: TDatasource, f: TField, model: _Model | None, stack: tuple) -> _Calc:
+        """A calc that reads workbook parameters, itself or through another calc. Tiles get its SQL with each parameter as a
+        bind (:name, set in the notebook's parameters cell); the semantic layer gets a TODO, as a metric can't take one."""
+        clean, code, bare, _ = scan_formula(f.formula or "")
+        wbp = self.params_for(ds)
+        direct = [wbp[p].label if p in wbp else p for p in (_unesc(x) for x in PARAM_REF.findall(code))]
+        named = ", ".join(f"[{p}]" for p in direct) or "a parameter"
+        if LOD.search(bare) or "{" in bare or TABLE_CALC.search(bare) or ATTR_FN.search(bare) or any(
+                _unesc(d) != "Parameters" for d, _ in DS_REF.findall(code)):
+            return self._todo(ds, f, model, f"uses {named} with an LOD, table calculation, ATTR() or another datasource: write it in the "
+                                            f"tile SQL with :binds from the parameters cell; see {SKILL}")
+        text = PARAM_REF.sub(lambda m: f"[{PARAM_ARG}{_unesc(m.group(1)).replace(']', chr(2))}]", clean)
+        try:
+            node = parse_formula(text, date_opts(ds))
+        except ax.FormulaError as exc:
+            return self._todo(ds, f, model, f"formula with {named} not translated ({exc}); see skills/translate-metrics")
+        used, agg = list(direct), _has_agg(node)
+        for r in ax.refs(node):
+            if r.startswith(PARAM_ARG):
+                continue
+            g = ds.fields.get(r)
+            if g is None:
+                return self._todo(ds, f, model, f"references unknown field [{r}]; see skills/translate-metrics")
+            if g.is_calc and not g.param:
+                dep = self._calc(ds, g, stack)
+                if dep.kind not in ("row", "agg") or dep.lod:
+                    return self._todo(ds, f, model, f"depends on [{g.label}], which is not translated for tiles yet; finish that first "
+                                                    "(skills/translate-metrics)")
+                used += dep.params
+                agg = agg or dep.kind == "agg"
+        self.prepped[(ds.uid, f.local)] = text
+        try:
+            sql = self._param_sql(ds, node)
+        except ax.FormulaError as exc:
+            return self._todo(ds, f, model, f"formula with {named} not translated ({exc}); see skills/translate-metrics")
+        used = list(dict.fromkeys(used))
+        msg = self._switch_todo(ds, node, agg or f.role == "measure") or (
+            f"uses parameter(s) {', '.join(f'[{p}]' for p in used)}: notebook tiles compute it with "
+            f"{', '.join(':' + _name(p) for p in used)} from the parameters cell; the semantic layer has no parameters, so pin the "
+            f"current value here or keep it in the tile SQL; see {SKILL}")
+        self._todo(ds, f, model, msg, True if agg else None)
+        return _Calc("agg" if agg else "row", sql=sql, todo=msg, params=tuple(used))
+
+    def _param_sql(self, ds: TDatasource, node: ax.Node) -> str:
+        """SQL of a parameter calc (row-level or aggregate) in the current context: parameters as binds, aggregates of row SQL."""
+        aggs: dict[str, str] = {}
+        types: dict[str, str] = {}
+
+        def dtype(r: str) -> str:
+            return types[r] if r in types else self._dtype(ds, r)
+
+        def lift(n: ax.Node) -> ax.Node:  # each aggregate call -> a placeholder ref holding its SQL
+            if isinstance(n, ax.Call):
+                if n.name in OTHER_AGGS or (n.name in TABLEAU_AGGS and len(n.args) != 1):
+                    raise ax.FormulaError(f"{n.name.upper()}() is not translated")
+                if n.name in TABLEAU_AGGS:
+                    key, agg = f"\x03{len(aggs)}", TABLEAU_AGGS[n.name][0]
+                    aggs[key] = AGG_SQL[agg].format(ax.strip_outer(self._sql(ds, n.args[0], ref, dtype)))
+                    arg = tc.type_of(n.args[0], dtype)
+                    types[key] = ("integer" if agg in ("count", "count_distinct") or (agg == "sum" and arg == "integer")
+                                  else arg if agg in ("min", "max") else "real")
+                    return ax.Ref(key)
+                return ax.Call(n.name, [lift(a) for a in n.args])
+            if isinstance(n, ax.BinOp):
+                return ax.BinOp(n.op, lift(n.left), lift(n.right))
+            if isinstance(n, ax.Unary):
+                return ax.Unary(n.op, lift(n.operand))
+            return n
+
+        def ref(r: str) -> str:
+            if r in aggs:
+                return aggs[r]
+            g = ds.fields.get(r)
+            c = self.cache.get((ds.uid, g.local)) if g is not None and g.is_calc and not g.param else None
+            if c is not None and c.kind == "agg":
+                try:
+                    return _paren(self._agg_sql(ds, g, c))  # type: ignore[arg-type]
+                except _NoSQL as exc:
+                    raise ax.FormulaError(str(exc)) from None
+            return self._row_ref(ds, r)
+
+        return ax.strip_outer(self._sql(ds, lift(node), ref, dtype))
+
+    def _switch_todo(self, ds: TDatasource, node: ax.Node, measure: bool) -> str:
+        """CASE [Parameter] WHEN 'a' THEN x ... END (or IF [Parameter] = 'a' THEN ...): the semantic-layer TODO lists what each
+        value picks. '' when the formula is not a switch on one parameter."""
+        if not isinstance(node, ax.Call) or node.name != "if" or len(node.args) < 3:
+            return ""
+        pairs, other = list(zip(node.args[0::2], node.args[1::2])), node.args[-1] if len(node.args) % 2 else None
+        param, picks = "", []
+        for cond, val in pairs:
+            sides = (cond.left, cond.right) if isinstance(cond, ax.BinOp) and cond.op in ("=", "==") else ()
+            p = next((x.name for x in sides if isinstance(x, ax.Ref) and x.name.startswith(PARAM_ARG)), "")
+            lit = next((x for x in sides if isinstance(x, (ax.Str, ax.Num, ax.Bool))), None)
+            if not p or lit is None or param not in ("", p):
+                return ""
+            param = p
+            picks.append((ax.to_sql(lit, str), val))
+        p = self.params_for(ds).get(param[1:].replace("\x02", "]"))
+        if p is None:
+            return ""
+
+        def pick(val: ax.Node) -> str:
+            g = ds.fields.get(val.name) if isinstance(val, ax.Ref) else None
+            c = self.cache.get((ds.uid, g.local)) if g is not None and g.is_calc else None
+            if c is not None and c.metric:
+                return f"metric {c.metric}"
+            try:
+                return f"`{self._param_sql(ds, val)}`"
+            except ax.FormulaError:
+                return "(not translated)"
+
+        listed = "; ".join(f"{lit} -> {pick(v)}" for lit, v in picks) + (f"; otherwise -> {pick(other)}" if other is not None else "")
+        what, kind = ("measure", "metric") if measure else ("dimension", "dimension")
+        return (f"{what} switch on [{p.label}]: a {kind} can't change with a parameter, so make one {kind} per value and choose it in "
+                f"the notebook ({listed}); notebook tiles compute it as a case on :{_name(p.label)}; see {SKILL}")
 
     # ------------------------------------------------------------ level of detail expressions
 
@@ -1945,8 +2105,8 @@ class _Parser:
                 raise ax.FormulaError(f"unknown field [{name}]")
             if g.is_calc and not g.param:
                 dep = self._calc(ds, g, stack)
-                if dep.kind not in ("row", "agg") or dep.lod:
-                    raise ax.FormulaError(f"[{g.label}] is not a translated row-level field")
+                if dep.kind not in ("row", "agg") or dep.lod or dep.params:
+                    raise ax.FormulaError(f"[{g.label}] is not a translated row-level field" + (" (it reads a parameter)" if dep.params else ""))
         inner: tuple[_Lod, str] | None = None
         if nested:
             inner = self._fixed(ds, nested[1], _name(readable(nested[2], ds.fields))[:40], stack)
@@ -2188,6 +2348,8 @@ class _Parser:
             tables = {id(m) for r in ax.refs(node) if (g := ds.fields.get(r)) is not None and (m := self._field_model(ds, g)) is not None}
             if len(tables) > 1:
                 raise ax.FormulaError("it reads columns of several joined tables; write one rule per table")
+            if any((g := ds.fields.get(r)) is not None and g.is_calc and not g.param and self._calc(ds, g).params for r in ax.refs(node)):
+                raise ax.FormulaError("it reads a workbook parameter, which a row filter can't")
             predicate = ax.strip_outer(self._sql(ds, _replace_user_fns(node), lambda r: _user_sql(r) if r.startswith("\x00") else self._row_ref(ds, r)))
         except ax.FormulaError as exc:
             problems.append(f"not translated ({exc})")
@@ -2496,6 +2658,11 @@ class _Parser:
 
     def _agg_sql(self, ds: TDatasource, f: TField, calc: _Calc) -> str:
         """An aggregate calc's SQL in this sheet: re-derived when the sheet's columns are qualified or FIXED values are joined."""
+        if calc.params:
+            try:
+                return self._param_sql(ds, parse_formula(self.prepped[(ds.uid, f.local)], date_opts(ds)))
+            except ax.FormulaError as exc:
+                raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
         if self._sheet is None or not (calc.lod or self._is_joined(ds)):
             if calc.lod:
                 raise _NoSQL(f"[{f.label}] is not translated yet: {calc.todo}")
@@ -2774,6 +2941,7 @@ class _Parser:
 
         encodings = {ch: e for ch, r in chosen.items() if (e := to_encoding(r)) is not None}
         layers = [Layer(m, {ch: e}) for m, ch, r in layer_refs if (e := to_encoding(r)) is not None]  # type: ignore[arg-type]
+        meta["params"] += [k for k, pf in wb.params.items() if k not in meta["params"] and re.search(rf"(?<!:):{_name(pf.label)}\b", sql)]
         for p in meta["params"]:
             pf = wb.params.get(p)
             if pf is not None and not re.search(rf":{_name(pf.label)}\b", sql):  # already bound by a filter: nothing left to do
@@ -2998,10 +3166,7 @@ class _Parser:
         try:
             _, expr, is_agg, *_ = self._column(r)
         except _NoSQL as exc:
-            bound = self._param_bound(wb, r)
-            if bound is None:
-                return ("todo", f"filter on [{label}] not applied: {exc}")
-            expr, is_agg = bound, False
+            return ("todo", f"filter on [{label}] not applied: {exc}")
         if self._sheet is not None and r.instance in self._sheet.specials:
             return ("todo", f"filter on [{label}] (an aggregated LOD) not applied; add it to the SQL")
         if r.field is not None:
@@ -3061,32 +3226,6 @@ class _Parser:
                             f"{flt.get('first-period', '')}..{flt.get('last-period', '')}): pin a fixed window or add :date_from/:date_to binds")
         return ("todo", f"{cls} filter on [{label}] not translated")
 
-    def _param_bound(self, wb: _Workbook, r: _Ref) -> str | None:
-        """A row-level calc whose only blocker is a workbook parameter, with each [Parameters].[x] as a :x bind (tile SQL only)."""
-        f, ds = r.field, r.ds
-        if f is None or ds is None or not f.formula or r.deriv not in ("none", ""):
-            return None
-        clean, code, bare, _ = scan_formula(f.formula)
-        if not PARAM_REF.search(code) or LOD.search(bare) or "{" in bare or TABLE_CALC.search(bare) or USER_FN.search(bare):
-            return None
-        binds: dict[str, str] = {}
-
-        def bind(m: re.Match) -> str:
-            p = wb.params.get(_unesc(m.group(1)))
-            if p is None:
-                raise ax.FormulaError(f"unknown parameter [{m.group(1)}]")
-            key = f"unshackle_param_{len(binds)}"
-            binds[key] = ":" + _name(p.label)
-            return f"[{key}]"
-
-        try:
-            node = parse_formula(PARAM_REF.sub(bind, clean), date_opts(ds))
-            if _has_agg(node):
-                return None
-            return ax.strip_outer(self._sql(ds, node, lambda n: binds[n] if n in binds else self._row_ref(ds, n)))
-        except ax.FormulaError:
-            return None
-
     def _members(self, gf: ET.Element) -> tuple[str, Any] | None:
         fn = gf.get("function", "")
         children = gf.findall("groupfilter")
@@ -3137,7 +3276,7 @@ class _Parser:
 
     def _param_filter(self, p: TField) -> DashboardFilter:
         kind = "date" if p.datatype in TIME_TYPES else "number" if p.datatype in NUMERIC else "value"
-        return DashboardFilter(_name(p.label), "", _param_value(p.value, p.datatype), kind)  # type: ignore[arg-type]
+        return DashboardFilter(_name(p.label), "", _param_value(p.value, p.datatype), kind, allowed=_param_domain(p))  # type: ignore[arg-type]
 
     def _dashboards(self, wb: _Workbook) -> None:
         worksheets = {ws.get("name", ""): ws for ws in wb.root.findall("worksheets/worksheet")}

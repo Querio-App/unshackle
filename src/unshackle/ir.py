@@ -158,6 +158,7 @@ class DashboardFilter:
     field: str = ""
     default: Any = None
     kind: Literal["value", "date_range", "date", "number", "unknown"] = "value"
+    allowed: str = ""  # the values it takes ("one of 'a', 'b'", "from 0 to 1, step 0.1"), shown in the parameters cell
 
 
 @dataclass

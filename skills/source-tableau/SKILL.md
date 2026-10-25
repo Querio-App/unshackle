@@ -166,10 +166,10 @@ joined rows, where inner joins drop unmatched rows and joins can repeat rows. Th
 is left out only when it can't change the numbers: the sheet uses the first table and
 every join is a left join on the other table's key. Categorical filters
 (include / exclude / null) -> `where` (or `having` on aggregates), range filters ->
-`>=`/`<=`, Top N by an aggregate -> `order by ... desc limit N`. A filter on a row-level
-calc that compares with a parameter (`[Revenue] >= [Parameters].[Min Order Value]`)
+`>=`/`<=`, Top N by an aggregate -> `order by ... desc limit N`. A filter on a calc
+that compares with a parameter (`[Revenue] >= [Parameters].[Min Order Value]`)
 becomes `where (post_discount_revenue >= :min_order_value) = true`, bound from the
-parameters cell. Aliases follow Tableau's display names
+parameters cell (see **Parameters** below). Aliases follow Tableau's display names
 (`Month of Order Date` -> `month_of_order_date`); `source_config.columns` maps each
 alias back to its Tableau name.
 
@@ -255,12 +255,24 @@ are computed over the view: window SQL in the tile, never a metric. Check the
 A running total over time with no other partition can also be a `cumulative`
 metric (see translate-metrics).
 
-**Parameters**: a parameter that feeds a filter or a threshold becomes a notebook
-parameter (`target_margin = ...` in the parameters cell, `:target_margin` in SQL), default = the parameter's current value (unshackle
-adds these to dashboards that use them). A parameter that swaps measures (`CASE
-[Parameters].[Metric] WHEN 'Sales' THEN SUM([Sales]) ...`) becomes one metric per
-branch, and a tile per branch or a `:metric` switch in SQL. Parameters inside custom
-SQL (`<[Parameters].[Year]>`) -> `:year` binds.
+**Parameters**: every workbook parameter a tile reads is a notebook parameter:
+`growth_rate = 0.1  # from 0.0 to 1.0, step 0.01` in the parameters cell (default = its
+current value, comment = its list, with aliases, or its range), `:growth_rate` in the tile
+SQL. Row-level and aggregate calcs that read parameters, directly or through other calcs,
+are translated in tile SQL with the binds: what-if calcs
+(`[Sales] * (1 + [Parameters].[Growth])` -> `sales * (1 + :growth)`), thresholds
+(`IF SUM([Sales]) >= [Parameters].[Target] THEN ...`), and **measure / dimension
+switches** (`CASE [Parameters].[Metric] WHEN 'Sales' THEN SUM([Sales]) ... END` ->
+`case when :metric = 'Sales' then sum(sales) ... end`). Date parameters are cast
+(`cast(:start_date as date)`; datetime -> `timestamp`), so they work in date functions
+and comparisons, and `DATETRUNC('week', [Parameters].[Start])` follows the Week start.
+The semantic layer has no parameters, so each such calc is a TODO metric or dimension: pin
+the current value, or for a switch make one metric (dimension) per value; the TODO lists
+what each value picks (`'Sales' -> metric sales; 'Profit' -> ...`). A parameter calc with an
+LOD, a table calculation or ATTR() stays TODO. Tableau snaps a range parameter to its step
+(a date range with a 1-month step from 2024-01-01 turns 2024-12-31 into 2024-12-01); the
+notebook takes any value, so keep to the comment's step for the same numbers. Parameters
+inside custom SQL (`<[Parameters].[Year]>`) -> `:year` binds (write them by hand for now).
 
 **Sets, groups, bins**: groups -> `case when region in ('East','West') then 'Coasts'
 else region end` (unshackle writes the CASE in the TODO); bins -> `floor(sales / 100) *
