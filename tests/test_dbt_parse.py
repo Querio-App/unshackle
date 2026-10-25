@@ -69,7 +69,7 @@ def _parse(repo: Path) -> None:
     refs = set()
     for p in (repo / "models").rglob("*.yml"):
         refs |= set(re.findall(r"ref\('([^']+)'\)", p.read_text()))
-    for r in refs:
+    for r in refs - {p.stem for p in (repo / "models").rglob("*.sql")}:  # stand-ins for warehouse tables, not generated SQL models
         (repo / "models" / f"{r}.sql").write_text("select 1 as x\n")
     (repo / "models" / "metricflow_time_spine.sql").write_text(TIME_SPINE_SQL)
     (repo / "models" / "time_spine.yml").write_text(TIME_SPINE_YML)

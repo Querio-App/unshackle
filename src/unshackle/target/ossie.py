@@ -98,6 +98,7 @@ class _Dataset:
     by_expr: dict[str, str] = field(default_factory=dict)
     dims: dict[str, str] = field(default_factory=dict)
     entities: dict[str, tuple[str, str]] = field(default_factory=dict)
+    joins: dict[str, str] = field(default_factory=dict)  # foreign entity -> the source's join type
     measures: dict[str, tuple[Measure, str]] = field(default_factory=dict)
     metrics: list[dict[str, Any]] = field(default_factory=list)
     pending: list[dict[str, Any]] = field(default_factory=list)
@@ -149,6 +150,8 @@ def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) 
         expr = e.expr or _col(e.name)
         key = ds.by_expr.get(_norm(expr)) or ds.add(_mf(expr if IDENT.fullmatch(expr) else e.name), expr)
         ds.entities.setdefault(e.name, (e.type, key))
+        if e.join_type:
+            ds.joins.setdefault(e.name, e.join_type)
     for m in model.measures:
         if m.todo or _has_jinja(m.expr):
             ds.skip("measure", m, _reason(m.todo or "expression still has template code", m.source_language, m.source_expression or m.expr))
@@ -172,7 +175,7 @@ def _render_dataset(ds: _Dataset, copy: bool = False) -> dict[str, Any]:
     return _clean(
         {
             "name": ds.name,
-            "source": ds.model.table,
+            "source": ds.model.sql or ds.model.table,
             "primary_key": [primary] if primary else [],
             "unique_keys": unique,
             "description": ds.model.description,
@@ -283,22 +286,22 @@ class _Resolver:
         return out
 
 
-def _relationships(datasets: dict[str, _Dataset]) -> list[tuple[_Dataset, _Dataset, str, str]]:
-    """(from, to, from field, to field): foreign/unique entity -> the dataset with that primary (or unique) key."""
+def _relationships(datasets: dict[str, _Dataset]) -> list[tuple[_Dataset, _Dataset, str, str, str]]:
+    """(from, to, from field, to field, source join type): foreign/unique entity -> the dataset with that primary (or unique) key."""
     out = []
     for ds in datasets.values():
         for ent, (etype, col) in ds.entities.items():
             allowed = {"foreign": ("primary", "unique"), "unique": ("primary",)}.get(etype, ())
             to = next((d for d in datasets.values() if d is not ds and d.entities.get(ent, ("",))[0] in allowed), None)
             if to is not None:
-                out.append((ds, to, col, to.key(ent)))
+                out.append((ds, to, col, to.key(ent), ds.joins.get(ent, "")))
     return out
 
 
-def _reachable(home: _Dataset, rels: list[tuple[_Dataset, _Dataset, str, str]]) -> list[_Dataset]:
+def _reachable(home: _Dataset, rels: list[tuple[_Dataset, _Dataset, str, str, str]]) -> list[_Dataset]:
     order = [home]
     for ds in order:
-        for frm, to, _, _ in rels:
+        for frm, to, *_ in rels:
             if frm is ds and to not in order:
                 order.append(to)
     return order
@@ -393,8 +396,17 @@ def render(bundle: Bundle, layout: Layout) -> dict[str, str]:
                 "description": ds.model.description,
                 "datasets": [_render_dataset(d, copy=d is not ds) for d in members],
                 "relationships": [
-                    {"name": _unique(f"{frm.name}_to_{to.name}", rel_names), "from": frm.name, "to": to.name, "from_columns": [fc], "to_columns": [tc]}
-                    for frm, to, fc, tc in rels
+                    _clean(
+                        {
+                            "name": _unique(f"{frm.name}_to_{to.name}", rel_names),
+                            "from": frm.name,
+                            "to": to.name,
+                            "from_columns": [fc],
+                            "to_columns": [tc],
+                            "custom_extensions": _ext({"join_type": join}),
+                        }
+                    )
+                    for frm, to, fc, tc, join in rels
                     if frm in members and to in members
                 ],
                 "metrics": model_metrics.get(name, []),

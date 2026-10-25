@@ -16,11 +16,13 @@ Raw layout under migration/raw/tableau/:
     _errors.json             [{"item", "error"}] anything extract could not fetch
 
 parse() reads the XML only (never the network). Deterministic: tables and columns
-from connection relations + metadata-records, plain aggregates, row-level calcs
-(IF/CASE/ZN/IFNULL/DATETRUNC/arithmetic), ratios of aggregates, worksheets ->
-tiles with generated SQL, dashboards -> notebooks with layout. LODs, table calcs,
-parameters, sets, groups, bins, blending and ATTR keep their Tableau formula with
-a TODO(unshackle) for the agent (skills/source-tableau, skills/translate-metrics).
+from connection relations + metadata-records, joins -> relationships, plain aggregates,
+row-level calcs (IF/CASE/ZN/IFNULL/DATETRUNC/arithmetic), ratios of aggregates, FIXED
+LODs -> SQL models at their grain, user filters -> row filters, worksheets -> tiles with
+generated SQL (FIXED, INCLUDE and EXCLUDE LODs included), dashboards -> notebooks with
+layout. Table calcs, parameters, sets, groups, bins, blending, ATTR and the LODs the
+tiles can't place keep their Tableau formula with a TODO(unshackle) for the agent
+(skills/source-tableau, skills/translate-metrics).
 """
 
 from __future__ import annotations
@@ -111,6 +113,8 @@ BRACKETED = re.compile(r"\[((?:[^\]]|\]\])*)\]")
 DS_REF = re.compile(r"\[((?:[^\]]|\]\])+)\]\.\[((?:[^\]]|\]\])+)\]")
 PARAM_REF = re.compile(r"\[Parameters\]\.\[((?:[^\]]|\]\])+)\]")
 LOD = re.compile(r"\{\s*(FIXED|INCLUDE|EXCLUDE)\b", re.I)
+LOD_PARTS = re.compile(r"\s*\{\s*(FIXED|INCLUDE|EXCLUDE)\s+((?:\[(?:[^\]]|\]\])+\]\s*,?\s*)+):(.+)\}\s*", re.S | re.I)
+LOD_REF = "__unshackle_lod_"
 TABLE_CALC = re.compile(
     r"\b(WINDOW_\w+|RUNNING_\w+|RANK\w*|LOOKUP|INDEX|TOTAL|SIZE|FIRST|LAST|PREVIOUS_VALUE|SCRIPT_\w+|MODEL_\w+)\s*\(", re.I
 )
@@ -641,6 +645,27 @@ def scan_formula(formula: str) -> tuple[str, str, str, list[str]]:
     return "".join(clean).strip(), "".join(code), "".join(bare), [c for c in comments if c]
 
 
+def lod_spans(clean: str) -> list[tuple[int, int, bool]]:
+    """Top-level { ... } expressions in a comment-free formula: (start, end, has a nested { }). Braces in
+    strings and field names don't count."""
+    _, _, bare, _ = scan_formula(clean)
+    bare = bare.ljust(len(clean))
+    out: list[tuple[int, int, bool]] = []
+    depth, start, nested = 0, 0, False
+    for i, ch in enumerate(bare):
+        if ch == "{":
+            if depth == 0:
+                start, nested = i, False
+            else:
+                nested = True
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0:
+                out.append((start, i + 1, nested))
+    return out
+
+
 class _TabParser(ax._Parser):
     """_aggexpr's parser plus Tableau IF .. THEN .. ELSEIF .. ELSE .. END and CASE .. WHEN .. END."""
 
@@ -741,12 +766,25 @@ def _replace_user_fns(node: ax.Node) -> ax.Node:
     if isinstance(node, ax.Call):
         if node.name in ("username", "userdomain", "fullname") and not node.args:
             return ax.Ref("\x00user." + {"username": "email", "userdomain": "domain", "fullname": "name"}[node.name])
+        if node.name == "ismemberof":
+            if len(node.args) != 1 or not isinstance(node.args[0], ax.Str):
+                raise ax.FormulaError("ISMEMBEROF() needs a group name")
+            return ax.Ref("\x00group:" + node.args[0].value)
+        if node.name in ("isusername", "isfullname", "userattribute", "userattributeincludes"):
+            raise ax.FormulaError(f"{node.name.upper()}() has no row filter translation yet")
         return ax.Call(node.name, [_replace_user_fns(a) for a in node.args])
     if isinstance(node, ax.BinOp):
         return ax.BinOp(node.op, _replace_user_fns(node.left), _replace_user_fns(node.right))
     if isinstance(node, ax.Unary):
         return ax.Unary(node.op, _replace_user_fns(node.operand))
     return node
+
+
+def _user_sql(ref: str) -> str:
+    """Placeholder from _replace_user_fns -> row filter template: {{ user.email }}, or a group test on {{ user.groups }}."""
+    if ref.startswith("\x00group:"):
+        return "'" + ref[len("\x00group:"):].replace("'", "''") + "' in ({{ user.groups }})"
+    return "{{ " + ref[1:] + " }}"
 
 
 # ==================================================================== raw model
@@ -803,8 +841,9 @@ class TDatasource:
     filters: list[ET.Element] = field(default_factory=list)
     connection_class: str = ""
     published: str = ""  # sqlproxy dbname (published datasource content url)
-    # left-deep join tree as steps after the first relation: (join type, right relation name, ON sql); "" = not translatable
-    join_steps: list[tuple[str, str, str]] = field(default_factory=list)
+    # left-deep join tree as steps after the first relation: (join type, right relation name, ON column pairs
+    # [((relation, column), (relation, column))]); [] = not only equalities, not translatable
+    join_steps: list[tuple[str, str, list[tuple[tuple[str, str], tuple[str, str]]]]] = field(default_factory=list)
     origin: "TDatasource | None" = None  # the published datasource a workbook's sqlproxy stub was linked to
     inherited: set[str] = field(default_factory=set)  # fields taken unchanged from `origin`
     hierarchies: list[tuple[str, list[str]]] = field(default_factory=list)  # <drill-path name>: [field local names]
@@ -841,10 +880,54 @@ class _Model:
 
 @dataclass
 class _Calc:
-    kind: str  # row | agg | todo | security
+    kind: str  # row | agg | lod (a FIXED LOD field) | todo | security
     sql: str = ""
     metric: str = ""
     todo: str = ""
+    # where the SQL lives: "" the datasource's rows, a FIXED grain's name (its SQL model's columns),
+    # or "mixed" (row fields and FIXED values together: tile SQL only, through a join)
+    lod: str = ""
+
+
+@dataclass(eq=False)
+class _Lod:
+    """A FIXED LOD grain of a datasource: one SQL model grouped by the FIXED dimensions."""
+
+    name: str
+    keys: list[tuple[str, str]]  # (SQL over the datasource rows, output column)
+    from_sql: str
+    cte: str = ""
+    dims: list[str] = field(default_factory=list)  # the FIXED fields' local names
+    cols: dict[str, str] = field(default_factory=dict)  # output column -> aggregate SQL
+    model: "_Model | None" = None
+
+    def select(self) -> str:
+        items = [sql if sql == alias else f"{sql} as {alias}" for sql, alias in self.keys]
+        items += [f"{sql} as {alias}" for alias, sql in self.cols.items()]
+        return (f"select {', '.join(items)}\nfrom {self.from_sql}\n"
+                f"group by {', '.join(str(i) for i in range(1, len(self.keys) + 1))}")
+
+    def sql(self) -> str:
+        return (f"with custom_sql as (\n{self.cte}\n)\n" if self.cte else "") + self.select()
+
+
+@dataclass
+class _Special:
+    """A tile measure that is not one aggregate over the sheet's rows: an aggregated LOD."""
+
+    kind: str  # fixed | include | exclude
+    outer: str  # aggregation applied in the view (MetricFlow name)
+    lod: _Lod | None = None  # fixed: the grain and its column
+    col: str = ""
+    inner: str = ""  # include / exclude: aggregate SQL over the rows
+    dims: list[str] = field(default_factory=list)  # include: SQL of the added dimensions; exclude: excluded field names
+
+
+@dataclass
+class _SheetCtx:
+    ds: TDatasource | None
+    row_lods: list[_Lod] = field(default_factory=list)  # FIXED grains joined to the rows
+    specials: dict[str, _Special] = field(default_factory=dict)  # shelf instance -> how to compute it
 
 
 @dataclass
@@ -971,22 +1054,28 @@ def _leaf_relations(rel: ET.Element | None, ds: TDatasource) -> list[ET.Element]
         ds.joins.append(f"{rel.get('join', 'inner')} join on {' = '.join(ops)}")
         right = children[-1] if len(children) == 2 and children[-1].get("type") in ("table", "text") else None
         name = (right.get("name") or (_name_parts(right.get("table", "")) or ["table"])[-1]) if right is not None else ""
-        ds.join_steps.append((rel.get("join", "inner"), name, _join_on(cond) if name else ""))
+        ds.join_steps.append((rel.get("join", "inner"), name, _join_pairs(cond) if name else []))
     return out
 
 
-def _join_on(expr: ET.Element | None) -> str:
-    """<expression op='='><expression op='[orders].[account_id]' />... -> orders.account_id = accounts.account_id ("" if not that simple)."""
+def _join_pairs(expr: ET.Element | None) -> list[tuple[tuple[str, str], tuple[str, str]]]:
+    """ON clause -> [((relation, column), (relation, column))] when it is equalities ANDed together, else []."""
     if expr is None:
-        return ""
+        return []
     op, kids = expr.get("op", ""), list(expr.findall("expression"))
-    if op in ("=", "AND") and len(kids) >= 2:
-        parts = [_join_on(k) for k in kids]
-        if not all(parts) or (op == "=" and len(parts) != 2):
-            return ""
-        return f" {op.lower()} ".join(f"({p})" if " and " in p else p for p in parts) if op == "AND" else f"{parts[0]} = {parts[1]}"
-    names = _name_parts(op) if op.startswith("[") and not kids else []
-    return ".".join(_ident(n) for n in names) if len(names) == 2 else ""
+    if op == "AND" and len(kids) >= 2:
+        parts = [_join_pairs(k) for k in kids]
+        return [p for ps in parts for p in ps] if all(parts) else []
+    if op == "=" and len(kids) == 2:
+        sides = [_name_parts(k.get("op", "")) if k.get("op", "").startswith("[") and not list(k) else [] for k in kids]
+        if all(len(x) == 2 for x in sides):
+            return [((sides[0][0], sides[0][1]), (sides[1][0], sides[1][1]))]
+    return []
+
+
+def _join_on(pairs: list[tuple[tuple[str, str], tuple[str, str]]]) -> str:
+    """[((orders, account_id), (accounts, account_id))] -> orders.account_id = accounts.account_id."""
+    return " and ".join(f"{_ident(ra)}.{_ident(ca)} = {_ident(rb)}.{_ident(cb)}" for (ra, ca), (rb, cb) in pairs)
 
 
 # ==================================================================== parser
@@ -1016,6 +1105,13 @@ class _Parser:
         self.workbooks: list[_Workbook] = []
         self.tds: list[TDatasource] = []
         self._joined: TDatasource | None = None  # tile SQL over a join: qualify physical columns with their relation
+        self._sheet: _SheetCtx | None = None  # set while a worksheet's SQL is built
+        self.lods: dict[tuple, _Lod] = {}  # (FROM, CTE, FIXED dimension SQL) -> grain
+        self.lod_names: dict[str, _Lod] = {}
+        self.lod_fields: dict[tuple[str, str], tuple[_Lod, str]] = {}  # FIXED field -> (grain, column)
+        self.inline: dict[str, tuple[_Lod, str]] = {}  # FIXED LOD inside a formula, by its placeholder reference
+        self.prepped: dict[tuple[str, str], str] = {}  # formula with its FIXED LODs replaced by placeholder references
+        self.view_lods: dict[tuple[str, str], tuple[str, list[str], str, str | None]] = {}  # INCLUDE/EXCLUDE: (kind, dims, inner, outer agg)
 
     def _json(self, rel: str) -> Any:
         if not self.store.exists(rel):
@@ -1075,6 +1171,9 @@ class _Parser:
             for f in list(ds.fields.values()):
                 if f.is_calc and not f.param:
                     self._calc(ds, f)
+        for lod in self.lod_names.values():
+            if lod.model is not None:
+                lod.model.sm.sql = lod.sql()
         for m in self.models.values():
             if m.sm.measures and not any(d.type == "time" for d in m.sm.dimensions):
                 self.b.warn(f"semantic model {m.sm.name}", "has measures but no date column; MetricFlow needs defaults.agg_time_dimension", "info")
@@ -1127,8 +1226,6 @@ class _Parser:
         item = f"{ds.src} datasource {ds.caption}"
         if ds.connection_class in FILE_CONNECTIONS or any(r.connection_class in FILE_CONNECTIONS for r in ds.relations.values()):
             self.b.warn(item, "connects to a file/extract, not a warehouse; point the semantic model at the warehouse table holding this data")
-        if ds.joins:
-            self.b.warn(item, f"joins {len(ds.relations)} tables ({'; '.join(ds.joins)}); one semantic model per table was made, add foreign entities by hand", "info")
         mine: dict[str, _Model] = {}
         for r in ds.relations.values():
             key = f"table:{r.schema.lower()}.{r.table.lower()}" if r.kind == "table" else "sql:" + hashlib.sha1(" ".join(r.sql.split()).encode()).hexdigest()[:12]
@@ -1165,6 +1262,52 @@ class _Parser:
                     self.b.tables.append(tbl)
             mine[r.name] = model
         self.ds_models[ds.uid] = mine
+        if ds.joins and not (ds.origin is not None and ds.join_steps == ds.origin.join_steps):
+            left = self._relate(ds, mine)
+            if left:
+                self.b.warn(item, f"joins {len(ds.relations)} tables ({'; '.join(ds.joins)}); no relationship was made for "
+                            f"{'; '.join(left)}: add foreign entities by hand", "info")
+
+    def _relate(self, ds: TDatasource, mine: dict[str, _Model]) -> list[str]:
+        """Join clauses -> foreign entities between the per-table models, with the join semantics in their descriptions.
+        Returns the joins that could not become a relationship."""
+        left: list[str] = []
+        for kind, right, pairs in ds.join_steps:
+            kind = kind.lower()
+            if len(pairs) != 1:
+                left.append(f"{kind} join to {right}" + (" (several columns)" if pairs else " (not a column equality)"))
+                continue
+            (ra, ca), (rb, cb) = pairs[0]
+            ma, mb = mine.get(ra), mine.get(rb)
+            if ma is None or mb is None or ma is mb:
+                left.append(f"{kind} join {ra}.{ca} = {rb}.{cb}")
+                continue
+            if mb.pk and cb.lower() == mb.pk.lower():
+                many, fk, one, key = ma, ca, mb, cb
+            elif ma.pk and ca.lower() == ma.pk.lower():
+                many, fk, one, key = mb, cb, ma, ca
+            else:
+                left.append(f"{kind} join {ra}.{ca} = {rb}.{cb} (neither column is its table's key)")
+                continue
+            ent = one.sm.name
+            if not any(e.name == ent for e in many.sm.entities):
+                many.sm.entities.append(Entity(ent, "foreign", "" if fk == ent else fk, join_type=kind))
+            clause = f"{many.sm.name}.{fk} = {one.sm.name}.{key}"
+            if kind == "inner":
+                drop_many = f"; Tableau drops {many.sm.name} rows with no match in {one.sm.name}, a relationship (left join) keeps them"
+                drop_one = f" and drops {one.sm.name} rows with no {many.sm.name} row"
+            else:
+                drop_many = drop_one = ""
+            self._describe(many, f"In Tableau datasource {ds.caption}, {many.sm.name} {kind} joins {one.sm.name} on {clause}{drop_many}.")
+            self._describe(one, f"In Tableau datasource {ds.caption}, {one.sm.name} is {kind} joined to {many.sm.name} on {clause}: Tableau "
+                                f"aggregates {one.sm.name} columns over the joined rows, once per {many.sm.name} row{drop_one}; "
+                                f"measures here aggregate {one.sm.name} rows.")
+        return left
+
+    @staticmethod
+    def _describe(model: _Model, line: str) -> None:
+        if line not in model.sm.description:
+            model.sm.description = f"{model.sm.description}\n{line}".strip()
 
     def _guess_pk(self, ds: TDatasource, rel: TRelation) -> str:
         cols = [f.remote for f in ds.fields.values() if f.remote and f.relation == rel.name and not f.is_calc]
@@ -1268,6 +1411,9 @@ class _Parser:
             # A calc of the published datasource: translate it once, there (no duplicate metrics, LOD queries or row filters).
             res = self._calc(ds.origin, ds.origin.fields[f.local], stack)
             self.cache[key] = res
+            for table in (self.lod_fields, self.prepped, self.view_lods):
+                if (ds.origin.uid, f.local) in table:
+                    table[key] = table[(ds.origin.uid, f.local)]  # type: ignore[index]
             return res
         res = self._translate(ds, f, stack + (key,))
         self.cache[key] = res
@@ -1277,18 +1423,47 @@ class _Parser:
         wb = next((w for w in self.workbooks if w.id == ds.workbook), None)
         return wb.params if wb is not None else {}
 
+    def _is_joined(self, ds: TDatasource | None) -> bool:
+        j = self._joined
+        return j is not None and ds is not None and (ds is j or ds is j.origin or ds.origin is j)
+
     def _row_ref(self, ds: TDatasource, name: str) -> str:
+        if name in self.inline:
+            return self._lod_col(*self.inline[name])
         g = ds.fields.get(name)
         if g is None:
             raise ax.FormulaError(f"unknown field [{name}]")
         if g.is_calc:
             c = self.cache.get((ds.uid, g.local))
+            if c is not None and c.kind == "lod" and (ds.uid, g.local) in self.lod_fields:
+                return self._lod_col(*self.lod_fields[(ds.uid, g.local)])
             if c is not None and c.kind == "row":
+                if self._sheet is not None and (c.lod or self._is_joined(ds)):
+                    return _paren(self._row_sql(ds, g))  # in this sheet's FROM: qualified, FIXED values joined
+                if c.lod == "mixed":
+                    raise ax.FormulaError(f"[{g.label}] mixes row fields with a FIXED LOD value")
+                if self._is_joined(ds) and not c.lod:
+                    return _paren(self._row_sql(ds, g))
                 return _paren(c.sql)
             raise ax.FormulaError(f"[{g.label}] is an aggregate or not translated")
         if g.remote:
+            if self._is_joined(ds) and g.relation:
+                return f"{_ident(g.relation)}.{_ident(g.remote)}"
             return _ident(g.remote)
         raise ax.FormulaError(f"[{g.label}] has no physical column")
+
+    def _row_sql(self, ds: TDatasource, g: TField) -> str:
+        """A row-level calc's SQL again, in the current context (joined columns qualified, FIXED values joined in tiles)."""
+        text = self.prepped.get((ds.uid, g.local)) or scan_formula(g.formula or "")[0]
+        return ax.strip_outer(ax.to_sql(parse_formula(text), lambda r: self._row_ref(ds, r)))
+
+    def _lod_col(self, lod: _Lod, col: str) -> str:
+        """A FIXED value: its column in the grain's SQL model, or in a tile, the grain joined to the sheet's rows."""
+        if self._sheet is None:
+            return _ident(col)
+        if lod not in self._sheet.row_lods:
+            self._sheet.row_lods.append(lod)
+        return f"{lod.name}.{_ident(col)}"
 
     def _metric_ref(self, ds: TDatasource, name: str) -> str | None:
         g = ds.fields.get(name)
@@ -1343,17 +1518,14 @@ class _Parser:
         params = [wbp[p].label if p in wbp else p for p in (_unesc(x) for x in PARAM_REF.findall(code))]
         if params:
             return self._todo(ds, f, model, f"uses parameter(s) {', '.join(f'[{p}]' for p in params)}: a parameter becomes a notebook parameter (:name, set in the parameters cell) or one metric per value; see {SKILL}")
-        lod = LOD.search(bare)
-        if lod:
-            kind = lod.group(1).upper()
-            if kind == "FIXED":
-                self._lod_query(ds, f, model, clean)
-                msg = "Tableau FIXED LOD: pre-aggregate at that grain in a SQL model (queries/models/), then a semantic model on it; see skills/translate-metrics"
-            else:
-                msg = f"Tableau {kind} LOD is view-dependent: write it as window SQL in the notebook tile; see skills/translate-metrics"
-            return self._todo(ds, f, model, msg)
-        if "{" in bare:
-            return self._todo(ds, f, model, "table-scoped LOD ({ AGG(...) } = grand total): a window over all rows (`sum(x) over ()`) in the tile SQL; see skills/translate-metrics")
+        spans = lod_spans(clean)
+        if spans:
+            res = self._lods_in(ds, f, model, clean, spans, stack)
+            if isinstance(res, _Calc):
+                return res
+            clean = res  # each FIXED LOD replaced by a reference to its column
+            self.prepped[(ds.uid, f.local)] = clean
+            _, code, bare, _ = scan_formula(clean)
         tc = TABLE_CALC.search(bare)
         if tc:
             return self._todo(ds, f, model, f"Tableau table calculation {tc.group(1).upper()}() depends on the view: compute it as window SQL in the notebook tile (skills/translate-dashboards), not a metric; see skills/translate-metrics")
@@ -1367,7 +1539,11 @@ class _Parser:
         except ax.FormulaError as exc:
             return self._todo(ds, f, model, f"formula not translated ({exc}); see skills/translate-metrics")
         dep_agg = False
+        homes: set[str] = set()  # where each input lives: "" the rows, else a FIXED grain
         for r in ax.refs(node):
+            if r in self.inline:
+                homes.add(self.inline[r][0].name)
+                continue
             g = ds.fields.get(r)
             if g is None:
                 return self._todo(ds, f, model, f"references unknown field [{r}]; see skills/translate-metrics")
@@ -1375,16 +1551,36 @@ class _Parser:
                 dep = self._calc(ds, g, stack)
                 if dep.kind in ("todo", "security"):
                     return self._todo(ds, f, model, f"depends on [{g.label}], which is not translated yet; finish that first (skills/translate-metrics)")
+                if dep.kind == "agg" and dep.lod:
+                    return self._todo(ds, f, model, f"depends on [{g.label}], an aggregate of FIXED LOD values: write it in the tile SQL "
+                                                    "or as a metric on the FIXED grain's semantic model; see skills/translate-metrics")
                 dep_agg = dep_agg or dep.kind == "agg"
+                homes |= {"", "mixed"} if dep.lod == "mixed" else {dep.lod}
+            else:
+                homes.add("")
         if model is None:
             return self._todo(ds, f, None, "datasource has no table; see skills/translate-metrics")
         src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
+        grains = homes - {"", "mixed"}
+        if len(grains) > 1:
+            return self._todo(ds, f, model, "combines FIXED LODs of different grains: join each grain's SQL model on its dimensions in the tile SQL; see skills/translate-metrics")
+        lod = self.lod_names[next(iter(grains))] if grains else None
+        mixed = "mixed" in homes or (lod is not None and "" in homes)
         if _has_agg(node) or dep_agg:
+            if lod is not None or mixed:
+                return self._lod_aggregate(ds, f, model, node, src, lod, mixed)
             return self._aggregate(ds, f, model, node, src)
+        if mixed:
+            msg = ("mixes row fields with a FIXED LOD value: notebook tiles join the FIXED grain to the rows in their SQL; "
+                   "a semantic model can't hold it on one table (add it to a SQL model that joins the grain); see skills/translate-metrics")
+            self._todo(ds, f, model, msg)
+            return _Calc("row", lod="mixed", todo=msg)
         try:
             sql = ax.strip_outer(ax.to_sql(node, lambda r: self._row_ref(ds, r)))
         except ax.FormulaError as exc:
             return self._todo(ds, f, model, f"formula not translated ({exc}); see skills/translate-metrics")
+        if lod is not None:
+            return self._lod_row(ds, f, model, lod, node, sql)
         if f.role == "measure" and f.datatype in NUMERIC:
             name = self._namer(model, f.label)
             agg = DEFAULT_AGG.get(f.default_agg, "sum")
@@ -1403,6 +1599,246 @@ class _Parser:
                 model.sm.dimensions.append(Dimension(name, "categorical", sql, f.description, f.label))
             model.elements.add(name)
         return _Calc("row", sql=sql)
+
+    # ------------------------------------------------------------ level of detail expressions
+
+    def _lods_in(self, ds: TDatasource, f: TField, model: _Model | None, clean: str, spans: list[tuple[int, int, bool]],
+                 stack: tuple) -> _Calc | str:
+        """LOD expressions in a formula. A formula that is one FIXED LOD becomes a column of the grain's SQL model; FIXED
+        LODs inside a formula are replaced by references to their columns (returns the new formula); anything else is TODO."""
+        if any(nested for *_, nested in spans):
+            return self._todo(ds, f, model, "nested LOD expressions: build the inner one first (a FIXED grain as a SQL model), then the outer one; see skills/translate-metrics")
+        kinds = [(m.group(1).upper() if (m := LOD.match(clean[a:b])) else "") for a, b, _ in spans]
+        if "" in kinds:
+            return self._todo(ds, f, model, "table-scoped LOD ({ AGG(...) } = grand total): a window over all rows (`sum(x) over ()`) in the tile SQL; see skills/translate-metrics")
+        if any(LOD_PARTS.fullmatch(clean[a:b]) is None for a, b, _ in spans):
+            return self._todo(ds, f, model, "LOD whose dimensions are expressions, or with no dimensions: write its grain as a SQL model "
+                                            "(or `sum(x) over ()` for no dimensions) in the tile SQL; see skills/translate-metrics")
+        if any(k != "FIXED" for k in kinds):
+            kind = next(k for k in kinds if k != "FIXED")
+            tiles = self._view_lod(ds, f, clean, spans)
+            how = ("notebook tiles that show it compute it from the sheet's dimensions" if tiles
+                   else "write it as window or grouped-subquery SQL in the notebook tile")
+            return self._todo(ds, f, model, f"Tableau {kind} LOD depends on the view's dimensions, so it can't be a metric: {how}; see skills/translate-metrics")
+        whole = len(spans) == 1 and spans[0][:2] == (0, len(clean))
+        try:
+            if whole:
+                lod, col = self._fixed(ds, clean, _name(f.label), stack)
+                return self._fixed_field(ds, f, model, lod, col)
+            out, last = [], 0
+            for a, b, _ in spans:
+                inner = LOD_PARTS.fullmatch(clean[a:b]).group(3)  # type: ignore[union-attr]
+                lod, col = self._fixed(ds, clean[a:b], _name(readable(inner, ds.fields))[:40], stack)
+                ref = f"{LOD_REF}{len(self.inline)}"
+                self.inline[ref] = (lod, col)
+                out += [clean[last:a], f"[{ref}]"]
+                last = b
+            return "".join(out) + clean[last:]
+        except ax.FormulaError as exc:
+            return self._todo(ds, f, model, f"Tableau FIXED LOD not translated ({exc}): pre-aggregate at that grain in a SQL model "
+                                            "(queries/models/), then a semantic model on it; see skills/translate-metrics")
+
+    def _rows(self, ds: TDatasource) -> tuple[str, str, bool]:
+        """(FROM clause, custom SQL CTE body, joined) for all of a datasource's rows, as Tableau sees them."""
+        joined = self._ds_join(ds)
+        if joined:
+            return joined, "", True
+        models = self.ds_models.get(ds.uid) or {}
+        model = next(iter(models.values()), None)
+        if model is None or (len(models) > 1 and ds.join_steps):
+            raise ax.FormulaError("the datasource's join can't be written as SQL")
+        return (*model.from_sql, False)
+
+    def _fixed(self, ds: TDatasource, text: str, hint: str, stack: tuple) -> tuple[_Lod, str]:
+        """{FIXED [a], [b] : AGG(x)} -> (the grain's SQL model, the column holding the value)."""
+        m = LOD_PARTS.fullmatch(text)
+        if m is None:
+            raise ax.FormulaError("not a FIXED LOD")
+        dims = [_unesc(d) for d in BRACKETED.findall(m.group(2))]
+        node = parse_formula(m.group(3).strip())
+        for name in dims + ax.refs(node):
+            g = ds.fields.get(name)
+            if g is None:
+                raise ax.FormulaError(f"unknown field [{name}]")
+            if g.is_calc and not g.param:
+                dep = self._calc(ds, g, stack)
+                if dep.kind not in ("row", "agg") or dep.lod:
+                    raise ax.FormulaError(f"[{g.label}] is not a translated row-level field")
+        from_sql, cte, joined = self._rows(ds)
+        prev, self._joined = self._joined, (ds if joined else None)
+        try:
+            keys = [(self._row_ref(ds, d), _name(ds.fields[d].label)) for d in dims]
+            cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+        finally:
+            self._joined = prev
+        if cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
+            raise ax.FormulaError("the expression after ':' is not one aggregate")
+        if len({a for _, a in keys}) != len(keys):
+            raise ax.FormulaError("two FIXED dimensions have the same name")
+        key = (from_sql, cte, tuple(k for k, _ in keys))
+        lod = self.lods.get(key)
+        if lod is None:
+            taken = {mm.sm.name for mm in self.models.values()} | set(self.lod_names)
+            base = "_".join(a for _, a in keys) + "_lod"
+            name, n = base, 2
+            while name in taken:
+                name, n = f"{base}_{n}", n + 1
+            lod = _Lod(name, keys, from_sql, cte, dims)
+            self.lods[key] = lod
+            self.lod_names[name] = lod
+            if len(dims) == 1:
+                self._lod_model(ds, lod, ds.fields[dims[0]])
+        agg_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
+        col = next((a for a, s in lod.cols.items() if s == agg_sql), "")
+        if not col:
+            used = set(lod.cols) | {a for _, a in keys}
+            col, n = hint or "value", 2
+            while col in used:
+                col, n = f"{hint}_{n}", n + 1
+            lod.cols[col] = agg_sql
+        return lod, col
+
+    def _lod_model(self, ds: TDatasource, lod: _Lod, g: TField) -> None:
+        """Semantic model on a single-dimension FIXED grain, related to the model that holds the dimension."""
+        owner = self._field_model(ds, g)
+        if owner is None:
+            return
+        if g.is_calc:
+            c = self.cache.get((ds.uid, g.local))
+            if c is None or c.kind != "row" or c.lod:
+                return
+            expr = c.sql
+        else:
+            expr = _ident(g.remote)
+        alias = lod.keys[0][1]
+        primaries = {e.name for mm in self.models.values() for e in mm.sm.entities if e.type == "primary"}
+        ent = alias if alias not in primaries else lod.name
+        src = f"{ds.src} datasource: {ds.caption} FIXED [{g.label}]"
+        sm = SemanticModel(
+            name=lod.name, table=lod.name, datasource=self.b.datasource, source_ref=src,
+            description=(f"Tableau FIXED level of detail at [{g.label}] in datasource {ds.caption}: one row per {g.label}, computed over all "
+                         f"of the datasource's rows before dimension filters. Aggregated in a view, Tableau takes one value per distinct "
+                         f"combination of the view's dimensions and {g.label}, not one per row."),
+        )
+        sm.entities.append(Entity(ent, "primary", "" if ent == alias else alias))
+        model = _Model(f"lod:{lod.name}", TRelation(lod.name, "lod"), sm, None, pk=alias)
+        self.models[model.key] = model
+        self.b.semantic_models.append(sm)
+        if not any(e.name == ent for e in owner.sm.entities):
+            owner.sm.entities.append(Entity(ent, "foreign", "" if expr == ent else expr))
+        lod.model = model
+
+    def _fixed_field(self, ds: TDatasource, f: TField, model: _Model | None, lod: _Lod, col: str) -> _Calc:
+        self.lod_fields[(ds.uid, f.local)] = (lod, col)
+        lm = lod.model
+        if lm is None:
+            keys = ", ".join(a for _, a in lod.keys)
+            msg = (f"Tableau FIXED LOD on several dimensions ({keys}): notebook tiles join it in their SQL; for the semantic layer save "
+                   f"this grain as a SQL model with a key on ({keys}) and relate it by hand: {' '.join(lod.sql().split())}; see skills/translate-metrics")
+            self._todo(ds, f, model, msg)
+            return _Calc("lod", sql=col, lod=lod.name, todo=msg)
+        src = f"{ds.src} datasource: {ds.caption} field: {f.label}"
+        if f.role == "measure" and f.datatype in NUMERIC:
+            name = self._namer(lm, f.label)
+            if not self._exists(lm, name, ds, f):
+                agg = DEFAULT_AGG.get(f.default_agg, "sum")
+                lm.sm.measures.append(Measure(name, agg, "" if col == name else col, f.description, f.label))
+                self.b.metrics.append(Metric(name, label=f.label, description=f.description, measure=name, semantic_model=lm.sm.name, source_ref=src))
+                self.metric_sql[name] = AGG_SQL[agg].format(col)
+                self._register(lm, name)
+            return _Calc("lod", sql=col, lod=lod.name, metric=name)
+        name = _name(f.label)
+        if name != lm.sm.name and not self._exists(lm, name, ds, f):
+            time = f.datatype in TIME_TYPES
+            lm.sm.dimensions.append(Dimension(name, "time" if time else "categorical", "" if col == name else col, f.description, f.label,
+                                              "day" if time else ""))
+            lm.elements.add(name)
+        return _Calc("lod", sql=col, lod=lod.name)
+
+    def _lod_row(self, ds: TDatasource, f: TField, model: _Model, lod: _Lod, node: ax.Node, sql: str) -> _Calc:
+        """A row-level calc over FIXED values of one grain: a dimension of the grain's semantic model."""
+        lm = lod.model
+        if lm is None or (f.role == "measure" and f.datatype in NUMERIC):
+            msg = ("a measure computed from FIXED LOD values: Tableau aggregates it per view mark, check whether it weighs rows or LOD groups "
+                   "before making it a metric; tiles that show it as a dimension work" if lm is not None else
+                   "uses a FIXED LOD on several dimensions; notebook tiles join it in their SQL")
+            self._todo(ds, f, model, f"{msg}; see skills/translate-metrics")
+            return _Calc("row", sql=sql, lod=lod.name, todo=msg)
+        name = _name(f.label)
+        if name != lm.sm.name and not self._exists(lm, name, ds, f):
+            if f.datatype in TIME_TYPES:
+                grain = ax.time_grain(node)
+                lm.sm.dimensions.append(Dimension(name, "time", sql, f.description, f.label, grain[0] if grain else "day"))
+            else:
+                lm.sm.dimensions.append(Dimension(name, "categorical", sql, f.description, f.label))
+            lm.elements.add(name)
+        return _Calc("row", sql=sql, lod=lod.name)
+
+    def _lod_aggregate(self, ds: TDatasource, f: TField, model: _Model, node: ax.Node, src: str, lod: _Lod | None, mixed: bool) -> _Calc:
+        """AGG({FIXED ...}) or AGG([a FIXED field]): a metric on the grain's model. Other aggregates over FIXED values: tiles or TODO."""
+        hit = self._lod_arg(ds, node)
+        if hit is not None and lod is not None and not mixed:
+            agg = TABLEAU_AGGS[node.name][0]  # type: ignore[attr-defined]
+            col = hit[1]
+            lm = lod.model
+            if lm is None:
+                msg = "aggregates a FIXED LOD on several dimensions: notebook tiles compute it in their SQL; see skills/translate-metrics"
+                self._todo(ds, f, model, msg, True)
+                return _Calc("agg", lod=lod.name, todo=msg)
+            name = self._namer(lm, f.label)
+            if not self._exists(lm, name, ds, f):
+                lm.sm.measures.append(Measure(name, agg, "" if col == name else col, f.description, f.label))
+                self.b.metrics.append(Metric(
+                    name, label=f.label, measure=name, semantic_model=lm.sm.name, source_ref=src,
+                    description=" ".join(x for x in (f.description, f"Tableau aggregates the FIXED values over the distinct combinations of a "
+                                                                      f"view's dimensions and the FIXED dimensions ({', '.join(a for _, a in lod.keys)}).") if x),
+                ))
+                self.metric_sql[name] = AGG_SQL[agg].format(col)
+                self._register(lm, name)
+            return _Calc("agg", metric=name, lod=lod.name)
+        if mixed:
+            msg = ("combines row fields and FIXED LOD values in an aggregate: notebook tiles compute row-level mixes over the rows joined "
+                   "to the FIXED grain; a metric needs a SQL model with that join; see skills/translate-metrics")
+            self._todo(ds, f, model, msg, True)
+            return _Calc("agg", lod="mixed", todo=msg)
+        msg = ("aggregates a calculation of FIXED LOD values: check whether Tableau weighs it per row or per LOD group, then make it a "
+               "metric on the FIXED grain's semantic model; see skills/translate-metrics")
+        self._todo(ds, f, model, msg, True)
+        return _Calc("agg", lod=lod.name if lod else "mixed", todo=msg)
+
+    def _home(self, ds: TDatasource, ref: str) -> str:
+        """Where a formula reference lives: "" the rows, a FIXED grain's name, or "mixed"."""
+        if ref in self.inline:
+            return self.inline[ref][0].name
+        g = ds.fields.get(ref)
+        c = self.cache.get((ds.uid, g.local)) if g is not None and g.is_calc else None
+        return c.lod if c is not None else ""
+
+    def _lod_arg(self, ds: TDatasource, node: ax.Node) -> tuple[_Lod, str] | None:
+        """AGG(ref) where ref is a FIXED LOD (inline or a FIXED field) -> (grain, column)."""
+        if not (isinstance(node, ax.Call) and node.name in TABLEAU_AGGS and len(node.args) == 1 and isinstance(node.args[0], ax.Ref)):
+            return None
+        ref = node.args[0].name
+        if ref in self.inline:
+            return self.inline[ref]
+        g = ds.fields.get(ref)
+        return self.lod_fields.get((ds.uid, g.local)) if g is not None else None
+
+    def _view_lod(self, ds: TDatasource, f: TField, clean: str, spans: list[tuple[int, int, bool]]) -> bool:
+        """Remember an INCLUDE / EXCLUDE LOD that tiles can compute: the whole formula, or one aggregate around it."""
+        if len(spans) != 1:
+            return False
+        a, b, _ = spans[0]
+        m = LOD_PARTS.fullmatch(clean[a:b])
+        head, tail = clean[:a].strip(), clean[b:].strip()
+        outer = None
+        if head or tail:
+            hm = re.fullmatch(r"(\w+)\s*\(", head)
+            if not hm or tail != ")" or hm.group(1).lower() not in TABLEAU_AGGS:
+                return False
+            outer = TABLEAU_AGGS[hm.group(1).lower()][0]
+        self.view_lods[(ds.uid, f.local)] = (m.group(1).upper(), [_unesc(d) for d in BRACKETED.findall(m.group(2))], m.group(3).strip(), outer)  # type: ignore[union-attr]
+        return True
 
     def _aggregate(self, ds: TDatasource, f: TField, model: _Model, node: ax.Node, src: str) -> _Calc:
         try:
@@ -1447,60 +1883,77 @@ class _Parser:
         self._register(model, name)
         return name, self.metric_sql[name]
 
-    def _lod_query(self, ds: TDatasource, f: TField, model: _Model | None, clean: str) -> None:
-        m = re.fullmatch(r"\s*\{\s*FIXED\s+(.*?)\s*:\s*(.+?)\s*\}\s*", clean, re.S | re.I)
-        if not m or model is None:
-            return
-        try:
-            dims = [self._row_ref(ds, _unesc(d)) for d in BRACKETED.findall(m.group(1))]
-            cl = ax.classify(parse_formula(m.group(2)), LANG, lambda r: self._row_ref(ds, r), lambda r: None)
-        except ax.FormulaError:
-            return
-        if cl.kind != "agg" or cl.agg is None or not dims:
-            return
-        from_sql, cte = model.from_sql
-        alias = _name(f.label)
-        lines = [f"with custom_sql as (\n{cte}\n)"] if cte else []
-        lines += [f"select {', '.join(dims)}, {AGG_SQL[cl.agg.agg].format(cl.agg.expr)} as {alias}", f"from {from_sql}",
-                  f"group by {', '.join(str(i) for i in range(1, len(dims) + 1))}"]
-        self.b.queries.append(VerifiedQuery(
-            f"{f.label} (FIXED LOD)", "\n".join(lines), f"Tableau {clean}", datasource=self.b.datasource,
-            source_ref=f"{ds.src} datasource: {ds.caption} field: {f.label}",
-            todo=(f"Tableau FIXED LOD at grain ({', '.join(dims)}): save as a SQL model (queries/models/{alias}.sql; dbt: models/unshackle/{alias}.sql) "
-                  f"and add a semantic model on it with a primary entity on those columns; see skills/translate-metrics"),
-        ))
-
     def _row_filter(self, ds: TDatasource, f: TField, model: _Model | None, clean: str) -> None:
         table = model.sm.table if model else ""
         applied = any(_unbracket(fl.get("column")) == f.local for fl in ds.filters)
         predicate, problems = "", []
         groups: list[str] = []
+        users = True
         try:
             node = parse_formula(clean)
             groups = [a.args[0].value for a in _find_calls(node, {"ismemberof"}) if a.args and isinstance(a.args[0], ax.Str)]
-            if groups:
-                problems.append(
-                    f"ISMEMBEROF({', '.join(repr(g) for g in groups)}): members of those groups bypass this filter in Tableau; "
-                    "an unshackle row filter applies to its `groups`, so apply it to everyone else (or split the rule)"
-                )
-            else:
-                predicate = ax.to_sql(_replace_user_fns(node), lambda r: "{{ " + r[1:] + " }}" if r.startswith("\x00") else self._row_ref(ds, r))
-                predicate = ax.strip_outer(predicate)
+            users = bool(_find_calls(node, {"username", "fullname", "userdomain"}))
+            tables = {id(m) for r in ax.refs(node) if (g := ds.fields.get(r)) is not None and (m := self._field_model(ds, g)) is not None}
+            if len(tables) > 1:
+                raise ax.FormulaError("it reads columns of several joined tables; write one rule per table")
+            predicate = ax.strip_outer(ax.to_sql(_replace_user_fns(node), lambda r: _user_sql(r) if r.startswith("\x00") else self._row_ref(ds, r)))
         except ax.FormulaError as exc:
             problems.append(f"not translated ({exc})")
-        problems.append(
-            "Tableau USERNAME() is the Tableau user name (the email on Tableau Cloud, often a login on Server); "
-            "confirm {{ user.email }} is the right attribute; see skills/translate-permissions"
-        )
+        if groups:
+            problems.append(
+                f"ISMEMBEROF({', '.join(repr(g) for g in groups)}) became `'<group>' in ({{{{ user.groups }}}})`: confirm your platform expands "
+                "{{ user.groups }} to a SQL list of the user's group names, and that they match the Tableau group names; see skills/translate-permissions"
+            )
+        if users:
+            problems.append(
+                "Tableau USERNAME() is the Tableau user name (the email on Tableau Cloud, often a login on Server); "
+                "confirm {{ user.email }} is the right attribute; see skills/translate-permissions"
+            )
         if not applied:
             problems.append("this calc was not a datasource filter; check which worksheets filter on it before enforcing")
         if model is not None and model.rel.kind == "text":
             problems.append(f"table is Tableau custom SQL ({model.sm.name}); point the rule at the table(s) behind it")
-        self.b.row_filters.append(RowFilter(
-            _name(f.label), table, predicate, ["*"], source_expression=clean,
-            source_ref=f"{ds.src} datasource: {ds.caption} field: {f.label}" + (" (datasource filter)" if applied else ""),
-            todo="; ".join(problems),
-        ))
+        src = f"{ds.src} datasource: {ds.caption} field: {f.label}" + (" (datasource filter)" if applied else "")
+        rf = RowFilter(_name(f.label), table, predicate, ["*"], source_expression=clean, source_ref=src, todo="; ".join(problems))
+        self.b.row_filters.append(rf)
+        if applied and predicate and model is not None and ds.join_steps:
+            self._join_filters(ds, f, model, rf, problems)
+
+    def _join_filters(self, ds: TDatasource, f: TField, model: _Model, rf: RowFilter, notes: list[str]) -> None:
+        """A datasource filter applies to the joined rows: over inner joins, a row of another table is visible only when the row it
+        joins to is. One rule per joined table, as a subquery on the join keys."""
+        by_rel = self.ds_models.get(ds.uid) or {}
+        start = next((name for name, m in by_rel.items() if m is model), None)
+        if start is None:
+            return
+        preds = {start: rf.predicate}
+        edges = [(kind.lower(), *pairs[0]) for kind, _, pairs in ds.join_steps if len(pairs) == 1]
+        queue, missed = [start], [name for _, name, pairs in ds.join_steps if len(pairs) != 1]
+        while queue:
+            here = queue.pop(0)
+            for kind, a, b in edges:
+                for (hr, hc), (tr, tc) in ((a, b), (b, a)):
+                    if hr != here or tr in preds or tr not in by_rel:
+                        continue
+                    if kind != "inner" or by_rel[tr].rel.kind != "table" or by_rel[here].rel.kind != "table":
+                        missed.append(tr)
+                        continue
+                    preds[tr] = f"{_ident(tc)} in (select {_ident(hc)} from {by_rel[here].sm.table} where {preds[here]})"
+                    queue.append(tr)
+        for rel, pred in preds.items():
+            if rel == start:
+                continue
+            target = by_rel[rel].sm
+            self.b.row_filters.append(RowFilter(
+                f"{rf.name}_{target.name}", target.table, pred, ["*"], source_expression=rf.source_expression,
+                source_ref=f"{rf.source_ref}, through the join to {model.sm.name}",
+                todo="; ".join([f"Tableau applies this datasource filter to the joined rows, so rows of {target.name} are visible only "
+                                f"through visible rows of {model.sm.name} (inner joins); this rule follows the join keys"] + notes),
+            ))
+        missed = sorted(set(missed) - set(preds))
+        if missed:
+            rf.todo += (f"; Tableau also filters {', '.join(missed)} through the datasource's joins (left or non-key joins here): "
+                        "add rules for those tables")
 
     # ------------------------------------------------------------ worksheets -> tiles
 
@@ -1577,17 +2030,36 @@ class _Parser:
             raise _NoSQL(f"unknown field {r.instance} in datasource {r.dsname}")
         label = f.label
         calc = self._calc(ds, f) if f.is_calc else None
+        d = r.deriv
+        if calc is not None and self._sheet is not None:
+            special = self._special(ds, f, calc, d)
+            if special is not None:
+                self._sheet.specials[r.instance] = special
+                display = DERIV_LABEL[d].format(label) if d in DERIV_AGG else label
+                return _name(display), "", True, display, "quantitative", ""
         if calc is not None and calc.kind in ("todo", "security"):
             raise _NoSQL(f"[{label}] is not translated yet: {calc.todo}")
-        base = calc.sql if calc is not None and calc.kind == "row" else (_ident(f.remote) if f.remote else "")
-        if calc is None and base and ds is self._joined and f.relation:
-            base = f"{_ident(f.relation)}.{base}"
+        try:
+            if calc is not None and calc.kind == "lod":
+                if d in DERIV_AGG or d == "usr":
+                    raise _NoSQL(f"[{label}] (a FIXED LOD) aggregated outside a sheet")
+                base = self._row_ref(ds, f.local)  # the FIXED value joined to each row
+            elif calc is not None and calc.kind == "row":
+                if calc.lod not in ("", "mixed") and (d in DERIV_AGG or d == "usr"):
+                    raise _NoSQL(f"[{label}] aggregates a calculation of FIXED LOD values: check whether Tableau weighs it per row or per "
+                                 "LOD group, then write it in the tile SQL (skills/source-tableau)")
+                base = self._row_sql(ds, f) if self._sheet is not None and (calc.lod or self._is_joined(ds)) else calc.sql
+            else:
+                base = _ident(f.remote) if f.remote else ""
+                if base and self._is_joined(ds) and f.relation:
+                    base = f"{_ident(f.relation)}.{base}"
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"[{label}] not translated for this sheet ({exc})") from None
         if calc is None and not base:
             raise _NoSQL(f"[{label}] has no physical column")
-        d = r.deriv
         if d == "usr" or (calc is not None and calc.kind == "agg"):
             if calc is not None and calc.kind == "agg":
-                sql = calc.sql
+                sql = self._agg_sql(ds, f, calc)
             else:
                 sql = AGG_SQL[DEFAULT_AGG.get(f.default_agg, "sum")].format(base)
             etype = "nominal" if f.datatype in ("string", "boolean") else "quantitative"
@@ -1616,6 +2088,96 @@ class _Parser:
                 etype = "nominal"
             return _name(label), base, False, label, etype, ""
         raise _NoSQL(f"derivation {d!r} on [{label}] not supported")
+
+    def _special(self, ds: TDatasource, f: TField, calc: _Calc, d: str) -> _Special | None:
+        """How a sheet computes an aggregated LOD (None: an ordinary column)."""
+        key = (ds.uid, f.local)
+        if calc.kind == "lod":
+            if d in DERIV_AGG and key in self.lod_fields:
+                lod, col = self.lod_fields[key]
+                return _Special("fixed", DERIV_AGG[d], lod, col)
+            return None
+        if calc.kind == "agg" and calc.lod:
+            try:
+                node: ax.Node | None = parse_formula(self.prepped.get(key) or scan_formula(f.formula or "")[0])
+                hit = self._lod_arg(ds, node)  # type: ignore[arg-type]
+            except ax.FormulaError:
+                hit, node = None, None
+            if hit is not None and isinstance(node, ax.Call):
+                return _Special("fixed", TABLEAU_AGGS[node.name][0], hit[0], hit[1])
+            if calc.lod == "mixed":
+                return None  # an aggregate over the rows joined to the FIXED grain: _agg_sql
+            raise _NoSQL(f"[{f.label}] is not translated yet: {calc.todo}")
+        view = self.view_lods.get(key)
+        if calc.kind != "todo" or view is None:
+            return None
+        kind, dims, inner, outer = view
+        if outer is None:
+            if d not in DERIV_AGG:
+                raise _NoSQL(f"[{f.label}] ({kind} LOD) on a shelf without an aggregation")
+            outer = DERIV_AGG[d]
+        try:
+            cl = ax.classify(parse_formula(inner), LANG, lambda r: self._row_ref(ds, r), lambda r: None)
+            if cl.kind != "agg" or cl.agg is None or cl.agg.condition is not None:
+                raise ax.FormulaError("the expression after ':' is not one aggregate")
+            inner_sql = AGG_SQL[cl.agg.agg].format(cl.agg.expr)
+            if kind == "INCLUDE":
+                return _Special("include", outer, inner=inner_sql, dims=[self._row_ref(ds, x) for x in dims])
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"[{f.label}] ({kind} LOD) not translated for this sheet ({exc})") from None
+        if outer not in ("sum", "average", "min", "max", "median"):
+            raise _NoSQL(f"[{f.label}]: {outer} of an EXCLUDE LOD; write it in the tile SQL")
+        locals_ = []
+        for x in dims:
+            g = ds.fields.get(x) or next((h for h in ds.fields.values() if h.caption == x), None)
+            if g is None:
+                raise _NoSQL(f"[{f.label}] excludes unknown field [{x}]")
+            locals_.append(g.local)
+        return _Special("exclude", outer, inner=inner_sql, dims=locals_)
+
+    def _agg_sql(self, ds: TDatasource, f: TField, calc: _Calc) -> str:
+        """An aggregate calc's SQL in this sheet: re-derived when the sheet's columns are qualified or FIXED values are joined."""
+        if self._sheet is None or not (calc.lod or self._is_joined(ds)):
+            if calc.lod:
+                raise _NoSQL(f"[{f.label}] is not translated yet: {calc.todo}")
+            return calc.sql
+        text = self.prepped.get((ds.uid, f.local)) or scan_formula(f.formula or "")[0]
+        deps: dict[str, TField] = {}
+
+        def metric_ref(r: str) -> str | None:
+            g = ds.fields.get(r)
+            c = self.cache.get((ds.uid, g.local)) if g is not None and g.is_calc else None
+            if g is None or c is None or c.kind != "agg":
+                return None
+            token = f"unshackle_metric_{len(deps)}"
+            deps[token] = g
+            return token
+
+        def dep_sql(token: str) -> str:
+            g = deps[token]
+            return _paren(self._agg_sql(ds, g, self.cache[(ds.uid, g.local)]))
+
+        def side(x: Any) -> str:
+            if isinstance(x, ax.MetricRef):
+                return dep_sql(x.name)
+            if x.condition is not None:
+                raise ax.FormulaError("conditional aggregate")
+            return AGG_SQL[x.agg].format(x.expr)
+
+        try:
+            node = parse_formula(text)
+            for call in _find_calls(node, set(TABLEAU_AGGS)):
+                homes = {self._home(ds, r) for r in ax.refs(call)}
+                if homes - {"", "mixed"} and not homes & {"", "mixed"}:
+                    raise ax.FormulaError("an aggregate of FIXED LOD values inside a larger expression; write it in the tile SQL")
+            cl = ax.classify(node, LANG, lambda r: self._row_ref(ds, r), metric_ref)
+            if cl.kind == "agg" and cl.agg is not None:
+                return side(cl.agg)
+            if cl.kind == "ratio":
+                return f"1.0 * {side(cl.numerator)} / nullif({side(cl.denominator)}, 0)"
+            return re.sub(r"\bunshackle_metric_\d+\b", lambda m: dep_sql(m.group(0)), cl.expr)
+        except (ax.FormulaError, KeyError) as exc:
+            raise _NoSQL(f"[{f.label}] not translated for this sheet ({exc})") from None
 
     def _tile(self, wb: _Workbook, ws: ET.Element) -> tuple[Tile, dict[str, Any]]:
         name = ws.get("name") or "sheet"
@@ -1755,22 +2317,51 @@ class _Parser:
             if r.instance not in seen:
                 ordered.append((r, False))
                 seen.add(r.instance)
-        join_from = self._tile_join(wb, ordered, data_ds)
-        self._joined = wb.datasources[data_ds[0]] if join_from else None  # set for this tile's _column/_filter calls
-        problems: list[str] = []
-        columns: list[tuple[_Ref, str, str, bool, str, str, str]] = []
-        dropped: set[str] = set()
-        for r, critical in ordered:
-            try:
-                alias, sql, is_agg, display, etype, unit = self._column(r)
-            except _NoSQL as exc:
-                if critical:
-                    problems.append(str(exc))
+        tile_ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
+        join_from, join_todo = self._tile_join(tile_ds, ordered)
+        if join_todo:
+            todos.append(join_todo)
+        qualify_one = False  # one table, its columns qualified (FIXED grains are joined to it)
+
+        def build() -> tuple[list[str], list, set[str], list[str], list[str], list[str], list[str], str]:
+            self._sheet = _SheetCtx(tile_ds)
+            self._joined = tile_ds if (join_from or qualify_one) else None
+            problems, columns, dropped, notes = [], [], set(), []
+            for r, critical in ordered:
+                try:
+                    alias, sql, is_agg, display, etype, unit = self._column(r)
+                except _NoSQL as exc:
+                    if critical:
+                        problems.append(str(exc))
+                    else:
+                        notes.append(f"tooltip field left out: {exc}")
+                        dropped.add(r.instance)
+                    continue
+                columns.append((r, alias, sql, is_agg, display, etype, unit))
+            where, having, order, limit = [], [], [], ""
+            for flt in view.findall("filter"):
+                res = self._filter(wb, flt, deps, meta)
+                if res is None:
+                    continue
+                k, v = res
+                if k == "where":
+                    where.append(v)
+                elif k == "having":
+                    having.append(v)
+                elif k == "top":
+                    order, limit = [v[0]], v[1]
                 else:
-                    todos.append(f"tooltip field left out: {exc}")
-                    dropped.add(r.instance)
-                continue
-            columns.append((r, alias, sql, is_agg, display, etype, unit))
+                    notes.append(v)
+            return problems, columns, dropped, notes, where, having, order, limit
+
+        problems, columns, dropped, notes, where, having, order, limit = build()
+        uses_lod = bool(self._sheet.row_lods) or any(sp.kind == "fixed" for sp in self._sheet.specials.values())  # type: ignore[union-attr]
+        if uses_lod and not join_from and tile_ds is not None:
+            qualify_one = True
+            problems, columns, dropped, notes, where, having, order, limit = build()
+        todos += notes
+        if (uses_lod or self._sheet.specials) and any(flt.get("context") == "true" for flt in view.findall("filter")):  # type: ignore[union-attr]
+            problems.append("context filters: Tableau applies them before FIXED LODs; add them inside the LOD subqueries of the tile SQL")
         aliases: dict[str, str] = {}
         taken: set[str] = set()
         for i, (r, alias, *rest) in enumerate(columns):
@@ -1789,46 +2380,20 @@ class _Parser:
             problems.append(f"blends {len(data_ds)} datasources ({', '.join(data_ds)}): join them in the tile SQL ({SKILL})")
         elif len(models) > 1 and not join_from:
             problems.append("fields come from several joined tables: write the join in the tile SQL")
-        where, having, order, limit = [], [], [], ""
-        for flt in view.findall("filter"):
-            res = self._filter(wb, flt, deps, meta)
-            if res is None:
-                continue
-            k, v = res
-            if k == "where":
-                where.append(v)
-            elif k == "having":
-                having.append(v)
-            elif k == "top":
-                order, limit = [v[0]], v[1]
-            else:
-                todos.append(v)
         sql = ""
         if problems:
             todos += problems
         elif columns and models:
             model = next(iter(models.values()))
             from_sql, cte = (join_from, "") if join_from else model.from_sql
+            if qualify_one:
+                from_sql = f"{from_sql} as {_ident(model.rel.name)}"
             dims = [c for c in columns if not c[3]]
-            meas = [c for c in columns if c[3]]
-            columns = dims + meas
-            lines = [f"with custom_sql as (\n{cte}\n)"] if cte else []
-            lines.append("select")
-            lines.append(",\n".join(f"  {c[2]}" if c[2] == c[1] else f"  {c[2]} as {c[1]}" for c in columns))
-            lines.append(f"from {from_sql}")
-            if where:
-                lines.append("where " + "\n  and ".join(where))
-            if dims:
-                lines.append("group by " + ", ".join(str(i) for i in range(1, len(dims) + 1)))
-            if having:
-                lines.append("having " + "\n  and ".join(having))
-            if order:
-                lines.append("order by " + ", ".join(order))
-            elif dims:
-                lines.append("order by " + ", ".join(str(i) for i in range(1, len(dims) + 1)))
-            if limit:
-                lines.append(f"limit {limit}")
-            sql = "\n".join(lines)
+            columns = dims + [c for c in columns if c[3]]
+            try:
+                sql = self._tile_sql(columns, from_sql, cte, where, having, order, limit)
+            except _NoSQL as exc:
+                todos.append(str(exc))
             if cte and ("<[Parameters]" in cte or PARAM_REF.search(cte)):
                 todos.append("custom SQL uses Tableau parameters (<[Parameters].[x]>): replace them with :binds from the parameters cell")
         elif not columns and not problems:
@@ -1878,27 +2443,156 @@ class _Parser:
                     header = []
                 config["csv_columns"] = header
         self._joined = None
+        self._sheet = None
         tile = Tile(tid, name, kind, mark, sql, encodings, source_type=mark_cls, source_config=config,  # type: ignore[arg-type]
                     todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose)  # type: ignore[arg-type]
         meta["aliases"] = aliases
         return tile, meta
 
-    def _tile_join(self, wb: _Workbook, ordered: list[tuple[_Ref, bool]], data_ds: list[str]) -> str:
-        """The FROM clause when the sheet's fields span several tables of one datasource's join tree, else ""."""
-        ds = wb.datasources.get(data_ds[0]) if len(data_ds) == 1 else None
-        if ds is None or not ds.join_steps or not all(on for _, _, on in ds.join_steps):
+    def _ds_join(self, ds: TDatasource | None) -> str:
+        """FROM clause with a datasource's whole join tree (relations aliased by their Tableau names); "" if it can't be written."""
+        if ds is None or not ds.join_steps or not all(pairs for _, _, pairs in ds.join_steps):
             return ""
         by_rel = self.ds_models.get(ds.uid) or {}
-        used = {id(m) for r, _ in ordered if r.ds is ds and r.field and (m := self._field_model(ds, r.field)) is not None}
-        if len(used) < 2 or any(m.rel.kind != "table" for m in by_rel.values()):
+        if any(m.rel.kind != "table" for m in by_rel.values()):
             return ""
         first = next(iter(ds.relations))
         if first not in by_rel or any(name not in by_rel for _, name, _ in ds.join_steps):
             return ""
         sql = f"{by_rel[first].sm.table} as {_ident(first)}"
-        for kind, name, on in ds.join_steps:
-            sql += f"\n{kind.lower()} join {by_rel[name].sm.table} as {_ident(name)} on {on}"
+        for kind, name, pairs in ds.join_steps:
+            sql += f"\n{kind.lower()} join {by_rel[name].sm.table} as {_ident(name)} on {_join_on(pairs)}"
         return sql
+
+    def _tile_join(self, ds: TDatasource | None, ordered: list[tuple[_Ref, bool]]) -> tuple[str, str]:
+        """(FROM with the datasource's joins, TODO). Tableau computes a sheet over the joined rows: inner joins drop unmatched
+        rows and joins can repeat rows, even for fields of one table. The join is left out only when it can't change the numbers:
+        the sheet uses the first table only and every join is a left join on the other table's key."""
+        if ds is None or not ds.join_steps:
+            return "", ""
+        join = self._ds_join(ds)
+        if not join:
+            return "", (f"the datasource joins tables ({'; '.join(ds.joins)}) in a way unshackle can't write as SQL: Tableau computes this "
+                        f"sheet over the joined rows, which can drop or repeat rows; add the join to the tile SQL ({SKILL})")
+        by_rel = self.ds_models.get(ds.uid) or {}
+        used = {id(m) for r, _ in ordered if r.ds is ds and r.field and (m := self._field_model(ds, r.field)) is not None}
+        first = by_rel[next(iter(ds.relations))]
+        if used <= {id(first)} and not any(self._needs_rows(ds, r) for r, _ in ordered):
+            safe = True
+            for kind, name, pairs in ds.join_steps:
+                right = by_rel[name]
+                cols = [c for (ra, ca), (rb, cb) in pairs for rel, c in ((ra, ca), (rb, cb)) if rel == name]
+                if kind.lower() != "left" or len(pairs) != 1 or not right.pk or [c.lower() for c in cols] != [right.pk.lower()]:
+                    safe = False
+            if safe:
+                return "", ""
+        return join, ""
+
+    def _needs_rows(self, ds: TDatasource, r: _Ref) -> bool:
+        """A FIXED LOD is computed over the joined rows, so a sheet that shows one keeps the join."""
+        return r.field is not None and r.field.is_calc and bool((c := self.cache.get((ds.uid, r.field.local))) and c.lod)
+
+    def _tile_sql(self, columns: list, from_sql: str, cte: str, where: list[str], having: list[str], order: list[str], limit: str) -> str:
+        """SELECT for a sheet. Aggregated LODs are computed in their own CTEs at the sheet's grain and joined on its dimensions."""
+        ctx = self._sheet
+        assert ctx is not None
+        dims = [c for c in columns if not c[3]]
+        specials = [(c, ctx.specials[c[0].instance]) for c in columns if c[3] and c[0].instance in ctx.specials]
+        plain = [c for c in columns if c[3] and c[0].instance not in ctx.specials]
+        lods = list(dict.fromkeys(ctx.row_lods + [sp.lod for _, sp in specials if sp.lod is not None]))
+        ctes = ([("custom_sql", cte)] if cte else []) + [(lod.name, lod.select()) for lod in lods]
+        rows = from_sql + "".join(f"\nleft join {lod.name} on {self._lod_on(lod)}" for lod in ctx.row_lods)
+        where_sql = ("\nwhere " + "\n  and ".join(where)) if where else ""
+
+        def group(n: int) -> str:
+            return ("\ngroup by " + ", ".join(str(i) for i in range(1, n + 1))) if n else ""
+
+        def item(c: tuple) -> str:
+            return f"  {c[2]}" if c[2] == c[1] else f"  {c[2]} as {c[1]}"
+
+        if not specials:
+            lines = ["select", ",\n".join(item(c) for c in columns), f"from {rows}{where_sql}{group(len(dims))}"]
+            if having:
+                lines.append("having " + "\n  and ".join(having))
+            if order:
+                lines.append("order by " + ", ".join(order))
+            elif dims:
+                lines.append("order by " + ", ".join(str(i) for i in range(1, len(dims) + 1)))
+            if limit:
+                lines.append(f"limit {limit}")
+            body = "\n".join(lines)
+        else:
+            dim_items = [item(c).strip() for c in dims]
+            joins: list[tuple[str, list[tuple]]] = []
+            if dims or plain:
+                base = ["select " + ", ".join(dim_items + [item(c).strip() for c in plain]), f"from {rows}{where_sql}{group(len(dims))}"]
+                if having:
+                    base.append("having " + "\n  and ".join(having))
+                if order:
+                    base.append("order by " + ", ".join(order))
+                if limit:
+                    base.append(f"limit {limit}")
+                ctes.append(("base", "\n".join(base)))
+            elif having or limit:
+                raise _NoSQL("filters on aggregates with an aggregated LOD: add them to the tile SQL")
+            source: dict[int, str] = {}
+            for i, (c, sp) in enumerate(specials, 1):
+                name = f"lod_measure_{i}"
+                source[id(c)] = name
+                if sp.kind == "fixed" and sp.lod is not None:
+                    keys = self._lod_keys(sp.lod)
+                    domain = (f"select distinct {', '.join(dim_items + [f'{k} as lod_key_{j}' for j, k in enumerate(keys, 1)])}\n"
+                              f"from {rows}{where_sql}")
+                    on = " and ".join(f"d.lod_key_{j} is not distinct from {sp.lod.name}.{alias}" for j, (_, alias) in enumerate(sp.lod.keys, 1))
+                    value = AGG_SQL[sp.outer].format(f"{sp.lod.name}.{_ident(sp.col)}")
+                    ctes.append((name, f"select {', '.join([f'd.{d[1]}' for d in dims] + [f'{value} as {c[1]}'])}\n"
+                                       f"from (\n{domain}\n) as d\nleft join {sp.lod.name} on {on}{group(len(dims))}"))
+                    joins.append((name, dims))
+                elif sp.kind == "include":
+                    inner = (f"select {', '.join(dim_items + [f'{x} as lod_dim_{j}' for j, x in enumerate(sp.dims, 1)] + [f'{sp.inner} as lod_value'])}\n"
+                             f"from {rows}{where_sql}{group(len(dims) + len(sp.dims))}")
+                    value = AGG_SQL[sp.outer].format("t.lod_value")
+                    ctes.append((name, f"select {', '.join([f't.{d[1]}' for d in dims] + [f'{value} as {c[1]}'])}\n"
+                                       f"from (\n{inner}\n) as t{group(len(dims))}"))
+                    joins.append((name, dims))
+                else:  # exclude: the aggregate without the excluded dimensions, repeated on each of the sheet's marks
+                    keep = []
+                    for d in dims:
+                        if d[0].field is not None and d[0].field.local in sp.dims:
+                            if d[0].deriv not in ("none", ""):
+                                raise _NoSQL(f"EXCLUDE of [{d[0].field.label}] while the sheet shows it at another level ({d[4]}): write it in the tile SQL")
+                            continue
+                        keep.append(d)
+                    ctes.append((name, f"select {', '.join([item(d).strip() for d in keep] + [f'{sp.inner} as {c[1]}'])}\n"
+                                       f"from {rows}{where_sql}{group(len(keep))}"))
+                    joins.append((name, keep))
+            head = "base" if (dims or plain) else joins[0][0]
+            frm = head
+            for name, on_dims in joins:
+                if name == head:
+                    continue
+                if on_dims and head == "base":
+                    frm += f"\nleft join {name} on " + " and ".join(f"base.{d[1]} is not distinct from {name}.{d[1]}" for d in on_dims)
+                else:
+                    frm += f"\ncross join {name}"
+            picks = [f"  {source.get(id(c), head)}.{c[1]}" for c in columns]
+            body = "\n".join(["select", ",\n".join(picks), f"from {frm}"] + (["order by " + ", ".join(str(i) for i in range(1, len(dims) + 1))] if dims else []))
+        if not ctes:
+            return body
+        return "with " + ",\n".join(f"{n} as (\n{b}\n)" for n, b in ctes) + "\n" + body
+
+    def _lod_keys(self, lod: _Lod) -> list[str]:
+        """The FIXED dimensions as SQL over the sheet's rows."""
+        ctx = self._sheet
+        if ctx is None or ctx.ds is None:
+            raise _NoSQL("FIXED LOD outside a sheet")
+        try:
+            return [self._row_ref(ctx.ds, d) for d in lod.dims]
+        except ax.FormulaError as exc:
+            raise _NoSQL(f"FIXED dimensions not translated for this sheet ({exc})") from None
+
+    def _lod_on(self, lod: _Lod) -> str:
+        return " and ".join(f"{k} is not distinct from {lod.name}.{alias}" for k, (_, alias) in zip(self._lod_keys(lod), lod.keys))
 
     def _filter(self, wb: _Workbook, flt: ET.Element, deps: dict, meta: dict[str, Any]) -> tuple[str, Any] | None:
         refs = self._shelf(wb, flt.get("column"), deps)
@@ -1921,6 +2615,8 @@ class _Parser:
             if bound is None:
                 return ("todo", f"filter on [{label}] not applied: {exc}")
             expr, is_agg = bound, False
+        if self._sheet is not None and r.instance in self._sheet.specials:
+            return ("todo", f"filter on [{label}] (an aggregated LOD) not applied; add it to the SQL")
         if r.field is not None:
             meta["filters"][(r.dsname, r.field.local)] = label
         cls = flt.get("class", "")
@@ -2066,6 +2762,8 @@ class _Parser:
                     built[name] = self._tile(wb, worksheets[name])
                 except Exception as exc:  # noqa: BLE001
                     built[name] = (Tile(slugify(name), name, "unknown", todo=f"worksheet not parsed: {exc}"), {"params": [], "filters": {}})
+                finally:
+                    self._sheet, self._joined = None, None
             t, m = built[name]
             return copy.deepcopy(t), m
 

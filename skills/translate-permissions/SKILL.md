@@ -126,7 +126,7 @@ the source. Predicates are SQL in the warehouse dialect on the table's own colum
 | Tableau | project / workbook / view permissions (View, Interact, Edit) | Cedar `view` / `edit` on `Notebook`; project defaults apply to each workbook in it |
 | Tableau | datasource permissions (Connect) | `query` on `Datasource` / `Table` |
 | Tableau | user filter calc `[Region] = USERNAME()` | row filter `region = {{ user.email }}` (check whether USERNAME is the email or a login; say which attribute) |
-| Tableau | `ISMEMBEROF('Finance')` | `groups: [finance]`, or `or` branches per group |
+| Tableau | `ISMEMBEROF('Finance')` | `'Finance' in ({{ user.groups }})` in the predicate, or `groups: [finance]` / one rule per group |
 | Tableau | entitlement table joined to `USERNAME()` | subquery predicate on the entitlement table |
 | Looker | `access_filter: {field, user_attribute}` | row filter on the explore's base table: `<col> = {{ user.<attr> }}` |
 | Looker | `access_grant` + `required_access_grants` on field/view/explore | `forbid query ... unless { principal in Group::... }` on Column/Table; map `allowed_values` to groups |

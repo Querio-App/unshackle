@@ -155,7 +155,9 @@ from analytics.fct_orders group by 1
 
 then a semantic model on it with entity `customer` (primary) and a time dimension
 `first_order_date`. In dbt repos write it as `models/unshackle/customer_first_order.sql`
-and reference it with `model: ref('customer_first_order')`.
+and reference it with `model: ref('customer_first_order')`. unshackle does this itself for
+FIXED LODs on one dimension (`<dimension>_lod` models, see skills/source-tableau); the
+manual route is for the ones left TODO.
 
 **Tableau** `RUNNING_SUM(SUM([Sales]))` or `WINDOW_AVG` -> table calc; do it in the
 notebook tile SQL with `sum(sales) over (order by month)`.
