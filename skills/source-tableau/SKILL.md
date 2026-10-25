@@ -433,9 +433,12 @@ Filter actions saved with marks selected stay TODO.
 - **Not read from the source** in `migration/report.md` counts, by kind, the XML elements and attributes unshackle
   doesn't read (`sources/_tableau_xml.py` lists what it reads), with the first place each was seen. Kinds marked
   "not read" may change the numbers or the chart: check them on the sheet named (for example
-  `<aggregation value='false'> in <view>`, Analysis > Aggregate Measures off, or `<trendline> attribute exclude-color`).
+  `<trendline> attribute exclude-color` or `<join-lod-include-overrides> in <table>`).
   Elements missing a required attribute (a column without a name) are skipped and counted there too. Formatting,
   layout, window state, file bookkeeping and database column metadata are counted as left out on purpose.
+- **Aggregate Measures off** (Analysis menu, `<aggregation value='false'>`): Tableau draws one mark per data source
+  row. The tile has no SQL and a TODO: select the shelf fields (measures without their aggregation) with the sheet's
+  filters, without `group by`. `source_config.aggregated_sql` keeps what the SQL would be with the setting on.
 - **Still to translate** starts with the TODOs counted by kind (tile without SQL, table calculation, level of detail,
   parameter, filter...), so the biggest groups are clear before the list.
 - Two calculations with one name in a semantic model (merged data sources, or one caption twice): the first keeps

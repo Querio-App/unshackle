@@ -88,6 +88,7 @@ READ: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "worksheet": {"name"},
     "table": _TEXT,
     "view": _TEXT,
+    "view/aggregation": {"value"},  # Analysis > Aggregate Measures (off: the tile is a TODO)
     "rows": {"total"},
     "panes": _TEXT,
     "pane": {"x-axis-name", "y-axis-name"},
@@ -170,7 +171,6 @@ REQUIRED: dict[str, str] = {
 
 # elements whose default value changes nothing: (attribute, default)
 DEFAULT: dict[str, tuple[str, str]] = {
-    "view/aggregation": ("value", "true"),  # Analysis > Aggregate Measures
     "view/breakdown": ("value", "auto"),  # Analysis > Stack Marks
 }
 

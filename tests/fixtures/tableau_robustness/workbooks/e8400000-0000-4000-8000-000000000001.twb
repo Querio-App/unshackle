@@ -147,6 +147,18 @@
         <cols>[federated.robust1].[none:payment_cycle:nk]</cols>
       </table>
     </worksheet>
+    <worksheet name="Quantity per Order Row">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Orders' name='federated.robust0' /></datasources>
+          <datasource-dependencies datasource='federated.robust0'><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column-instance column='[quantity]' derivation='Sum' name='[sum:quantity:qk]' pivot='key' type='quantitative' /><column-instance column='[status]' derivation='None' name='[none:status:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          <aggregation value='false' />
+        </view>
+        <panes><pane><view><breakdown value='auto' /></view><mark class='Circle' /></pane></panes>
+        <rows>[federated.robust0].[sum:quantity:qk]</rows>
+        <cols>[federated.robust0].[none:status:nk]</cols>
+      </table>
+    </worksheet>
     <worksheet>
       <table><view /><rows /><cols /></table>
     </worksheet>

@@ -590,6 +590,17 @@ def readable(formula: str, fields: dict[str, "TField"], params: dict[str, "TFiel
     return re.sub(r"(?<!\]\.)\[((?:[^\]]|\]\])+)\](?!\.)", sub, out)
 
 
+def _disaggregated(tile: Tile) -> None:
+    """Analysis > Aggregate Measures off: Tableau draws one mark per row, so the aggregated tile SQL would be wrong."""
+    note = ("Aggregate Measures is off on this sheet (Analysis menu): Tableau shows one mark per data source row, not aggregates. "
+            "Write the tile SQL as the rows themselves: select the shelf fields (measures without their aggregation) from the "
+            "data source with the sheet's filters, without group by")
+    if tile.sql:
+        tile.todo = f"{tile.todo}; {note}" if tile.todo else note
+        tile.source_config = {**(tile.source_config or {}), "aggregated_sql": tile.sql}  # what it would be with Aggregate Measures on
+        tile.sql = ""
+
+
 def _dict(x: Any) -> dict[str, Any]:
     return x if isinstance(x, dict) else {}
 
@@ -6322,6 +6333,8 @@ class _Parser:
                 self._ws = name
                 try:
                     built[key] = self._tile(wb, ws)
+                    if ws.find("table/view/aggregation[@value='false']") is not None:
+                        _disaggregated(built[key][0])
                 except Exception as exc:  # noqa: BLE001 - one worksheet must not stop its dashboard
                     self.b.warn(f"{wb.src} worksheet {name}", f"not migrated: unshackle failed on it ({type(exc).__name__}: {str(exc)[:300]})")
                     built[key] = (Tile(slugify(name), name, "unknown", todo=f"worksheet not parsed: {exc}"), {"params": [], "filters": {}})

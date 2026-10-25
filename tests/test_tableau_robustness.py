@@ -106,6 +106,19 @@ def test_odd_parts_are_todos_not_numbers(built):
         assert any(w.item.endswith("field Long Sum") for w in b.warnings)
 
 
+def test_aggregate_measures_off_is_a_todo(built, con):
+    """Analysis > Aggregate Measures off: Tableau draws one mark per row, so the sheet's numbers are the rows, not sums."""
+    b, _ = built
+    t = _tiles(b)["Quantity per Order Row"]
+    assert not t.sql
+    assert "Aggregate Measures is off" in t.todo and "without group by" in t.todo
+    orders = con.execute(f"select * from '{DATA / 'orders.parquet'}'").df()
+    aggregated = con.execute(t.source_config["aggregated_sql"]).df()
+    # one mark per row in Tableau; the aggregated SQL would give one per status
+    assert len(aggregated) == orders["status"].nunique(dropna=False) < len(orders)
+    assert _tiles(b)["Revenue by Status"].sql  # aggregated sheets keep their SQL
+
+
 def test_skipped_xml_is_counted_where_it_is(built):
     b, tmp = built
     skipped = {(s.kind, s.why): s for s in b.skipped}
