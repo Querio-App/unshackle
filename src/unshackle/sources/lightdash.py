@@ -38,6 +38,7 @@ from unshackle.ir import (
     RowFilter,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -641,7 +642,7 @@ class LightdashSource(Source):
                 todos.append(f"table calculation {c.get('name')} is formula/template based; confirm it is in the compiled SQL")
         if not sql:
             todos.append("no compiled SQL saved; re-run extract with API access or write SQL from the semantic layer")
-        tile.todo = "; ".join(todos)
+        tile.todo = join_todos(todos)
         return tile
 
     def _content(self, store: RawStore, bundle: Bundle) -> None:

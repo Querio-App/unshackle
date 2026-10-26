@@ -57,6 +57,7 @@ from unshackle.ir import (
     RowFilter,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -589,7 +590,7 @@ class SupersetSource(Source):
             todos.append(f"Superset {viz} chart has no Altair mapping; pick a mark or rebuild")
         if not sql and (qc or self.manual):
             todos.append(NO_SQL_MANUAL if self.manual else "no SQL for this chart; re-run extract or write it")
-        tile.todo = "; ".join(dict.fromkeys(todos))
+        tile.todo = join_todos(dict.fromkeys(todos))
         return tile
 
     # ------------------------------------------------------------ dashboards
@@ -797,7 +798,7 @@ class SupersetSource(Source):
                     ".".join(x for x in (t.get("schema"), t.get("table_name")) if x),
                     predicate="" if todos else clause, groups=[] if rule.get("filter_type") == "Base" else groups,
                     source_expression=json.dumps({k: rule.get(k) for k in ("filter_type", "clause", "group_key")}),
-                    source_ref=f"superset:rls/{rule.get('id')}", todo="; ".join(todos)))
+                    source_ref=f"superset:rls/{rule.get('id')}", todo=join_todos(todos)))
 
 
 # ------------------------------------------------------------ helpers

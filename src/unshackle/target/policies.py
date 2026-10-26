@@ -11,7 +11,7 @@ import json
 
 import yaml
 
-from unshackle.ir import Bundle, Permission, Table, slugify, snake
+from unshackle.ir import Bundle, Permission, Table, slugify, snake, todo_reasons
 from unshackle.target.layout import Layout
 from unshackle.target.semantic import dump_yaml
 
@@ -100,8 +100,7 @@ def render_permission(p: Permission) -> str:
     if p.source_ref or p.source_expression:
         src = " ".join(f"{p.source_ref} {p.source_expression}".split())
         lines.append(f"// source: {src}")
-    if p.todo:
-        lines.append(f"// TODO(unshackle): {p.todo}")
+    lines += [f"// TODO(unshackle): {r}" for r in todo_reasons(p.todo)]
     resource = f"resource in {p.resource_type}::{json.dumps(p.resource_id)}" if p.resource_id else "resource"
     body = f"{p.effect} (\n  {_principal(p.principal)},\n  action == Action::{json.dumps(p.action)},\n  {resource}\n)"
     if p.condition:
@@ -133,7 +132,8 @@ def policy_files(bundle: Bundle, layout: Layout) -> dict[str, str]:
                 "source": " ".join(f"{rf.source_ref} {rf.source_expression}".split()) or bundle.tool,
             }
             if rf.todo:
-                item["todo"] = f"TODO(unshackle): {rf.todo}"
+                reasons = [f"TODO(unshackle): {r}" for r in todo_reasons(rf.todo)]
+                item["todo"] = reasons[0] if len(reasons) == 1 else reasons
             rows.append({k: v for k, v in item.items() if v is not None})
         files[layout.rel("policies", f"row_filters.{slugify(bundle.tool)}.yml")] = dump_yaml({"row_filters": rows})
     return files

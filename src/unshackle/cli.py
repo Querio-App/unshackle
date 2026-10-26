@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import click
@@ -192,12 +193,15 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
             _say(f"{len(w.kept_stale)} no longer generated, kept because edited (see report)")
         if result.local_db:
             _say(f"loaded {result.local_db}: the notebooks read it when UNSHACKLE_WAREHOUSE_URL is unset (unshackle run)")
+        if bundle.dashboards:
+            _say(build.coverage_line(bundle))
         _say(f"report: {result.report_path}")
         if ship and not dry_run:
             todos = len(build.scan_todos(repo, build.all_generated(repo)))
             policies = len(bundle.permissions) + len(bundle.row_filters)
             _state()["summary"] = (f"{len(bundle.metrics)} metrics, {len(bundle.dashboards)} dashboards and {policies} policies "
-                                   f"made it out of {tool}. {todos} TODOs left: unshackle todo")
+                                   f"made it out of {tool}. {todos} TODOs left: unshackle todo"
+                                   + (f"\n{build.coverage_line(bundle)}" if bundle.dashboards else ""))
 
 
 @main.command()
@@ -209,11 +213,53 @@ def migrate(tool: str, repo: Path, only: tuple[str, ...], with_data: bool) -> No
     """init + inventory + extract + build in one go."""
     _check_env(tool)
     ctx = click.get_current_context()
-    with _voyage("setting up", "taking inventory", "extracting", "parsing", "writing"):
+    left = 0
+    with _voyage("setting up", "taking inventory", "extracting", "parsing", "writing") as ship:
         ctx.invoke(init, repo=repo, name=None, update_skills=False)
         ctx.invoke(inventory, tool=tool, repo=repo)
         ctx.invoke(extract, tool=tool, repo=repo, only=only, with_data=with_data)
+        if not with_data:
+            left = _copy_data_if_asked(tool, repo, ship)
         ctx.invoke(build_cmd, tool=tool, repo=repo, dry_run=False)
+    if left:
+        again = ["unshackle", "migrate", tool, "--with-data"] + (["--repo", str(repo)] if repo != Path(".") else [])
+        again += [x for i in only for x in ("--only", i)]
+        click.echo(f"{left} data sources keep their data only in {source_class(tool).label}; to copy it to Parquet run: "
+                   + " ".join(shlex.quote(x) for x in again))
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _copy_data_if_asked(tool: str, repo: Path, ship) -> int:
+    """After an extract without --with-data: when data sources keep their data only in the tool, ask (in a terminal)
+    whether to copy it as --with-data does. Returns how many such data sources are left uncopied."""
+    src = get_source(tool)
+    if not hasattr(src, "data_only"):
+        return 0
+    store = RawStore(repo, tool)
+    left = sum(n for _, _, n in src.data_only(store))
+    if not left or not _interactive():
+        return left
+    from unshackle.target.layout import Layout
+
+    question = (f"{left} data sources keep their data only in {src.label}. "
+                f"Copy it to Parquet in `{Layout.load(repo).rel('data', tool)}/` (git-ignored)?")
+    with ship.paused() if ship else nullcontext():
+        if not click.confirm(question, default=False, err=True):
+            return left
+    try:
+        src.copy_data(store)
+    except SourceError as exc:
+        _say(f"data not copied: {exc}", err=True)
+        return left
+    finally:
+        store.save()
+    if store.had_errors():
+        _say(f"some data was not copied: see migration/raw/{tool}/_errors.json", err=True)
+    _say(f"next: {src.data_next_steps(repo)}")
+    return 0
 
 
 def _check_env(tool: str) -> None:

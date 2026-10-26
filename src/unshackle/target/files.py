@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from unshackle.ir import Bundle, KnowledgeItem, Table, VerifiedQuery, slugify
+from unshackle.ir import Bundle, KnowledgeItem, Table, VerifiedQuery, slugify, todo_reasons
 from unshackle.target.layout import Layout
 from unshackle.target.semantic import dump_yaml
 
@@ -119,8 +119,9 @@ def render_query(q: VerifiedQuery, tool: str) -> str:
     lines = [f"{prefix} {k}: {one_line_comment(v)}" for k, v in fields.items() if v]
     body = q.sql.strip()
     if q.todo:
-        todo = one_line_comment(q.todo)
-        body = f"{prefix} TODO(unshackle): {todo}\n{body}" if q.language == "python" else f"/* TODO(unshackle): {todo.replace('*/', '* /')} */\n{body}"
+        todos = [f"{prefix} TODO(unshackle): {r}" if q.language == "python" else f"/* TODO(unshackle): {r.replace('*/', '* /')} */"
+                 for r in todo_reasons(q.todo)]
+        body = "\n".join(todos + [body])
     return "\n".join(lines) + "\n" + body + "\n"
 
 

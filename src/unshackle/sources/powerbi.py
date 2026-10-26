@@ -56,6 +56,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -2607,7 +2608,7 @@ class _Parser:
                     todo.insert(0, f"RLS DAX not translated: {exc}")
                 self.b.row_filters.append(
                     RowFilter(_sn(f"{r.name}_{table}"), phys or _sn(table), predicate, list(groups), source_expression=f"tablePermission {table} = {dax}",
-                              source_ref=src, todo="; ".join(x for x in todo if x))
+                              source_ref=src, todo=join_todos(x for x in todo if x))
                 )
             principals = [f"{'user' if kind == 'user' or (kind == 'auto' and '@' in m) else 'group'}:{m}" for m, kind in r.members] or [f"group:{r.name}"]
             if r.members:
@@ -3042,7 +3043,7 @@ class _Parser:
         return Tile(
             v.name, title, kind, mark, sql, enc, source_type=v.type,
             source_config={"visualType": v.type, "roles": {r: a for r, a in roles_of.items()}, "position": {"x": v.x, "y": v.y, "width": v.w, "height": v.h}, "source": v.source},
-            todo="; ".join(dict.fromkeys(todos)),
+            todo=join_todos(dict.fromkeys(todos)),
         )
 
     def _tile_sql(self, pm: PModel, dims, vals, preds, slicers, todos: list[str]) -> str:

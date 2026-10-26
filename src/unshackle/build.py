@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from unshackle.http import missing_extra
-from unshackle.ir import Bundle
+from unshackle.ir import Bundle, Dashboard, todo_reasons
 from unshackle.target import files as tf
 from unshackle.target import notebooks, ossie, policies, semantic
 from unshackle.target.writer import Target, UnsafePath, WriteResult, load_last_result
@@ -254,6 +254,23 @@ def todo_kind(msg: str) -> str:
     return next((kind for kind, pat in TODO_KINDS if re.search(pat, msg, re.I)), "other")
 
 
+def tile_coverage(d: Dashboard) -> tuple[int, int, list[tuple[str, int]]]:
+    """(tiles, tiles with SQL, [(kind of TODO, tiles it holds back)] most frequent first) for one dashboard; text tiles don't count."""
+    tiles = [t for t in d.tiles if t.kind != "text"]
+    kinds: dict[str, int] = {}
+    for t in tiles:
+        for kind in dict.fromkeys(todo_kind(r) for r in todo_reasons(t.todo) or (["no SQL recovered"] if not t.sql.strip() else [])):
+            kinds[kind] = kinds.get(kind, 0) + 1
+    return len(tiles), sum(1 for t in tiles if t.sql.strip()), sorted(kinds.items(), key=lambda x: (-x[1], x[0]))
+
+
+def coverage_line(bundle: Bundle) -> str:
+    """One line for the end of a build: how many dashboard tiles got SQL."""
+    counts = [tile_coverage(d)[:2] for d in bundle.dashboards]
+    tiles, with_sql = sum(c[0] for c in counts), sum(c[1] for c in counts)
+    return f"{with_sql} of {tiles} tiles in {len(counts)} dashboards have SQL (per dashboard: migration/report.md)"
+
+
 def scan_todos(repo: Path, rels: list[str]) -> list[tuple[str, int, str]]:
     found = []
     for rel in rels:
@@ -329,6 +346,14 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
             lines.append(f"- {len(writes.kept_stale)} files no longer generated, kept because edited. Merge or delete them by hand:")
             lines += [f"  - `{r}`" for r in writes.kept_stale]
         lines.append("")
+    dashboards = [(b.tool, d) for b in stored.values() for d in b.dashboards]
+    if dashboards:
+        lines += [f"## Dashboards ({len(dashboards)})", "", "| Tool | Dashboard | Tiles | With SQL | Top blockers |", "| --- | --- | --- | --- | --- |"]
+        for tool, d in dashboards:
+            tiles, with_sql, kinds = tile_coverage(d)
+            blockers = ", ".join(f"{k} ({n})" for k, n in kinds[:3])
+            lines.append(f"| {tool} | {d.name.replace('|', '/')} | {tiles} | {with_sql} | {blockers} |")
+        lines += ["", "Top blockers: kinds of TODO on the dashboard's tiles, with how many tiles have each.", ""]
     gaps = [(b.tool, d) for b in stored.values() for d in b.dashboards if d.not_migrated]
     if gaps:
         lines += [f"## Not migrated from dashboards ({len(gaps)})", ""]

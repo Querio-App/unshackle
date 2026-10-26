@@ -65,6 +65,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
     warehouse_type,
@@ -341,6 +342,28 @@ class TableauSource(Source):
             return
         store.put_json(f"extracts/{item['id']}.json", {"item": label, "tables": tables, "errors": errs})
         errors += [{"item": f"{label} data", "error": e} for e in errs]
+
+    def data_only(self, store: RawStore) -> list[tuple[str, dict[str, Any], int]]:
+        """Extracted workbooks and published data sources holding data sources whose data lives only in Tableau, read from
+        the raw files (no network): (kind, item, how many such data sources)."""
+        out = []
+        for kind, ext in (("workbook", ".twb"), ("datasource", ".tds")):
+            for item in store.get_json(f"{kind}s.json") if store.exists(f"{kind}s.json") else []:
+                rel = f"{kind}s/{item['id']}{ext}"
+                n = len(_data_sources(store.path(rel).read_bytes(), item.get("name", item["id"]))) if store.exists(rel) else 0
+                out += [(kind, item, n)] if n else []
+        return out
+
+    def copy_data(self, store: RawStore) -> None:
+        """`--with-data` after an extract without it: copy the data of what `data_only` lists (errors go to _errors.json)."""
+        tdata.check_installed()
+        errors: list[dict[str, str]] = store.get_json("_errors.json") if store.exists("_errors.json") else []
+        try:
+            for kind, item, _ in self.data_only(store):
+                self._copy_data(store, kind, item, store.path(f"{kind}s/{item['id']}.{'twb' if kind == 'workbook' else 'tds'}").read_bytes(), errors)
+        finally:
+            store.put_json("_errors.json", errors)
+            self._signout()
 
     def _package_data(self, store: RawStore, package: bytes, ext: str, name: str) -> tuple[list[dict[str, Any]], list[str]]:
         """The data in a .twbx/.tdsx that lives only in Tableau -> Parquet: (tables for extracts/<id>.json, errors). The
@@ -3564,7 +3587,7 @@ class _Parser:
         if model is not None and model.rel.kind == "text":
             problems.append(f"table is Tableau custom SQL ({model.sm.name}); point the rule at the table(s) behind it")
         src = f"{ds.src} datasource: {ds.caption} field: {f.label}" + (" (datasource filter)" if applied else "")
-        rf = RowFilter(_name(f.label), table, predicate, ["*"], source_expression=clean, source_ref=src, todo="; ".join(problems))
+        rf = RowFilter(_name(f.label), table, predicate, ["*"], source_expression=clean, source_ref=src, todo=join_todos(problems))
         self.b.row_filters.append(rf)
         if applied and predicate and model is not None and ds.join_steps:
             self._join_filters(ds, f, model, rf, problems)
@@ -3597,7 +3620,7 @@ class _Parser:
             self.b.row_filters.append(RowFilter(
                 f"{rf.name}_{target.name}", target.table, pred, ["*"], source_expression=rf.source_expression,
                 source_ref=f"{rf.source_ref}, through the join to {model.sm.name}",
-                todo="; ".join([f"Tableau applies this datasource filter to the joined rows, so rows of {target.name} are visible only "
+                todo=join_todos([f"Tableau applies this datasource filter to the joined rows, so rows of {target.name} are visible only "
                                 f"through visible rows of {model.sm.name} (inner joins); this rule follows the join keys"] + notes),
             ))
         missed = sorted(set(missed) - set(preds))
@@ -4370,7 +4393,7 @@ class _Parser:
         self._joined = None
         self._sheet = None
         tile = Tile(tid, name, kind, mark, sql, encodings, source_type=mark_cls, source_config=config,  # type: ignore[arg-type]
-                    todo="; ".join(dict.fromkeys(todos)), layers=layers, compose=compose, references=references, geo=geo_feature)  # type: ignore[arg-type]
+                    todo=join_todos(dict.fromkeys(todos)), layers=layers, compose=compose, references=references, geo=geo_feature)  # type: ignore[arg-type]
         meta["aliases"] = aliases
         return tile, meta
 
@@ -5340,7 +5363,7 @@ class _Parser:
                 except _NoSQL as exc:
                     problems.append(str(exc))
         if problems:
-            raise _NoSQL("; ".join(problems))
+            raise _NoSQL(join_todos(problems))
         return out
 
     def _tc_window(self, r: _Ref, dims: list, rows: list[_Ref], cols: list[_Ref], refer: Any, keys: dict[str, str] | None = None) -> tcalc.Window:
