@@ -223,3 +223,27 @@ def test_rebuild_leaves_other_tools_files(tmp_path: Path):
     build.apply(other, tmp_path)
     result = build.apply(sample_bundle(), tmp_path)
     assert not result.writes.removed and (tmp_path / "semantic/returns.ossie.yaml").exists()
+
+
+def test_rebuild_keeps_files_that_existed_before_unshackle(tmp_path: Path):
+    cat = tmp_path / "catalog/warehouse/analytics/fct_orders.yml"
+    cat.parent.mkdir(parents=True)
+    cat.write_text("name: fct_orders\ndescription: Written by the data team\n")
+    build.apply(sample_bundle(), tmp_path)
+    assert "fct_orders" in cat.read_text()
+    gone = sample_bundle()
+    gone.tables[0].name = "fct_sales"
+    result = build.apply(gone, tmp_path)
+    assert "catalog/warehouse/analytics/fct_orders.yml" not in result.writes.removed
+    assert "Written by the data team" in cat.read_text()
+
+
+def test_rebuild_removes_emptied_folders(tmp_path: Path):
+    build.apply(sample_bundle(), tmp_path)
+    gone = sample_bundle()
+    gone.tables[0].schema = "staging"
+    result = build.apply(gone, tmp_path)
+    assert "catalog/warehouse/analytics/fct_orders.yml" in result.writes.removed
+    assert not (tmp_path / "catalog/warehouse/analytics").exists()
+    assert (tmp_path / "catalog/warehouse/staging/fct_orders.yml").exists()
+    assert (tmp_path / "catalog").is_dir()

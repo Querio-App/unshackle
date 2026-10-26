@@ -21,6 +21,7 @@ class Lock:
     files: dict[str, str] = field(default_factory=dict)
     owners: dict[str, str] = field(default_factory=dict)
     sources: dict[str, dict[str, str]] = field(default_factory=dict)
+    adopted: list[str] = field(default_factory=list)  # existed before unshackle first wrote them: never removed
 
     @classmethod
     def load(cls, repo: Path) -> Lock:
@@ -28,7 +29,13 @@ class Lock:
         if not path.exists():
             return cls(path=path)
         data = json.loads(path.read_text())
-        return cls(path=path, files=data.get("files", {}), owners=data.get("owners", {}), sources=data.get("sources", {}))
+        return cls(
+            path=path,
+            files=data.get("files", {}),
+            owners=data.get("owners", {}),
+            sources=data.get("sources", {}),
+            adopted=data.get("adopted", []),
+        )
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,6 +45,8 @@ class Lock:
             "files": dict(sorted(self.files.items())),
             "owners": dict(sorted(self.owners.items())),
         }
+        if self.adopted:
+            data["adopted"] = sorted(set(self.adopted))
         self.path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
     def record_source(self, tool: str, manifest: dict[str, str]) -> None:

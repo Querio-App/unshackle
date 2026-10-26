@@ -4,7 +4,8 @@
 - A file someone edited (hash differs from the lock), or that unshackle didn't create, is kept.
 - A file another tool's build owns is never overwritten: the new one gets a `.<tool>` suffix.
 - Paths are always inside the repo, whatever names the source used.
-- A file this tool's earlier build wrote and this build didn't is removed, unless edited by hand.
+- A file this tool's earlier build wrote and this build didn't is removed, unless edited by hand
+  or it existed before unshackle first wrote it (merged into, so "adopted").
 """
 
 from __future__ import annotations
@@ -71,6 +72,8 @@ class Target:
         path = self._safe(rel)
         if path.exists():
             current = path.read_bytes().decode("utf-8", errors="replace")
+            if rel not in self.lock.files and rel not in self.lock.adopted:
+                self.lock.adopted.append(rel)
             if current == content:
                 self.result.unchanged.append(rel)
                 self.lock.record_file(rel, content, self.tool)
@@ -95,7 +98,7 @@ class Target:
         r = self.result
         touched = set(r.written) | set(r.unchanged) | set(r.kept_hand_edits)
         for rel, owner in sorted(self.lock.owners.items()):
-            if owner != self.tool or not self.tool or rel in touched:
+            if owner != self.tool or not self.tool or rel in touched or rel in self.lock.adopted:
                 continue
             path = self._safe(rel)
             if path.exists():
@@ -105,8 +108,16 @@ class Target:
                 r.removed.append(rel)
                 if not self.dry_run:
                     path.unlink()
+                    self._remove_empty_dirs(path.parent)
             self.lock.files.pop(rel, None)
             self.lock.owners.pop(rel, None)
+
+    def _remove_empty_dirs(self, folder: Path) -> None:
+        """Remove folders a removal left empty, below the layout's directories (never those or the repo root)."""
+        stops = {self.root} | {(self.root / p).resolve() for p in self.layout.paths.values()}
+        while folder not in stops and self.root in folder.parents and not any(folder.iterdir()):
+            folder.rmdir()
+            folder = folder.parent
 
     def save(self) -> None:
         if self.dry_run:
