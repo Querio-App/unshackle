@@ -204,6 +204,20 @@ def test_manual_sort_lists_members_then_the_rest(con, rows, tiles):
     assert [r[0] for r in _run(con, tiles["Default Sort"])] == ["RETURNED", "COMPLETED", "CANCELLED"]
 
 
+def test_manual_sort_on_a_boolean_calculation(con, tmp_path: Path):
+    """A boolean calculation ([discount_percentage] > 10) sorted by hand: False, NULL, then the rest (True, aliased)."""
+    sort = ("<manual-sort column='[federated.display0demo].[none:Calculation_204:nk]' direction='ASC'>"
+            "<dictionary><bucket>false</bucket><bucket>%null%</bucket><bucket>%all%</bucket></dictionary></manual-sort>")
+
+    def edit(xml: str, _: str) -> str:
+        i = xml.index('<worksheet name="Discounted">')
+        j = xml.index("</view>", i)
+        return xml[:j] + sort + xml[j:]
+
+    tile = next(t for d in _parse(tmp_path, edit=edit).dashboards for t in d.tiles if t.title == "Discounted")
+    assert [r[0] for r in _run(con, tile)] == ["False", None, "Discounted"]
+
+
 def test_computed_sort_orders_by_the_aggregate(con, rows, tiles):
     marks = _marks(rows, "paper_type", PAPER)
     want = list(marks.sort_values("value", ascending=False, kind="stable").label)
