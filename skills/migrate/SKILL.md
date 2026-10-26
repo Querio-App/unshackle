@@ -90,7 +90,7 @@ unshackle build <tool>
 ```
 
 Writes `semantic/`, `catalog/`, `knowledge/`, `queries/`, `notebooks/`, `policies/`
-and the tool's block in `memory/MEMORY.md`, plus `migration/report.md`. Read the
+and `migration/report.md`. Read the
 report: counts, warnings (severity `block` first) and the TODO table.
 
 ## 4. Translate
@@ -118,9 +118,6 @@ source behaviour can't be expressed, leave the `TODO(unshackle)` in place, appen
 reasoning to it, and list it under "Needs a human" in the PR description. A visible
 TODO is fine; a plausible wrong number is not.
 
-The line in `memory/MEMORY.md` that counts remaining TODOs is itself matched by
-`unshackle todo`; ignore it.
-
 ## 5. Verify
 
 Load the `verify` skill. Write `migration/parity/*.yaml` cases for the most-viewed
@@ -137,9 +134,9 @@ pass stays in the report with a note explaining why. Passing cases are copied to
 ## 6. Write-up
 
 1. `unshackle report` to regenerate `migration/report.md`.
-2. Update `memory/MEMORY.md` outside the unshackle block: conventions you discovered
-   (fiscal calendar, currency, which tables are canonical, naming quirks), decisions
-   you made during translation, and anything left for a human.
+2. Record conventions you discovered (fiscal calendar, currency, which tables are
+   canonical, naming quirks) in `knowledge/`, and list decisions you made during
+   translation and anything left for a human in the PR description.
 3. Before committing, check nothing secret is staged:
    `git diff --cached | grep -inE 'password|secret|token|api[_-]?key|BEGIN .*PRIVATE'`.
    `.env`, `.unshackle/` and `*.html` previews must stay untracked. Raw exports can
@@ -171,7 +168,7 @@ diff -u notebooks/x.ipynb.mine notebooks/x.ipynb   # or nbdiff, from nbdime
 ```
 
 Merge the upstream change into the hand-edited version, keep the human's edits,
-then remove `.mine`. Catalog files and the MEMORY.md block are merged automatically
+then remove `.mine`. Catalog files are merged automatically
 (human descriptions and labels win). Then re-run `unshackle todo` and `unshackle verify`,
 and open a new PR.
 
@@ -187,7 +184,7 @@ and open a new PR.
 - [ ] Ossie documents validate (`validation/validate.py` from apache/ossie); dbt repos: `dbt parse`
 - [ ] Notebooks run (`python -m unshackle.run notebooks/<x>.ipynb`) and are saved without outputs
 - [ ] Parity cases written; `unshackle verify` run; diffs fixed or explained
-- [ ] `memory/MEMORY.md` updated; `unshackle report` regenerated
+- [ ] Conventions recorded in `knowledge/`; `unshackle report` regenerated
 - [ ] No secrets staged; PR opened with summary; not merged
 
 ## Rules

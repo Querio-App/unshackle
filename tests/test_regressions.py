@@ -218,6 +218,20 @@ def test_init_copies_skills_and_points_agents_md_at_them(tmp_path: Path):
     assert "migration/skills/migrate/SKILL.md" in (tmp_path / "AGENTS.md").read_text()
 
 
+def test_init_creates_only_folders_it_writes_to(tmp_path: Path):
+    from unshackle import scaffold
+
+    scaffold.init(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir() if p.is_dir()) == ["migration"]  # skills and spec copies
+    assert not list(tmp_path.rglob(".gitkeep"))
+    agents = (tmp_path / "AGENTS.md").read_text()
+    assert "automations" not in agents and "MEMORY.md" not in agents and "`evals/`" in agents
+    from test_core import sample_bundle
+
+    build.apply(sample_bundle(), tmp_path)
+    assert not (tmp_path / "memory").exists() and not (tmp_path / "evals").exists()
+
+
 def test_network_errors_are_clean_messages(tmp_path: Path, monkeypatch):
     import httpx
 

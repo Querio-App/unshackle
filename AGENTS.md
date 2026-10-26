@@ -16,6 +16,20 @@ You're running inside the customer's repo with `unshackle` installed. Load
 | `skills/translate-permissions/SKILL.md` | BI security -> Cedar + row filters |
 | `skills/verify/SKILL.md` | Parity checks against the source tool |
 
+Folders in the customer's repo (each appears only once something is written to it):
+
+| Folder | Purpose |
+| --- | --- |
+| `semantic/` | Metrics and semantic models (Apache Ossie; MetricFlow too in dbt projects) |
+| `catalog/` | Table and column descriptions, one YAML file per table |
+| `knowledge/` | Business context in Markdown |
+| `queries/` | Saved SQL or Python queries; `queries/models/` holds SQL models |
+| `notebooks/` | Dashboards as Jupyter notebooks (SQL + Altair) |
+| `policies/` | Cedar policies and SQL row filters |
+| `evals/` | Passing parity cases, written by `unshackle verify` |
+| `data/` | Data copied out of the tool with `--with-data` (git-ignored) |
+| `migration/` | unshackle's own area: raw exports, report, lock, skills, parity cases |
+
 Rules: credentials stay in the environment, never in files. Work on a branch and
 open a pull request. Never delete a `TODO(unshackle)` without resolving it.
 

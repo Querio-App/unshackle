@@ -1,4 +1,4 @@
-"""Catalog, knowledge, verified queries, evals and memory writers."""
+"""Catalog, knowledge, verified queries and evals writers."""
 
 from __future__ import annotations
 
@@ -10,10 +10,6 @@ import yaml
 from unshackle.ir import Bundle, KnowledgeItem, Table, VerifiedQuery, slugify
 from unshackle.target.layout import Layout
 from unshackle.target.semantic import dump_yaml
-
-MEMORY_START = "<!-- unshackle:{tool}:start -->"
-MEMORY_END = "<!-- unshackle:{tool}:end -->"
-
 
 def one_line_comment(value: str) -> str:
     return " ".join(str(value).splitlines())
@@ -130,31 +126,6 @@ def query_files(bundle: Bundle, layout: Layout) -> dict[str, str]:
         ext = "sql" if q.language == "sql" else "py"
         files[unique_rel(files, layout.rel("queries", f"{slugify(q.name)}.{ext}"))] = render_query(q, bundle.tool)
     return files
-
-
-def render_memory(existing: str | None, tool: str, summary: str) -> str:
-    start, end = MEMORY_START.format(tool=tool), MEMORY_END.format(tool=tool)
-    block = f"{start}\n{summary.strip()}\n{end}"
-    base = existing if existing is not None else "# Memory\n"
-    if start in base and end in base:
-        before, rest = base.split(start, 1)
-        _, after = rest.split(end, 1)
-        return before + block + after
-    return base.rstrip() + "\n\n" + block + "\n"
-
-
-def migration_summary(bundle: Bundle) -> str:
-    todo = sum(1 for m in bundle.metrics if m.todo) + sum(
-        1 for d in bundle.dashboards for t in d.tiles if t.todo
-    )
-    return (
-        f"## Migrated from {bundle.tool}\n\n"
-        f"- {len(bundle.tables)} tables, {len(bundle.semantic_models)} semantic models, "
-        f"{len(bundle.metrics)} metrics, {len(bundle.dashboards)} dashboards, "
-        f"{len(bundle.queries)} verified queries.\n"
-        "- What's left to translate is listed in migration/report.md (`unshackle todo`).\n"
-        f"- Metric names are snake_case versions of the {bundle.tool} names; original names are kept as labels."
-    )
 
 
 def render_eval(case: dict[str, Any]) -> str:

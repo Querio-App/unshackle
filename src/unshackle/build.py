@@ -71,8 +71,6 @@ def render_all(bundle: Bundle, target: Target) -> dict[str, tuple[str, bool]]:
     ):
         for rel, content in group.items():
             out[rel] = (content, False)
-    mem_rel = layout.rel("memory", "MEMORY.md")
-    out[mem_rel] = (tf.render_memory(target.read(mem_rel), bundle.tool, tf.migration_summary(bundle)), True)
     return out
 
 
