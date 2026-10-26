@@ -305,6 +305,10 @@ class Bundle:
     row_filters: list[RowFilter] = field(default_factory=list)
     warnings: list[Warning] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
+    # data copied out of the tool: `build` loads local_db_sql into this DuckDB file (repo-relative), and the notebooks
+    # use it when UNSHACKLE_WAREHOUSE_URL is unset
+    local_db: str = ""
+    local_db_sql: str = ""
 
     def warn(self, item: str, message: str, severity: str = "warn") -> None:
         self.warnings.append(Warning(item=item, message=message, severity=severity))  # type: ignore[arg-type]

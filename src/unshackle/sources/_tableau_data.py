@@ -23,7 +23,8 @@ from typing import Any
 from unshackle.http import SourceError, missing_extra
 from unshackle.ir import snake
 
-SCHEMA = "tableau_data"  # where the copied tables live in the warehouse (DuckDB: views over the Parquet files)
+SCHEMA = "tableau_data"  # where the copied tables live in the warehouse (DuckDB: tables loaded from the Parquet files)
+LOCAL_DB = "tableau.duckdb"  # the DuckDB file `build` loads next to the copies
 # Tableau local-type -> DuckDB cast of a text value (Excel and CSV cells), so the Parquet column has Tableau's type
 CAST = {
     "string": "{}",
@@ -269,9 +270,7 @@ def load_sql(tables: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def next_steps(data_dir: str, sql: str = "queries/tableau-data.sql") -> str:
-    """How to run the notebooks on the copies with DuckDB. `data_dir` is the copies' folder, relative to the repo root."""
-    db = f"{data_dir}/tableau.duckdb"
-    return (f"to run the notebooks on the copied data with DuckDB, after `unshackle build tableau`, load it from the repo root: "
-            f"`uv run --no-project --with duckdb python -c \"import duckdb; duckdb.connect('{db}').execute(open('{sql}').read())\"` (again after each copy), "
-            f"then `export UNSHACKLE_WAREHOUSE_URL=duckdb:///$PWD/{db}` and run the notebooks from any folder")
+def next_steps(data_dir: str) -> str:
+    """How to run the notebooks on the copies. `data_dir` is the copies' folder, relative to the repo root."""
+    return (f"`unshackle build tableau` loads the copies into {data_dir}/{LOCAL_DB}; the notebooks use that file when "
+            f"UNSHACKLE_WAREHOUSE_URL is unset, and `unshackle run` runs them all")

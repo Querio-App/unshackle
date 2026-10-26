@@ -151,8 +151,13 @@ rebuild the grid; update it if you add, split or rename tiles.
 ## Test
 
 ```
-UNSHACKLE_WAREHOUSE_URL=snowflake://... python -m unshackle.run notebooks/<slug>.ipynb   # -> notebooks/<slug>.html
+UNSHACKLE_WAREHOUSE_URL=snowflake://... unshackle run notebooks/<slug>.ipynb   # -> notebooks/<slug>.html
 ```
+
+Without arguments `unshackle run` executes every notebook and prints, per dashboard, how
+many tiles there are, how many have SQL, ran, and returned rows, and each tile's error.
+It exits non-zero when any tile failed. After `--with-data`, notebooks read the DuckDB
+file `build` loaded (Tableau: `data/tableau/tableau.duckdb`) when `UNSHACKLE_WAREHOUSE_URL` is unset.
 
 or open the notebook in Jupyter / VS Code with `UNSHACKLE_WAREHOUSE_URL` set and run
 all cells. `papermill notebooks/<slug>.ipynb out.ipynb -p region EU` runs it with other

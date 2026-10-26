@@ -2309,17 +2309,19 @@ class _Parser:
         tables = list(self.copied_used.values())
         self.b.queries.append(VerifiedQuery(
             "Tableau data", tdata.load_sql(tables),
-            "Tables copied from Tableau extracts and files (data that no warehouse holds), as DuckDB views over their Parquet files",
+            "Tables copied from Tableau extracts and files (data that no warehouse holds), as DuckDB tables loaded from their Parquet files",
             datasource=self.b.datasource, source_ref="migration/raw/tableau/extracts/",
-            todo=(f"choose where the {len(tables)} tables copied from Tableau live. DuckDB: run this file from the repo root (the models "
-                  f"read {tdata.SCHEMA}.<table>). Another warehouse: load each Parquet file into {tdata.SCHEMA}.<table> (Snowflake "
+            todo=(f"choose where the {len(tables)} tables copied from Tableau live. DuckDB: `unshackle build` loads this file into "
+                  f"{tdata.LOCAL_DB} next to the Parquet files (the models read {tdata.SCHEMA}.<table>). Another warehouse: load each Parquet file into {tdata.SCHEMA}.<table> (Snowflake "
                   "COPY INTO, BigQuery `bq load`, Redshift COPY, Databricks COPY INTO, or a dbt seed / dbt-duckdb external source), "
                   "replace this file with that load step and set the warehouse type in unshackle.toml. Decide how they are refreshed "
                   "(Tableau refreshed the extract). The Parquet files hold the data itself, so `unshackle init` lists their folder in "
                   ".gitignore; remove that line only if the data belongs in Git"),
         ))
         if tables:
-            self.b.warn("Tableau data", tdata.next_steps(str(PurePosixPath(tables[0]["parquet"]).parent)), "info")
+            data_dir = str(PurePosixPath(tables[0]["parquet"]).parent)
+            self.b.local_db, self.b.local_db_sql = f"{data_dir}/{tdata.LOCAL_DB}", tdata.load_sql(tables)
+            self.b.warn("Tableau data", tdata.next_steps(data_dir), "info")
 
     def _assign_models(self, ds: TDatasource) -> None:
         item = f"{ds.src} datasource {ds.caption}"

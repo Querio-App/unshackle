@@ -311,30 +311,23 @@ def test_build_writes_the_load_step(repo: Path):
 
 
 def test_notebooks_run_on_the_copies_from_their_own_folder(repo: Path, frames, monkeypatch):
-    """The steps the report gives (load queries/tableau-data.sql into a DuckDB file from the repo root, point
-    UNSHACKLE_WAREHOUSE_URL at it) are enough to run a notebook with notebooks/ as the working directory."""
+    """`build` loads the copies into data/tableau/tableau.duckdb, and a notebook reads it without UNSHACKLE_WAREHOUSE_URL,
+    with notebooks/ as the working directory."""
     pytest.importorskip("duckdb_engine")
     pytest.importorskip("nbclient")
     import re
-    import subprocess
-    import sys
 
     from unshackle.run import run_notebook
 
     b = get_source("tableau").parse(RawStore(repo, "tableau"))
-    build.apply(b, repo)
-    report = (repo / "migration" / "report.md").read_text()
-    assert "data/tableau/tableau.duckdb" in report and "UNSHACKLE_WAREHOUSE_URL=duckdb:///" in report
-    ((cmd, load),) = re.findall(r"`(uv run --no-project --with duckdb python -c \"(.+?)\")`",
-                                next(w.message for w in b.warnings if "tableau.duckdb" in w.message))
-    assert cmd.startswith("uv run --no-project --with duckdb python -c")
-    subprocess.run([sys.executable, "-c", load], cwd=repo, check=True)  # its python part: uv would fetch duckdb, tests stay offline
+    assert build.apply(b, repo).local_db == "data/tableau/tableau.duckdb"
     db = repo / "data" / "tableau" / "tableau.duckdb"
     assert db.exists()
-
+    assert "uv run" not in (repo / "migration" / "report.md").read_text()  # no load command left to run by hand
+    monkeypatch.delenv("UNSHACKLE_WAREHOUSE_URL", raising=False)
     monkeypatch.chdir(repo / "notebooks")
     path = next(p for p in (repo / "notebooks").glob("*.ipynb") if "Revenue by Paper Type" in p.read_text())
-    html = run_notebook(path, url=f"duckdb:///{db}").read_text()
+    html = run_notebook(path).read_text()
     o = frames["orders"]
     want = o[o.status == "COMPLETED"].groupby("paper_type").post_discount_revenue.sum()
     assert "Error" not in html
@@ -472,7 +465,7 @@ def test_import_copies_packaged_data(tmp_path: Path, packages, frames, monkeypat
     repo = tmp_path / "repo"
     res = CliRunner().invoke(main, ["import", "tableau", *map(str, _downloads(tmp_path, packages)), "--repo", str(repo), "--with-data"])
     assert res.exit_code == 0, res.output
-    assert "duckdb.connect('data/tableau/tableau.duckdb')" in res.output  # how to run the notebooks on the copies
+    assert "loads the copies into data/tableau/tableau.duckdb" in res.output and "unshackle run" in res.output
     store = RawStore(repo, "tableau")
     assert sorted(store.glob("extracts/*.json")) == ["extracts/Extract Sales.json", "extracts/Order History.json", "extracts/Order Lines.json"]
     b = get_source("tableau").parse(store)

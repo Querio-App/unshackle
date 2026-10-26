@@ -1,7 +1,7 @@
 """Dashboard -> Jupyter notebook (.ipynb, nbformat 4): parameters, then SQL and an Altair chart per tile.
 
 Cells, top to bottom: a title, a setup cell (imports and the warehouse engine from
-UNSHACKLE_WAREHOUSE_URL), a `parameters` cell (papermill convention) with the dashboard
+UNSHACKLE_WAREHOUSE_URL, else the DuckDB file `build` loads with data copied out of the tool), a `parameters` cell (papermill convention) with the dashboard
 filters, the source dashboard's interactions and what was not migrated, then per tile in layout order a heading, a SQL cell (`<tile>_sql`, run with
 pd.read_sql into `<tile>`) and a chart cell (`<tile>_chart`). Text tiles are markdown
 cells. No outputs are stored, so the file diffs cleanly.
@@ -12,6 +12,7 @@ from __future__ import annotations
 import builtins
 import json
 import keyword
+import os
 import re
 
 from unshackle.ir import Bundle, Dashboard, Encoding, Reference, Tile, slugify, snake
@@ -278,7 +279,7 @@ def _code(cell_id: str, lines: list[str], **metadata) -> dict:
     }
 
 
-def _title(d: Dashboard, tool: str) -> str:
+def _title(d: Dashboard, tool: str, local_db: str = "") -> str:
     lines = [f"# {d.name}", ""]
     if d.description.strip():
         lines += [d.description.strip(), ""]
@@ -289,7 +290,11 @@ def _title(d: Dashboard, tool: str) -> str:
         about.append(f"datasource `{d.datasource}`")
     if d.url:
         about.append(f"[original dashboard]({d.url})")
-    lines += [", ".join(about) + ".", "", "Set `UNSHACKLE_WAREHOUSE_URL` to a SQLAlchemy URL for the warehouse, then run all cells."]
+    run = "Set `UNSHACKLE_WAREHOUSE_URL` to a SQLAlchemy URL for the warehouse, then run all cells."
+    if local_db:
+        run = (f"Run all cells: without `UNSHACKLE_WAREHOUSE_URL` they read `{local_db}`, the data copied from {tool}. "
+               "Set it to a SQLAlchemy URL to use a warehouse instead.")
+    lines += [", ".join(about) + ".", "", run]
     return "\n".join(lines)
 
 
@@ -304,8 +309,19 @@ SETUP = [
 ]
 
 
-def build_notebook(d: Dashboard, tool: str) -> dict:
-    """The notebook as an nbformat 4 dict, cell sources as plain strings."""
+def _setup(local_db: str) -> list[str]:
+    """`local_db`: the DuckDB file relative to the notebook's folder (the working directory Jupyter runs it in)."""
+    if not local_db:
+        return SETUP
+    return SETUP[:-1] + [
+        'url = os.environ.get("UNSHACKLE_WAREHOUSE_URL")',
+        "# Unset: the DuckDB file `unshackle build` loads with the copied data (read-only, so several notebooks can run at once)",
+        f'engine = create_engine(url) if url else create_engine("duckdb:///" + os.path.abspath({_py_str(local_db)}), connect_args={{"read_only": True}})',
+    ]
+
+
+def build_notebook(d: Dashboard, tool: str, local_db: str = "") -> dict:
+    """The notebook as an nbformat 4 dict, cell sources as plain strings. `local_db`: see _setup."""
     used = set(RESERVED)
     params: dict[str, str] = {}  # filter name (the :bind in SQL) -> Python variable in the parameters cell
     for f in d.filters:
@@ -322,7 +338,7 @@ def build_notebook(d: Dashboard, tool: str) -> dict:
     for f in d.filters:
         lines += [f"# {one_line_comment(f.note)}"] if f.note else []
         lines.append(f"{params[f.name]} = {f.default!r}" + (f"  # {one_line_comment(f.allowed)}" if f.allowed else ""))
-    cells = [_markdown("title", _title(d, tool)), _code("setup", SETUP), _code("parameters", lines, tags=["parameters"])]
+    cells = [_markdown("title", _title(d, tool, local_db)), _code("setup", _setup(local_db)), _code("parameters", lines, tags=["parameters"])]
     about = []
     if d.notes:
         about += ["## Interactions", "", *[f"- {n}" for n in d.notes], ""]
@@ -373,16 +389,16 @@ def build_notebook(d: Dashboard, tool: str) -> dict:
         "metadata": {
             "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
             "language_info": {"name": "python"},
-            "unshackle": {"tool": tool, "source": d.source_ref, "layout": [r for r in layout if r]},
+            "unshackle": {"tool": tool, "source": d.source_ref, "layout": [r for r in layout if r], **({"local_db": local_db} if local_db else {})},
         },
         "nbformat": 4,
         "nbformat_minor": 5,
     }
 
 
-def render_dashboard(d: Dashboard, tool: str) -> str:
+def render_dashboard(d: Dashboard, tool: str, local_db: str = "") -> str:
     """Serialised the way Jupyter saves notebooks: one-space indent, sorted keys, sources as lists of lines."""
-    nb = build_notebook(d, tool)
+    nb = build_notebook(d, tool, local_db)
     for cell in nb["cells"]:
         cell["source"] = cell["source"].splitlines(keepends=True)
     return json.dumps(nb, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
@@ -393,5 +409,6 @@ def notebook_files(bundle: Bundle, layout: Layout) -> dict[str, str]:
     for d in bundle.dashboards:
         name = re.sub(r"-+", "-", slugify(d.slug or d.name))
         rel = unique_rel(files, layout.rel("notebooks", f"{name}.ipynb"))
-        files[rel] = render_dashboard(d, bundle.tool)
+        local_db = os.path.relpath(bundle.local_db, os.path.dirname(rel)).replace(os.sep, "/") if bundle.local_db else ""
+        files[rel] = render_dashboard(d, bundle.tool, local_db)
     return files
