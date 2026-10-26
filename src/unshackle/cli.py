@@ -126,6 +126,8 @@ def extract(tool: str, repo: Path, only: tuple[str, ...], with_data: bool = Fals
             _say(f"some items failed: see migration/raw/{tool}/_errors.json (earlier raw files were kept)", err=True)
         changes = Lock.load(repo).changed_sources(tool, store.manifest)
         _say(f"{len(store.manifest)} raw files, {len(changes)} added/changed/removed since last build")
+    if with_data:
+        click.echo(f"next: {src.data_next_steps(repo)}")
 
 
 @main.command(name="import")
@@ -148,6 +150,8 @@ def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path, with_data: bool =
         files = _run(lambda: import_files(src, store, list(paths)))
         _say(f"{len(files)} raw files imported manually" + (f" (replacing {before} earlier raw files)" if before else ""))
     click.echo(f"next: unshackle build {tool}")
+    if with_data:
+        click.echo(f"then: {src.data_next_steps(repo)}")
 
 
 @main.command(name="build")

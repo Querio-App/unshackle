@@ -257,7 +257,7 @@ def test_models_read_the_copies_and_tiles_match(repo: Path, frames, monkeypatch)
     assert b.warehouse == "duckdb"
     (load,) = b.queries
     assert load.name == "Tableau data" and "choose where" in load.todo and "COPY INTO" in load.todo
-    assert "create or replace view tableau_data.order_lines as select * from read_parquet('data/tableau/order_lines.parquet');" in load.sql
+    assert "create or replace table tableau_data.order_lines as select * from read_parquet('data/tableau/order_lines.parquet');" in load.sql
     copied = [w.message for w in b.warnings if "its data was copied" in w.message]
     assert len(copied) == 4 and not [w for w in b.warnings if "only in Tableau" in w.message]
     assert any("already applied (last refreshed 10/01/2026 12:00:00 AM)" in m for m in copied)  # Order History, from its extract
@@ -308,6 +308,38 @@ def test_build_writes_the_load_step(repo: Path):
     text = (repo / "queries" / "tableau-data.sql").read_text()
     assert "TODO(unshackle): choose where the 4 tables copied from Tableau live" in text
     assert "copied from the Tableau extract to Parquet" in (repo / "migration" / "report.md").read_text()
+
+
+def test_notebooks_run_on_the_copies_from_their_own_folder(repo: Path, frames, monkeypatch):
+    """The steps the report gives (load queries/tableau-data.sql into a DuckDB file from the repo root, point
+    UNSHACKLE_WAREHOUSE_URL at it) are enough to run a notebook with notebooks/ as the working directory."""
+    pytest.importorskip("duckdb_engine")
+    pytest.importorskip("nbclient")
+    import re
+    import subprocess
+    import sys
+
+    from unshackle.run import run_notebook
+
+    b = get_source("tableau").parse(RawStore(repo, "tableau"))
+    build.apply(b, repo)
+    report = (repo / "migration" / "report.md").read_text()
+    assert "data/tableau/tableau.duckdb" in report and "UNSHACKLE_WAREHOUSE_URL=duckdb:///" in report
+    ((cmd, load),) = re.findall(r"`(uv run --no-project --with duckdb python -c \"(.+?)\")`",
+                                next(w.message for w in b.warnings if "tableau.duckdb" in w.message))
+    assert cmd.startswith("uv run --no-project --with duckdb python -c")
+    subprocess.run([sys.executable, "-c", load], cwd=repo, check=True)  # its python part: uv would fetch duckdb, tests stay offline
+    db = repo / "data" / "tableau" / "tableau.duckdb"
+    assert db.exists()
+
+    monkeypatch.chdir(repo / "notebooks")
+    path = next(p for p in (repo / "notebooks").glob("*.ipynb") if "Revenue by Paper Type" in p.read_text())
+    html = run_notebook(path, url=f"duckdb:///{db}").read_text()
+    o = frames["orders"]
+    want = o[o.status == "COMPLETED"].groupby("paper_type").post_discount_revenue.sum()
+    assert "Error" not in html
+    got = {k: float(v) for k, v in re.findall(r'"paper_type": "([^"]+)", "revenue": ([-0-9.e+]+)', html)}  # the chart's data
+    assert got == pytest.approx(want.to_dict())
 
 
 def test_unreadable_files_are_errors_not_guesses(tmp_path: Path, packages):
@@ -440,6 +472,7 @@ def test_import_copies_packaged_data(tmp_path: Path, packages, frames, monkeypat
     repo = tmp_path / "repo"
     res = CliRunner().invoke(main, ["import", "tableau", *map(str, _downloads(tmp_path, packages)), "--repo", str(repo), "--with-data"])
     assert res.exit_code == 0, res.output
+    assert "duckdb.connect('data/tableau/tableau.duckdb')" in res.output  # how to run the notebooks on the copies
     store = RawStore(repo, "tableau")
     assert sorted(store.glob("extracts/*.json")) == ["extracts/Extract Sales.json", "extracts/Order History.json", "extracts/Order Lines.json"]
     b = get_source("tableau").parse(store)
