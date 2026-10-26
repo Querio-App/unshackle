@@ -1,6 +1,8 @@
 connection: "warehouse"
 include: "/*.view.lkml"
 
+datagroup: nightly { sql_trigger: SELECT CURRENT_DATE ;; }
+
 explore: events {}
 
 explore: shop_orders {
@@ -35,3 +37,5 @@ explore: dm_accounts {
 }
 
 explore: dm_orders {}
+
+explore: billing {}

@@ -15,6 +15,7 @@ copied from another tool.
 | `shop.view.lkml` | timeframes, measure types, one-to-many joins, `sum_distinct`, Liquid in a derived table, `LEFT JOIN UNNEST` |
 | `facts.view.lkml` | string, number and date filter expressions, `yesno`, `tier`, `case`, `median`, `percentile` |
 | `quotes.view.lkml` | `_dialect._name`, `date_start` / `date_end`, `_is_filtered`, parameters, quoted filter values, hour timeframes |
+| `pdt.view.lkml` | an incremental persistent derived table (`increment_key`, `{% incrementcondition %}`) |
 | `dunder.view.lkml` | timeframes over three years of order dates, a fan-out on real-sized tables |
 | `semantics.model.lkml` | the explores |
 | `semantics.dashboard.lookml` | one tile per case |

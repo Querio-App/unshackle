@@ -74,6 +74,13 @@ TABLES: dict[str, tuple[str, list[tuple]]] = {
         (3, "D'Angelo", 8, TS(2027, 10, 2, 11, 0)),
         (4, None, None, None),
     ]),
+    "billing_rows": ("id INTEGER, account VARCHAR, amount DOUBLE, export_time TIMESTAMP", [
+        (1, "scranton", 120.0, TS(2027, 9, 1, 2, 0)),
+        (2, "scranton", 80.0, TS(2027, 9, 2, 2, 0)),
+        (3, "nashua", 45.5, TS(2027, 9, 2, 3, 0)),
+        (4, "utica", 30.0, TS(2027, 9, 3, 2, 0)),
+        (5, None, 10.0, TS(2027, 9, 3, 4, 0)),
+    ]),
 }
 BASKETS = [(1, [("a4", 2), ("legal", 1)]), (2, []), (3, [("a4", 5)]), (4, [("legal", 3), ("a4", 1), ("ledger", 2)])]
 
@@ -543,6 +550,31 @@ def test_filters_with_quotes_and_filter_fields(bundle_for, db, dialect, case, ke
         assert ("Michael\\'s" if dialect == "bigquery" else "Michael''s") in sql
     (got,) = run(db, sql, dialect)
     assert got["quotes_count"] == sum(keep(r["s"]) for r in rows("quotes"))
+
+
+# ---------------------------------------------------------------- persistent derived tables
+
+@pytest.mark.parametrize("dialect", ["duckdb", "bigquery"])
+def test_incremental_pdt(bundle_for, db, dialect):
+    """Looker queries a persistent derived table under its materialized name; its SQL, and the
+    {% incrementcondition %} in it, only run when the table is rebuilt. The derived-table query is
+    the full rebuild (the condition is TRUE), with a TODO about loading on increment_key."""
+    b = bundle_for(dialect)
+    q = next(x for x in b.queries if x.name == "billing derived table")
+    assert "{%" not in q.sql and "TRUE" in q.sql
+    assert "increment_key `export_date`" in q.todo and "increment_offset" in q.todo and "Liquid" not in q.todo
+    tile = tiles_of(b)["pdt_incremental"]
+    assert tile.sql and "{%" not in tile.sql and "example.billing_rows" not in tile.sql, tile.todo
+    assert "materialize it as `billing`" in tile.todo
+    db.execute(f"create or replace table billing as {q.sql}")  # the PDT, materialized from its query
+    got = run(db, tile.sql, dialect)
+    expected: dict = {}
+    for r in rows("billing_rows"):
+        if r["account"] == "utica":  # "-utica" keeps NULL
+            continue
+        n, total = expected.get(r["account"], (0, 0.0))
+        expected[r["account"]] = (n + 1, total + r["amount"])
+    assert {r["billing_account"]: (r["billing_count"], float(r["billing_total_amount"])) for r in got} == expected
 
 
 # ---------------------------------------------------------------- nested records
