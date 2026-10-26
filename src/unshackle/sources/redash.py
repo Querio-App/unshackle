@@ -27,7 +27,6 @@ other users only see queries on their groups' data sources, and groups, ACLs and
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
