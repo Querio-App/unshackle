@@ -146,6 +146,40 @@ def test_alias_sql_keeps_unaliased_members_and_null():
     assert alias_sql("n", TField("n", datatype="integer", aliases=[("1", "one")])) is None
 
 
+def test_alias_keys_are_unescaped():
+    """Tableau writes a quote inside a member as `""` or `\\"`, and escapes other characters with a backslash (`\\%`)."""
+    f = TField("x", datatype="string", aliases=[('"Copy ""A4"""', "A"), ('"Printer \\"B\\""', "A"), ('"50\\% off"', "Half")])
+    assert alias_sql("x", f) == ("case when x = 'Copy \"A4\"' then 'A' when x = 'Printer \"B\"' then 'A' "
+                                 "when x = '50% off' then 'Half' else x end")
+
+
+def test_quoted_members_and_shared_labels_end_to_end(tmp_path: Path, con):
+    """Members containing `"` take their aliases, and two members aliased to one label stay two marks with that label."""
+    quoted = {"Copy": 'Copy "A4"', "Printer": 'Printer "B"'}
+
+    def edit(text: str, _suffix: str) -> str:
+        return (text.replace("key='&quot;Copy&quot;' value='Copy Paper'", "key='&quot;Copy &quot;&quot;A4&quot;&quot;&quot;' value='Office Paper'")
+                .replace("key='&quot;Printer&quot;' value='Printer Paper'", "key='&quot;Printer \\&quot;B\\&quot;&quot;' value='Office Paper'"))
+
+    b = _parse(tmp_path, edit=edit)
+    tile = next(t for d in b.dashboards for t in d.tiles if t.title == "Aliases")
+    c = con.cursor()
+    c.execute("create schema q")
+    for t in ("orders", "accounts"):
+        c.execute(f"create table q.{t} as select * from public.{t}")
+    whens = " ".join(f"when paper_type = '{k}' then '{v.replace(chr(39), chr(39) * 2)}'" for k, v in quoted.items())
+    c.execute(f"create table q.products as select * replace (case {whens} else paper_type end as paper_type) from public.products")
+    got = _run(c, Tile(**{**tile.__dict__, "sql": tile.sql.replace("public.", "q.")}))
+    rows = c.sql("select * from q.orders join q.accounts using (account_id) join q.products using (product_id)").df()
+    labels = {'Copy "A4"': "Office Paper", 'Printer "B"': "Office Paper", "Cardstock": "Zeta Card", "Kraft Roll": "Multipurpose"}
+    marks = _marks(rows, "paper_type", labels)
+    assert len(got) == len(marks) == rows.paper_type.nunique()  # one mark per member, as in Tableau
+    assert sorted(got) == sorted(zip(marks.label, marks.value))
+    assert [label for label, _ in got].count("Office Paper") == 2
+    paper = next(d for sm in b.semantic_models for d in sm.dimensions if d.label == "paper_type")
+    assert paper.value_labels[:2] == [{"value": 'Copy "A4"', "label": "Office Paper"}, {"value": 'Printer "B"', "label": "Office Paper"}]
+
+
 # --------------------------------------------------------------- labels
 
 
