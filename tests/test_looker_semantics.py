@@ -19,13 +19,15 @@ import duckdb
 import lkml
 import pytest
 import sqlglot
+from dateutil.relativedelta import relativedelta
 from sqlglot import exp
 from test_looker import _by_name
 
 from unshackle.ir import Bundle
 from unshackle.raw import RawStore
 from unshackle.sources import get_source
-from unshackle.sources.looker import DIALECT_DATES, SYM_HASH, TF_GRAIN, TIMEFRAME_SQL, looker_filter_sql, timeframe_sql
+from unshackle.sources.looker import (DIALECT_DATES, SYM_HASH, TF_GRAIN, TIMEFRAME_SQL, WEEKDAYS, looker_filter_sql,
+                                      relative_bounds, timeframe_sql)
 from unshackle.target.ossie import AGGS
 
 FIX = Path(__file__).parent / "fixtures" / "looker_semantics"
@@ -441,7 +443,7 @@ def test_sort_on_a_measure_the_tile_does_not_show(tiles, db):
 
 @pytest.mark.parametrize("dialect", sorted(SYM_HASH))
 def test_tile_sql_parses_in_each_dialect(bundle_for, dialect):
-    without_sql = {"liquid_user_attribute"} | ({"dialect", "date_start_relative"} if dialect != "bigquery" else set())
+    without_sql = {"liquid_user_attribute"} | ({"dialect", "date_start_relative", *RELATIVE_TILES} if dialect != "bigquery" else set())
     for name, tile in tiles_of(bundle_for(dialect)).items():
         if name in without_sql:
             assert not tile.sql, (dialect, name)
@@ -661,6 +663,126 @@ def test_relative_date_filters(bundle_for, db):
         assert cond and "CURRENT_DATE()" in cond, (name, cond)
         (got,) = run(con, f"SELECT COUNT(*) AS n FROM days WHERE {cond}", "bigquery")
         assert got["n"] == sum(keep(d, today) for d in days), (name, cond)
+
+
+def _unit_start(t: datetime, unit: str, week_start: str = "monday") -> datetime:
+    """The start of the unit `t` is in: weeks begin on week_start_day, quarters in January, April, July, October."""
+    finer = ["second", "minute", "hour"][: ["second", "minute", "hour"].index(unit) if unit in ("second", "minute", "hour") else 3]
+    t = t.replace(microsecond=0, **{f: 0 for f in finer if f != unit})
+    if unit == "week":
+        return t - timedelta(days=(t.weekday() - WEEKDAYS.index(week_start)) % 7)
+    if unit in ("month", "quarter", "year"):
+        t = t.replace(day=1, month=1 if unit == "year" else t.month - (t.month - 1) % 3 if unit == "quarter" else t.month)
+    return t
+
+
+def _shift(t: datetime, n: int, unit: str) -> datetime:
+    return t + (relativedelta(months=3 * n) if unit == "quarter" else relativedelta(**{f"{unit}s": n}))
+
+
+def _for(start: datetime, n: int, unit: str) -> tuple[datetime, datetime]:
+    return start, _shift(start, n, unit)
+
+
+# Looker's relative date filters (filter expressions documentation), as [start, end) from the moment `now`:
+# every period starts at the start of its unit; `N <unit>` is the current unit and the N-1 before it,
+# `N <unit> ago for M <unit>` starts N units before the current one and lasts M units,
+# `before` / `after N <unit> ago` are < / >= that start, `this / last / next <unit>` are one unit.
+RELATIVE_BOUNDS = {
+    "12 months ago for 12 months": lambda now, ws="monday": _for(_shift(_unit_start(now, "month"), -12, "month"), 12, "month"),
+    "2 years ago for 2 years": lambda now, ws="monday": _for(_shift(_unit_start(now, "year"), -2, "year"), 2, "year"),
+    "52 weeks ago for 52 weeks": lambda now, ws="monday": _for(_shift(_unit_start(now, "week", ws), -52, "week"), 52, "week"),
+    "3 years ago for 3 years": lambda now, ws="monday": _for(_shift(_unit_start(now, "year"), -3, "year"), 3, "year"),
+    "2 weeks ago for 3 days": lambda now, ws="monday": _for(_shift(_unit_start(now, "week", ws), -2, "week"), 3, "day"),
+    "3 days ago": lambda now, ws="monday": _for(_shift(_unit_start(now, "day"), -3, "day"), 1, "day"),
+    "1 years": lambda now, ws="monday": _for(_unit_start(now, "year"), 1, "year"),
+    "1 year": lambda now, ws="monday": _for(_unit_start(now, "year"), 1, "year"),
+    "2 quarters": lambda now, ws="monday": _for(_shift(_unit_start(now, "quarter"), -1, "quarter"), 2, "quarter"),
+    "7 days": lambda now, ws="monday": _for(_shift(_unit_start(now, "day"), -6, "day"), 7, "day"),
+    "48 hours": lambda now, ws="monday": _for(_shift(_unit_start(now, "hour"), -47, "hour"), 48, "hour"),
+    "15 minutes": lambda now, ws="monday": _for(_shift(_unit_start(now, "minute"), -14, "minute"), 15, "minute"),
+    "before 0 seconds ago": lambda now, ws="monday": (None, _unit_start(now, "second")),
+    "before 3 months ago": lambda now, ws="monday": (None, _shift(_unit_start(now, "month"), -3, "month")),
+    "after 2 weeks ago": lambda now, ws="monday": (_shift(_unit_start(now, "week", ws), -2, "week"), None),
+    "this week": lambda now, ws="monday": _for(_unit_start(now, "week", ws), 1, "week"),
+    "last week": lambda now, ws="monday": _for(_shift(_unit_start(now, "week", ws), -1, "week"), 1, "week"),
+    "next month": lambda now, ws="monday": _for(_shift(_unit_start(now, "month"), 1, "month"), 1, "month"),
+    "last quarter": lambda now, ws="monday": _for(_shift(_unit_start(now, "quarter"), -1, "quarter"), 1, "quarter"),
+    "this year": lambda now, ws="monday": _for(_unit_start(now, "year"), 1, "year"),
+    "next year": lambda now, ws="monday": _for(_shift(_unit_start(now, "year"), 1, "year"), 1, "year"),
+    "last  Hour": lambda now, ws="monday": _for(_shift(_unit_start(now, "hour"), -1, "hour"), 1, "hour"),
+}
+RELATIVE_TILES = {"fact_relative_years", "fact_relative_hours", "fact_relative_weeks"}
+
+
+def _bounds_now(con: duckdb.DuckDBPyConnection, sql: list[str]) -> tuple[list, datetime, datetime]:
+    before = datetime.now(timezone.utc).replace(tzinfo=None)
+    (got,) = run(con, "SELECT " + ", ".join(f"CAST({x} AS STRING) AS b{i}" for i, x in enumerate(sql)), "bigquery")
+    return list(got.values()), before, datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+@pytest.mark.parametrize("week_start", ["monday", "sunday"])
+@pytest.mark.parametrize("datatype", ["timestamp", "date"])
+@pytest.mark.parametrize("value", RELATIVE_BOUNDS)
+def test_relative_bounds_follow_lookers_periods(value, datatype, week_start):
+    """Each relative form's bounds on BigQuery, for times and dates (sub-day units on a date stay TODO)."""
+    sub_day = any(u in value.lower() for u in ("hour", "minute", "second"))
+    rel = relative_bounds(value, datatype, "bigquery", week_start)
+    if datatype == "date" and sub_day:
+        assert rel is None
+        return
+    assert rel, value
+    con = duckdb.connect()
+    con.execute("SET TimeZone = 'UTC'")
+    got, before, after = _bounds_now(con, [b for b in rel if b])
+    fmt = (lambda t: f"{t:%Y-%m-%d}") if datatype == "date" else _bq_timestamp_string
+    expected = [[fmt(b) for b in RELATIVE_BOUNDS[value](now, week_start) if b is not None] for now in (before, after)]
+    if datatype == "date":  # DuckDB's DATE + INTERVAL is a TIMESTAMP; BigQuery's DATE_ADD stays a DATE
+        got = [g[:10] for g in got]
+    assert got in expected, (value, rel)
+    if "week" not in value:
+        assert relative_bounds(value, datatype, "bigquery", "different days per model") == rel
+
+
+def test_relative_date_filters_beyond_the_grammar_stay_todo():
+    for value in ("3 complete days", "today", "2 days from now", "before 2 days ago for 1 day", "0 days",
+                  "1 fiscal quarter", "3 days ago for 0 days"):
+        assert looker_filter_sql("d", value, "time", "timestamp", "bigquery") is None, value
+    assert looker_filter_sql("d", "3 days", "time", "timestamp", "snowflake") is None
+    assert looker_filter_sql("d", "this week", "time", "date", "bigquery", week_start="different days per model") is None
+    assert looker_filter_sql("d", "3 days,soon", "time", "date", "bigquery") is None  # every part or none
+
+
+def test_comma_separated_relative_dates_are_or(bundle_for, db):
+    """`A,B` keeps the rows either part keeps, in tile SQL as in a single filter."""
+    con = duckdb.connect()
+    con.execute("SET TimeZone = 'UTC'")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    times = [now + timedelta(hours=k) for k in range(-24 * 365 * 4, 24 * 400, 7)]
+    con.execute("create table times (t TIMESTAMP)")
+    con.executemany("insert into times values (?)", [(t,) for t in times])
+    a, b = RELATIVE_BOUNDS["3 years ago for 3 years"](now), RELATIVE_BOUNDS["1 years"](now)
+    cond = looker_filter_sql("t", "3 years ago for 3 years,1 years", "time", "timestamp", "bigquery")
+    assert cond and " OR " in cond
+    (got,) = run(con, f"SELECT COUNT(*) AS n FROM times WHERE {cond}", "bigquery")
+    assert got["n"] == sum(a[0] <= t < a[1] or b[0] <= t < b[1] for t in times)
+
+    tiles = tiles_of(bundle_for("bigquery"))
+    facts = [r for r in rows("facts") if r["ts"] is not None]
+    keep = {
+        "fact_relative_years": lambda r, now: any(s <= r["ts"] < e for s, e in (RELATIVE_BOUNDS["3 years ago for 3 years"](now),
+                                                                              RELATIVE_BOUNDS["1 years"](now))),
+        "fact_relative_hours": lambda r, now: (RELATIVE_BOUNDS["48 hours"](now)[0] <= r["ts"] < RELATIVE_BOUNDS["48 hours"](now)[1]
+                                               or r["ts"] < RELATIVE_BOUNDS["before 0 seconds ago"](now)[1]
+                                               or r["ts"] >= RELATIVE_BOUNDS["after 2 weeks ago"](now)[0]),
+        "fact_relative_weeks": lambda r, now: any(s.date() <= r["d"] < e.date() for s, e in
+                                                  (RELATIVE_BOUNDS["52 weeks ago for 52 weeks"](now), RELATIVE_BOUNDS["next year"](now))),
+    }
+    for name in RELATIVE_TILES:
+        tile = tiles[name]
+        assert tile.sql and not tile.todo, (name, tile.todo)
+        (got,) = run(db, tile.sql, "bigquery")
+        assert got["facts_count"] == sum(keep[name](r, now) for r in facts), name
 
 
 @pytest.mark.parametrize("dialect", ["duckdb", "bigquery"])

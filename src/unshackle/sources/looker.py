@@ -568,38 +568,82 @@ def _date_bounds(text: str) -> tuple[datetime, datetime | None] | None:
     return None
 
 
-def relative_bounds(v: str, datatype: str, dialect: str) -> tuple[str, str | None] | None:
-    """(start, end) SQL of a relative date filter as Looker writes it on BigQuery:
-    `N days` (today and the N-1 days before), `before N days ago` (end only: start None), `this month`,
-    `last month` (dates only). None for other forms, columns and warehouses."""
+REL_UNIT = r"(second|minute|hour|day|week|month|quarter|year)s?"
+
+
+def relative_bounds(v: str, datatype: str, dialect: str, week_start: str = "monday") -> tuple[str, str | None] | None:
+    """(start, end) SQL of a relative date filter as Looker writes it on BigQuery, for units second to year:
+    `N <unit>` (the current unit and the N-1 before), `N <unit> ago` (that unit), `N <unit> ago for M <unit>`
+    (from the start of the unit N ago, for M units), `before N <unit> ago` (end only: start ""),
+    `after N <unit> ago` (start only: end None), `this / last / next <unit>`. Every period starts at the
+    start of its unit (weeks on `week_start`). None for other forms, sub-day units on a date, columns and
+    warehouses."""
     if dialect != "bigquery" or datatype not in ("date", "timestamp"):
         return None
     date = datatype == "date"
-    today = "CURRENT_DATE()" if date else "TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY)"
-    fn = "DATE_ADD" if date else "TIMESTAMP_ADD"
-    add = lambda x, n, unit: f"{fn}({x}, INTERVAL {n} {unit})"  # noqa: E731
-    m = re.fullmatch(r"(\d+)\s+days?", v, re.I)
+
+    def trunc(unit: str) -> str | None:  # the start of the current unit
+        if date and unit in ("second", "minute", "hour"):
+            return None
+        if unit == "week" and week_start not in WEEKDAYS:
+            return None
+        part = f"WEEK({week_start.upper()})" if unit == "week" else unit.upper()
+        if date:
+            return "CURRENT_DATE()" if unit == "day" else f"DATE_TRUNC(CURRENT_DATE(), {part})"
+        return f"TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), {part})"
+
+    def add(x: str, n: int, unit: str) -> str:  # TIMESTAMP_ADD goes up to DAY; months through DATETIME_ADD
+        if date:
+            return f"DATE_ADD({x}, INTERVAL {n} {unit.upper()})"
+        if unit == "week":
+            return f"TIMESTAMP_ADD({x}, INTERVAL {7 * n} DAY)"
+        if unit in ("month", "quarter", "year"):
+            return f"TIMESTAMP(DATETIME_ADD(DATETIME({x}), INTERVAL {n} {unit.upper()}))"
+        return f"TIMESTAMP_ADD({x}, INTERVAL {n} {unit.upper()})"
+
+    v = re.sub(r"\s+", " ", v.strip().lower())
+    m = re.fullmatch(rf"(\d+) {REL_UNIT}", v)
     if m and int(m.group(1)) > 0:
-        n = int(m.group(1))
-        start = add(today, -(n - 1), "DAY")
-        return start, add(start, n, "DAY")
-    m = re.fullmatch(r"before\s+(\d+)\s+days?\s+ago", v, re.I)
+        n, unit = int(m.group(1)), m.group(2)
+        now = trunc(unit)
+        if now is None:
+            return None
+        start = add(now, -(n - 1), unit)
+        return start, add(start, n, unit)
+    m = re.fullmatch(rf"(before |after )?(\d+) {REL_UNIT} ago(?: for (\d+) {REL_UNIT})?", v)
+    if m and not (m.group(1) and m.group(4)):
+        now, unit = trunc(m.group(3)), m.group(3)
+        span, span_unit = int(m.group(4) or 1), m.group(5) or unit
+        if now is None or span < 1 or trunc(span_unit) is None:
+            return None
+        start = add(now, -int(m.group(2)), unit)
+        if m.group(1) == "before ":
+            return "", start
+        if m.group(1) == "after ":
+            return start, None
+        return start, add(start, span, span_unit)
+    m = re.fullmatch(rf"(this|last|next) {REL_UNIT}", v)
     if m:
-        return "", add(today, -int(m.group(1)), "DAY")
-    if date and v.lower() in ("this month", "last month"):
-        month = "DATE_TRUNC(CURRENT_DATE(), MONTH)"
-        start = month if v.lower() == "this month" else add(month, -1, "MONTH")
-        return start, add(start, 1, "MONTH")
+        now, unit = trunc(m.group(2)), m.group(2)
+        if now is None:
+            return None
+        start = {"this": now, "last": add(now, -1, unit), "next": add(now, 1, unit)}[m.group(1)]
+        return start, add(start, 1, unit)
     return None
 
 
-def _date_filter(ref: str, v: str, datatype: str, dialect: str = "") -> str | None:
+def _date_filter(ref: str, v: str, datatype: str, dialect: str = "", week_start: str = "monday") -> str | None:
     """Date filters as Looker writes them: a period is [start, start of the next), `before` is <, `after` is
-    >= and `A to B` is [A, B); relative ones in relative_bounds. `day`: a time compared at day grain, with
-    dates only (no relative dates: the grain's type is not checked)."""
-    rel = relative_bounds(v.strip(), datatype, dialect)
+    >= and `A to B` is [A, B); relative ones in relative_bounds; `A,B` is A OR B. `day`: a time compared at
+    day grain, with dates only (no relative dates: the grain's type is not checked)."""
+    if "," in v:
+        parts = [_date_filter(ref, p.strip(), datatype, dialect, week_start) for p in v.split(",")]
+        return "(" + " OR ".join(p for p in parts if p) + ")" if all(parts) else None
+    rel = relative_bounds(v.strip(), datatype, dialect, week_start)
     if rel:
         start, end = rel
+        if end is None:
+            return f"{ref} >= {start}"
         return f"{ref} < {end}" if not start else f"({ref} >= {start} AND {ref} < {end})"
 
     def lit(d: datetime) -> str | None:
@@ -633,7 +677,7 @@ def sql_string(text: str, dialect: str = "") -> str:
 
 
 def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str = "timestamp", dialect: str = "",
-                      relative: bool = True) -> str | None:
+                      relative: bool = True, week_start: str = "monday") -> str | None:
     """Translate a Looker filter expression to SQL on `ref`. None when it needs a person.
 
     As Looker writes them (BigQuery): string "is not" filters keep NULL rows
@@ -660,7 +704,7 @@ def looker_filter_sql(ref: str, value: str, kind: str = "string", datatype: str 
     if kind == "number":
         return _number_filter(ref, v)
     if kind == "time":
-        return _date_filter(ref, v, datatype, dialect if relative else "")
+        return _date_filter(ref, v, datatype, dialect if relative else "", week_start)
     # dates, number ranges and anything that reads like a relative date need a person; brackets
     # are literal in a string filter ("(5) Purchase")
     if kind in ("time", "number") or (kind != "string" and re.search(r"\b(ago|days?|weeks?|months?|years?|before|after|to|last|this|next)\b", v, re.I)):
@@ -754,8 +798,8 @@ class Liquid:
             a = _date_bounds(value)
             first, last = (a[0], a[1]) if a else (None, None)
         bound = last if end else first
-        rel = relative_bounds(value, "timestamp", self.p.dialect)
-        if rel and rel[0]:  # a relative range: Looker's TIMESTAMP_ADD(TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY), ...)
+        rel = relative_bounds(value, "timestamp", self.p.dialect, self.p.week_start or "monday")
+        if rel and rel[0] and rel[1]:  # a relative range: Looker's TIMESTAMP_ADD(TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY), ...)
             return rel[1] if end else rel[0], ""
         if bound is None:
             return None, f"date filter {name}: {value!r} is not an absolute range (relative dates are not translated)"
@@ -800,7 +844,8 @@ class Liquid:
                 if value in (None, ""):
                     out.append("1=1")
                     continue
-                cond = looker_filter_sql(inner.strip(), str(value), str(f.get("type", "string")), dialect=self.p.dialect)
+                cond = looker_filter_sql(inner.strip(), str(value), str(f.get("type", "string")), dialect=self.p.dialect,
+                                         week_start=self.p.week_start or "monday")
                 if cond is None:
                     problems.append(f"filter {arg}: {value!r} is not translated (a Looker filter expression)")
                 else:
@@ -2235,7 +2280,8 @@ class _Parser:
             datatype = "timestamp"
             if kind == "time":  # Looker filters the time itself, whatever the timeframe
                 sql, datatype = q.raw_time(field) or (sql, "date")
-            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind, datatype, self.dialect)
+            cond = looker_filter_sql(_paren(sql), str(value), "number" if kind == "measure" else kind, datatype, self.dialect,
+                                     week_start=self.week_start or "monday")
             if cond is None:
                 q.problems.append(f"{origin} filter {field}: {str(value)!r} is not translated (a Looker filter expression)")
             else:
