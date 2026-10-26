@@ -675,6 +675,24 @@ def _unesc(s: str) -> str:
     return s.replace("]]", "]")
 
 
+_FORMULA_LITERAL = re.compile(r"""\[(?:[^\]]|\]\])*\]|'(?:[^']|'')*'|"(?:[^"]|"")*"|//[^\n]*""")
+
+
+def _same_formula(a: str, b: str) -> bool:
+    """Formulas that differ only in the case of function names and keywords, whitespace or comments are the same
+    calculation (Tableau reads both alike); field references and strings are compared as written."""
+    def norm(text: str) -> str:
+        out, pos = [], 0
+        for m in [*_FORMULA_LITERAL.finditer(text), None]:
+            code = text[pos:m.start() if m else len(text)].lower()
+            out.append(re.sub(r"\s*([^\w\s])\s*", r"\1", " ".join(code.split())))
+            if m is not None:
+                out.append("" if m.group().startswith("//") else m.group())
+                pos = m.end()
+        return "".join(out).strip()
+    return norm(a) == norm(b)
+
+
 def _name_parts(s: str) -> list[str]:
     found = BRACKETED.findall(s or "")
     if found:
@@ -2338,10 +2356,12 @@ class _Parser:
         self._connection_settings(ds, item)
         mine: dict[str, _Model] = {}
         owner = ds.origin or ds
-        extracts = [r for r in ds.relations.values() if r.kind == "table" and r.connection_class in ("hyper", "dataengine")]
+        # An extract names its table [Extract].[Extract], a file its sheet or file name (Sheet1, Orders): such a table is its
+        # data source's copy of the data, not a shared warehouse table, so each data source gets its own model.
+        extracts = [r for r in ds.relations.values() if r.kind == "table" and r.connection_class in FILE_CONNECTIONS]
         for r in ds.relations.values():
             key = f"table:{r.schema.lower()}.{r.table.lower()}" if r.kind == "table" else "sql:" + hashlib.sha1(" ".join(r.sql.split()).encode()).hexdigest()[:12]
-            if r in extracts:  # every extract names its table [Extract].[Extract]: it is its data source's, not a shared one
+            if r in extracts:
                 key = f"extract:{owner.src}#{owner.name if owner.workbook else ''}#{r.name}"
             # A table of a cross-database data source is keyed by its database too: the same schema and name in another
             # database is another table. It shares a model only with the same table of the same database.
@@ -2591,7 +2611,7 @@ class _Parser:
             self.defs[(model.key, name)] = f.formula or ""
             return False
         prev = self.defs.get((model.key, name))
-        if prev is not None and f.formula is not None and " ".join(prev.split()) != " ".join(f.formula.split()):
+        if prev is not None and f.formula is not None and not _same_formula(prev, f.formula):
             self.b.warn(f"{ds.src} datasource {ds.caption} field {f.label}",
                         f"`{name}` already exists in semantic model {model.sm.name} with a different formula; this one was skipped")
         elif prev is None and f.formula:
@@ -2603,7 +2623,7 @@ class _Parser:
     def _clash(self, model: _Model, name: str, f: TField) -> bool:
         """True when `name` in the model is another field: a column, or a calculation with a different formula."""
         prev = self.defs.get((model.key, name))
-        return prev is None or " ".join(prev.split()) != " ".join((f.formula or "").split())
+        return prev is None or not _same_formula(prev, f.formula or "")
 
     def _register(self, model: _Model, name: str) -> None:
         self.owner[name] = model.key

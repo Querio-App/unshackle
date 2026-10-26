@@ -1,0 +1,12 @@
+[
+  {
+    "id": "00000000-0000-4000-8000-000000000251",
+    "name": "Regional Orders",
+    "contentUrl": "RegionalOrders",
+    "type": "excel-direct",
+    "hasExtracts": false,
+    "project": {
+      "name": "Sales"
+    }
+  }
+]

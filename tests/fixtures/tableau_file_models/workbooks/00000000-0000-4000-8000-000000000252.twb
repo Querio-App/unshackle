@@ -1,0 +1,150 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook original-version='18.1' source-build='2024.2.0 (20242.24.0613.0835)' source-platform='mac' version='18.1' locale='en_US' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <repository-location id='OrderHealth' path='/t/example/workbooks' revision='' site='example' />
+  <datasources>
+    <datasource caption='Regional Orders' inline='true' name='sqlproxy.0regional0orders' version='18.1'>
+      <connection channel='https' class='sqlproxy' dbname='RegionalOrders' directory='/dataserver' port='443' server='example.online.tableau.com' username=''>
+        <relation name='sqlproxy' table='[sqlproxy]' type='table' />
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Profit Ratio' datatype='real' name='[Calculation_1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([profit]) / sum([sales])' />
+      </column>
+    </datasource>
+    <datasource caption='Store Orders' inline='true' name='federated.0store0orders' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='Stores' name='excel-direct.0stores'>
+            <connection class='excel-direct' cleaning='no' compat='no' dataRefreshTime='' filename='Data/Stores.xlsx' interpretationMode='0' server='' validate='no' />
+          </named-connection>
+        </named-connections>
+        <relation connection='excel-direct.0stores' name='Orders' table='[Orders$]' type='table' />
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_id</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[order_id]</local-name>
+            <parent-name>[Orders]</parent-name>
+            <remote-alias>order_id</remote-alias>
+            <ordinal>0</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>store</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[store]</local-name>
+            <parent-name>[Orders]</parent-name>
+            <remote-alias>store</remote-alias>
+            <ordinal>1</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sales</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[sales]</local-name>
+            <parent-name>[Orders]</parent-name>
+            <remote-alias>sales</remote-alias>
+            <ordinal>2</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>profit</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[profit]</local-name>
+            <parent-name>[Orders]</parent-name>
+            <remote-alias>profit</remote-alias>
+            <ordinal>3</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Profit Ratio' datatype='real' name='[Calculation_1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([profit]) / COUNTD([order_id])' />
+      </column>
+    </datasource>
+    <datasource caption='Sales Targets' inline='true' name='federated.0sales0targets' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='targets' name='textscan.0targets'>
+            <connection class='textscan' directory='Data' filename='targets.csv' server='' />
+          </named-connection>
+        </named-connections>
+        <relation connection='textscan.0targets' name='targets.csv' table='[targets#csv]' type='table'>
+          <columns character-set='UTF-8' header='yes' locale='en_US' separator=','>
+            <column datatype='string' name='region' ordinal='0' />
+            <column datatype='real' name='target' ordinal='1' />
+          </columns>
+        </relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>region</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[region]</local-name>
+            <parent-name>[targets.csv]</parent-name>
+            <remote-alias>region</remote-alias>
+            <ordinal>0</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>target</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[target]</local-name>
+            <parent-name>[targets.csv]</parent-name>
+            <remote-alias>target</remote-alias>
+            <ordinal>1</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+    </datasource>
+    <datasource caption='Budget' inline='true' name='federated.0budget' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='Budget' name='excel-direct.0budget'>
+            <connection class='excel-direct' cleaning='no' compat='no' dataRefreshTime='' filename='Data/Budget.xlsx' interpretationMode='0' server='' validate='no' />
+          </named-connection>
+        </named-connections>
+        <relation connection='excel-direct.0budget' name='Sheet1' table='[Sheet1$]' type='table' />
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>region</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[region]</local-name>
+            <parent-name>[Sheet1]</parent-name>
+            <remote-alias>region</remote-alias>
+            <ordinal>0</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>budget</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[budget]</local-name>
+            <parent-name>[Sheet1]</parent-name>
+            <remote-alias>budget</remote-alias>
+            <ordinal>1</ordinal>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+    </datasource>
+  </datasources>
+</workbook>

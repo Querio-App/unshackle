@@ -23,7 +23,7 @@ from unshackle.http import Client
 from unshackle.raw import RawStore
 from unshackle.sources import _tableau_data as tdata
 from unshackle.sources import _manual, get_source
-from unshackle.sources.tableau import TableauSource, extract_only, read_datasource
+from unshackle.sources.tableau import TableauSource, _same_formula, extract_only, read_datasource
 
 FIX = Path(__file__).parent / "fixtures" / "tableau_extract"
 DATA = Path(__file__).parent / "data" / "dunder_mifflin"
@@ -561,3 +561,30 @@ def test_a_workbook_copy_shares_its_extract_model(tmp_path: Path):
     b = _parse_models(tmp_path, lambda xml: xml.replace("</datasource>", calc + "</datasource>"))
     assert sorted(sm.name for sm in b.semantic_models) == ["order_lines", "product_catalog"]
     assert [w for w in b.warnings if "already exists in semantic model order_lines with a different formula" in w.message]
+
+
+# ------------------------------------------------------------------ files (tests/fixtures/tableau_file_models/)
+
+
+def test_each_file_data_source_is_its_own_model(tmp_path: Path):
+    """A sheet or file name (Orders, Sheet1, targets.csv) is the data source's own table, not a shared one: two data
+    sources reading a sheet `Orders` are two models, each named after its data source as `--with-data` names the copies."""
+    raw = tmp_path / "migration" / "raw" / "tableau"
+    shutil.copytree(FIX.parent / "tableau_file_models", raw)
+    b = get_source("tableau").parse(RawStore(tmp_path, "tableau"))
+    models = {sm.name: sm for sm in b.semantic_models}
+    assert sorted(models) == ["budget", "regional_orders", "sales_targets", "store_orders"]
+    assert {d.name for d in models["regional_orders"].dimensions} == {"region"}
+    assert {d.name for d in models["store_orders"].dimensions} == {"store"}
+    # one Profit Ratio per data source; the workbook's copy writes the published formula in other case and spacing
+    ratios = {m.semantic_model for m in b.metrics if m.label == "Profit Ratio"}
+    assert ratios == {"regional_orders", "store_orders"}
+    assert not [w for w in b.warnings if "already exists in semantic model" in w.message or "already a column" in w.message]
+
+
+def test_formulas_differing_in_case_and_spacing_are_one_calculation():
+    assert _same_formula("SUM([Profit])/SUM([Sales])", "sum([Profit]) / sum( [Sales] )")
+    assert _same_formula("IF [Region] = 'East' THEN 1 END // east only", "if [Region]='East' then 1 end")
+    assert not _same_formula("SUM([Profit])", "SUM([profit])")  # field names and strings as written
+    assert not _same_formula("[Region] = 'East'", "[Region] = 'EAST'")
+    assert not _same_formula("SUM([Profit])/SUM([Sales])", "SUM([Profit])/COUNTD([Sales])")
