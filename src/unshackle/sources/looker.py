@@ -21,6 +21,7 @@ parse() prefers raw LookML. Without it, it rebuilds views from the explore JSON
 from __future__ import annotations
 
 import calendar
+import html
 import json
 import posixpath
 import re
@@ -1915,8 +1916,7 @@ class _Parser:
         eid = str(el.get("id"))
         etype = el.get("type", "vis")
         if etype == "text" or (etype != "vis" and (el.get("body_text") or el.get("title_text"))):
-            parts = [f"## {el['title_text']}" if el.get("title_text") else "", el.get("subtitle_text") or "", el.get("body_text") or ""]
-            return Tile(eid, el.get("title_text") or "", "text", "text", text="\n\n".join(p for p in parts if p), source_type="text")
+            return _text_tile(eid, el)
         q = _element_query(el)
         vis = q.get("vis_config") or el.get("result_maker", {}).get("vis_config") or {}
         vtype = vis.get("type") or q.get("vis_config", {}).get("type") or "unknown"
@@ -2137,8 +2137,7 @@ class _Parser:
         eid = str(el.get("name") or el.get("title") or "element")
         etype = str(el.get("type") or "")
         if etype == "text" or (not el.get("fields") and (el.get("body_text") or el.get("title_text"))):
-            parts = [f"## {el['title_text']}" if el.get("title_text") else "", str(el.get("subtitle_text") or ""), str(el.get("body_text") or "")]
-            return Tile(eid, str(el.get("title_text") or ""), "text", "text", text="\n\n".join(p for p in parts if p), source_type="text")
+            return _text_tile(eid, el)
         kind, mark = VIS_MARK.get(etype, ("unknown", "unknown"))
         query = {k: el[k] for k in ("model", "explore", "fields", "pivots", "filters", "sorts", "limit", "listen") if el.get(k)}
         vis = {k: v for k, v in el.items() if k not in query and k not in ("name", "title", "row", "col", "width", "height")}
@@ -2425,6 +2424,28 @@ def _null_propagating(expr: str, vname: str, other: str) -> bool:
     refs = {v for v, _, _ in FILTER_REF.findall(expr)}
     rest = FILTER_REF.sub("", expr)
     return {snake(vname), snake(other)} <= refs and bool(re.fullmatch(r"[\s\d.+\-*/()]*", rest))
+
+
+def _text_tile(eid: str, el: dict[str, Any]) -> Tile:
+    """A text element: the notebook writes the title as the heading, so the text holds only subtitle and body."""
+    parts = [_html_to_markdown(str(el.get(k) or "")) for k in ("subtitle_text", "body_text")]
+    title = " ".join(_html_to_markdown(str(el.get("title_text") or ""), plain=True).split())
+    return Tile(eid, title, "text", "text", text="\n\n".join(p for p in parts if p), source_type="text")
+
+
+HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
+
+
+def _html_to_markdown(text: str, plain: bool = False) -> str:
+    """Simple HTML in text tiles (b, i, br, p, links) as Markdown; other tags are dropped, keeping their text."""
+    if not plain:
+        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+        text = re.sub(r"</p\s*>", "\n\n", text, flags=re.I)
+        text = re.sub(r"<(b|strong)\b[^>]*>(.*?)</\1\s*>", lambda m: f"**{m.group(2).strip()}**", text, flags=re.I | re.S)
+        text = re.sub(r"<(i|em)\b[^>]*>(.*?)</\1\s*>", lambda m: f"*{m.group(2).strip()}*", text, flags=re.I | re.S)
+        text = re.sub(r"""<a\b[^>]*href=["']([^"']*)["'][^>]*>(.*?)</a\s*>""", r"[\2](\1)", text, flags=re.I | re.S)
+    text = html.unescape(HTML_TAG.sub("", text))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(line.rstrip() for line in text.splitlines())).strip()
 
 
 def _join_on_text(j: dict[str, Any]) -> str:

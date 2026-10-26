@@ -297,7 +297,7 @@ def test_lookml_dashboard_becomes_a_notebook(tmp_path: Path):
     f = _by_name(d.filters)
     assert (f["state"].default, f["status"].default, f["created"].default, f["created"].kind) == (None, "complete", "30 days", "date_range")
     t = {x.id: x for x in d.tiles}
-    assert t["header"].kind == "text" and "## Orders" in t["header"].text
+    assert (t["header"].kind, t["header"].title, t["header"].text) == ("text", "Orders", "")
     line = t["revenue_by_month"]
     assert (line.mark, line.encodings["x"].field, line.encodings["x"].type, line.encodings["y"].field) == (
         "line", "orders_created_month", "temporal", "orders_revenue")
@@ -383,6 +383,29 @@ def test_lookml_dashboard_extends_and_api_copies(tmp_path: Path):
     store.put_json("dashboards/shop::child.json", {"id": "shop::child", "title": "Child", "dashboard_elements": []})
     again = LookerSource().parse(store)
     assert [d.name for d in again.dashboards].count("Child") == 1
+
+
+def test_text_tile_with_html_title_is_one_markdown_heading(tmp_path: Path):
+    files = {"shop.dashboard.lookml": """- dashboard: spend
+  title: Spend
+  elements:
+  - name: "<b>SPEND TO DATE</b>"
+    type: text
+    title_text: "<b>SPEND TO DATE</b>"
+    subtitle_text: ''
+    body_text: ''
+  - name: notes
+    type: text
+    title_text: "<span class='fa fa-dollar'> Notes &amp; caveats </span>"
+    body_text: "<p>Net of <b>tax</b>.<br>See <a href='https://example.com/spend'>the guide</a>.</p><p><i>Updated daily</i></p>"
+"""}
+    b = _parse(tmp_path, files)
+    build.apply(b, tmp_path)
+    nb = json.loads((tmp_path / "notebooks/spend.ipynb").read_text())
+    md = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "markdown"]
+    assert "## SPEND TO DATE" in md
+    assert sum(m.count("SPEND TO DATE") for m in md) == 1
+    assert ("## Notes & caveats\n\nNet of **tax**.\nSee [the guide](https://example.com/spend).\n\n*Updated daily*") in md
 
 
 def test_notebook_listens_to_dashboard_filters(tmp_path: Path):
