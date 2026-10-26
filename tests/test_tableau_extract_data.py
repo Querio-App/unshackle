@@ -490,3 +490,41 @@ def test_import_with_data_needs_a_tool_with_data(tmp_path: Path):
     f.write_text("view: x {}")
     res = CliRunner().invoke(main, ["import", "looker", str(f), "--repo", str(tmp_path), "--with-data"])
     assert res.exit_code != 0 and "carry no data of their own" in res.output
+
+
+# ------------------------------------------------------------------ several extracts (tests/fixtures/tableau_extract_models/)
+
+
+def _parse_models(tmp_path: Path, twb_edit=None):
+    raw = tmp_path / "migration" / "raw" / "tableau"
+    shutil.copytree(FIX.parent / "tableau_extract_models", raw)
+    if twb_edit:
+        twb = next((raw / "workbooks").glob("*.twb"))
+        twb.write_text(twb_edit(twb.read_text()))
+    return get_source("tableau").parse(RawStore(tmp_path, "tableau"))
+
+
+def test_each_extract_is_its_own_model(tmp_path: Path):
+    """Every extract stores its rows in [Extract].[Extract]: two extract data sources are two tables, not one, and their
+    models are named after the data source as `--with-data` names the copies."""
+    b = _parse_models(tmp_path)
+    models = {sm.name: sm for sm in b.semantic_models}
+    assert sorted(models) == ["order_lines", "product_catalog"]
+    assert {d.name for d in models["order_lines"].dimensions} == {"purchased_at"}
+    assert {d.name for d in models["product_catalog"].dimensions} == {"paper_type"}
+    assert models["order_lines"].entities[0].expr == "order_id" and models["product_catalog"].entities[0].expr == "product_id"
+    # the same calculation name with two formulas: one metric per model, nothing dropped
+    ratios = {m.semantic_model: m.name for m in b.metrics if m.label == "Profit Ratio"}
+    assert set(ratios) == {"order_lines", "product_catalog"} and len(set(ratios.values())) == 2
+    assert not [w for w in b.warnings if "already exists in semantic model" in w.message or "already a column" in w.message]
+    assert len([t for t in b.tables if (t.schema, t.name) == ("Extract", "Extract")]) == 1  # the catalog lists the table once
+
+
+def test_a_workbook_copy_shares_its_extract_model(tmp_path: Path):
+    """A workbook's copy of a published extract data source is the same data source: same model, and a calculation it
+    redefines under the published name is reported."""
+    calc = ("<column caption='Profit Ratio' datatype='real' name='[Calculation_1]' role='measure' type='quantitative'>"
+            "<calculation class='tableau' formula='SUM([quantity]) / COUNTD([order_id])' /></column>")
+    b = _parse_models(tmp_path, lambda xml: xml.replace("</datasource>", calc + "</datasource>"))
+    assert sorted(sm.name for sm in b.semantic_models) == ["order_lines", "product_catalog"]
+    assert [w for w in b.warnings if "already exists in semantic model order_lines with a different formula" in w.message]

@@ -2317,8 +2317,12 @@ class _Parser:
             self.b.warn(item, f"{_cross_db(conns)}{extract}")
         self._connection_settings(ds, item)
         mine: dict[str, _Model] = {}
+        owner = ds.origin or ds
+        extracts = [r for r in ds.relations.values() if r.kind == "table" and r.connection_class in ("hyper", "dataengine")]
         for r in ds.relations.values():
             key = f"table:{r.schema.lower()}.{r.table.lower()}" if r.kind == "table" else "sql:" + hashlib.sha1(" ".join(r.sql.split()).encode()).hexdigest()[:12]
+            if r in extracts:  # every extract names its table [Extract].[Extract]: it is its data source's, not a shared one
+                key = f"extract:{owner.src}#{owner.name if owner.workbook else ''}#{r.name}"
             # A table of a cross-database data source is keyed by its database too: the same schema and name in another
             # database is another table. It shares a model only with the same table of the same database.
             same_db = self.models.get(f"{key}@{r.connection}") if r.kind == "table" and r.connection else None
@@ -2333,6 +2337,9 @@ class _Parser:
                 key = f"{key}@{r.connection}"
             if model is None:
                 base = _name(r.table if r.kind == "table" else ds.caption)
+                if r in extracts:  # as `--with-data` names its copy (_tableau_data.write_tables)
+                    one = len(extracts) == 1 or _name(owner.caption) == _name(r.name)
+                    base = _name(owner.caption if one else f"{owner.caption}_{r.name}")
                 taken = {m.sm.name for m in self.models.values()}
                 if conns and r.kind == "table" and r.database and base in taken:
                     base = _name(f"{r.table}_{r.database}")  # a namesake from another database: name it after its database
@@ -2366,6 +2373,8 @@ class _Parser:
                                f"{namesake.rel.connection or 'another database'}. In one warehouse they are one table: load this database's "
                                f"table under another schema or name and point `table` at it")
                     tbl = None  # the catalog describes the warehouse's {schema}.{table} once
+                if r in extracts and any(t.schema == r.schema and t.name == r.table for t in self.b.tables):
+                    tbl = None
                 self.models[key] = model
                 self.b.semantic_models.append(sm)
                 if tbl is not None:

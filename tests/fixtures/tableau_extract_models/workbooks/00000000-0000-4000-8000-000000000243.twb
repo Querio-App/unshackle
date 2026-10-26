@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook original-version='18.1' source-build='2024.2.0 (20242.24.0613.0835)' source-platform='mac' version='18.1' locale='en_US' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <repository-location id='OrderReview' path='/t/example/workbooks' revision='' site='example' />
+  <datasources>
+    <datasource caption='Order Lines' inline='true' name='sqlproxy.0order0lines' version='18.1'>
+      <connection channel='https' class='sqlproxy' dbname='OrderLines' directory='/dataserver' port='443' server='example.online.tableau.com' username=''>
+        <relation name='sqlproxy' table='[sqlproxy]' type='table' />
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Revenue' datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' />
+    </datasource>
+  </datasources>
+</workbook>

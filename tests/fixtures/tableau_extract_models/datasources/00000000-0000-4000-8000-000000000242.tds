@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<datasource formatted-name='federated.0products' inline='true' source-platform='linux' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <connection class='federated'>
+    <named-connections>
+      <named-connection caption='products' name='hyper.0products'>
+        <connection authentication='auth-none' author-locale='en_US' class='hyper' dbname='Data/Extracts/products.hyper' default-settings='yes' schema='Extract' tablename='Extract' />
+      </named-connection>
+    </named-connections>
+    <relation connection='hyper.0products' name='Extract' table='[Extract].[Extract]' type='table' />
+    <metadata-records>
+      <metadata-record class='column'>
+        <remote-name>product_id</remote-name>
+        <remote-type>129</remote-type>
+        <local-name>[product_id]</local-name>
+        <parent-name>[Extract]</parent-name>
+        <remote-alias>product_id</remote-alias>
+        <ordinal>0</ordinal>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>paper_type</remote-name>
+        <remote-type>129</remote-type>
+        <local-name>[paper_type]</local-name>
+        <parent-name>[Extract]</parent-name>
+        <remote-alias>paper_type</remote-alias>
+        <ordinal>1</ordinal>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>price</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[price]</local-name>
+        <parent-name>[Extract]</parent-name>
+        <remote-alias>price</remote-alias>
+        <ordinal>2</ordinal>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+      </metadata-record>
+    </metadata-records>
+  </connection>
+  <aliases enabled='yes' />
+  <column caption='Profit Ratio' datatype='real' name='[Calculation_1]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='AVG([price]) / MAX([price])' />
+  </column>
+</datasource>
