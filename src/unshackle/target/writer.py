@@ -61,7 +61,7 @@ class Target:
 
         managed=False files (AGENTS.md, unshackle.toml) are only created, never updated.
         merged=True means the caller already folded the existing file into `content`
-        (catalog descriptions, MEMORY.md blocks), so overwriting loses nothing.
+        (catalog descriptions), so overwriting loses nothing.
         """
         content = normalize(content)
         owner = self.lock.owners.get(rel, "")

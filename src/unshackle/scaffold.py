@@ -27,10 +27,12 @@ AGENTS_MD = """\
 # {name}
 
 This repo holds the company's analytics as code: metrics, schema, knowledge,
-verified queries, notebooks, skills and permissions. If you use a coding agent
+verified queries, notebooks and permissions. If you use a coding agent
 to finish the migration, have it read this file first.
 
 ## Where things live
+
+Folders appear when unshackle (or you) first write to them.
 
 | Folder | What it holds | Format |
 | --- | --- | --- |
@@ -38,13 +40,11 @@ to finish the migration, have it read this file first.
 | `{catalog}/<datasource>/<schema>/<table>.yml` | Tables, columns, descriptions | YAML, one file per table |
 | `{knowledge}/` | Glossary, business rules, AI context | Markdown with frontmatter |
 | `{queries}/` | Verified queries | SQL or Python with a comment header |
-| `{notebooks}/` | Notebooks and dashboards | Jupyter `.ipynb` (SQL + Altair) |
-| `{skills}/<name>/SKILL.md` | Reusable analysis playbooks | Agent Skills |
-| `{memory}/MEMORY.md` | Running notes for agents | Markdown |
+| `{notebooks}/` | Dashboards as notebooks | Jupyter `.ipynb` (SQL + Altair) |
 | `{policies}/` | Who can see or query what | Cedar + `row_filters.*.yml` |
-| `{automations}/` | Scheduled jobs | YAML |
-| `{evals}/` | Question -> expected answer tests | YAML |
-| `migration/` | Written by unshackle only: raw exports, report, lock | - |
+| `{evals}/` | Question -> expected answer, written by `unshackle verify` for passing parity cases | YAML |
+| `{data}/` | Data copied out of the BI tool (`--with-data`), git-ignored | Parquet |
+| `migration/` | Written by unshackle only: raw exports, report, lock, skills, parity cases | - |
 
 ## Migrating from a BI tool
 
@@ -91,9 +91,6 @@ def init(repo: Path, name: str | None = None, update_skills: bool = False) -> li
         CONFIG_TOML.format(name=name, paths="\n".join(f'{k} = "{v}"' for k, v in paths.items())),
     )
     create("AGENTS.md", AGENTS_MD.format(name=name, **paths))
-    create(f"{paths['memory']}/MEMORY.md", "# Memory\n")
-    for key in ("semantic", "catalog", "knowledge", "queries", "notebooks", "skills", "policies", "automations", "evals"):
-        create(f"{paths[key]}/.gitkeep", "")
     from unshackle.resources import copy_skills
 
     skills = copy_skills(repo, update=update_skills)

@@ -2,7 +2,7 @@
 
 This is the layout `unshackle` writes into a target repo. The files can be read and
 edited directly. Everything here matches what `src/unshackle/target/*` and
-`src/unshackle/scaffold.py` emit.
+`src/unshackle/scaffold.py` emit. A folder exists only once something is written to it.
 
 ```
 AGENTS.md                         read-me for agents (created once by `unshackle init`)
@@ -13,13 +13,11 @@ knowledge/*.md                    markdown with frontmatter
 queries/*.sql | *.py              verified queries with a comment header
 queries/models/*.sql              SQL models for pre-aggregated logic (paths.sql_models)
 notebooks/<name>.ipynb            dashboards as Jupyter notebooks (SQL + Altair)
-skills/<name>/SKILL.md            analysis playbooks (Agent Skills format)
-memory/MEMORY.md                  running notes for agents
 policies/schema.cedarschema       Cedar schema
 policies/<tool>.cedar             Cedar policies
 policies/row_filters.<tool>.yml   row-level rules as SQL predicates
-automations/                      scheduled jobs (YAML)
-evals/*.yaml                      question -> expected answer
+evals/*.yaml                      question -> expected answer (written by `unshackle verify`)
+data/<tool>/                      data copied out of the tool (`--with-data`), git-ignored
 migration/                        unshackle's working area (see below)
 ```
 
@@ -38,12 +36,10 @@ catalog = "catalog"
 knowledge = "knowledge"
 queries = "queries"
 notebooks = "notebooks"
-skills = "skills"
-memory = "memory"
 policies = "policies"
-automations = "automations"
 evals = "evals"
 sql_models = "queries/models"
+data = "data"
 
 [datasources.warehouse]
 # type = "postgres"   # snowflake | bigquery | databricks | redshift | postgres | duckdb
@@ -337,13 +333,8 @@ row_filters:
 
 `{{ user.<attr> }}` is replaced with the querying user's attribute from the IdP.
 
-## skills/, memory/, automations/, evals/
+## evals/
 
-- `skills/<name>/SKILL.md`: Agent Skills (frontmatter `name`, `description`, then
-  instructions). Hand-written; unshackle does not generate these.
-- `memory/MEMORY.md`: free-form notes. unshackle owns only the block between
-  `<!-- unshackle:<tool>:start -->` and `<!-- unshackle:<tool>:end -->`; everything else is yours.
-- `automations/`: hand-written scheduled jobs.
 - `evals/<slug>.yaml`: written by `unshackle verify` for each passing parity case:
 
 ```yaml
@@ -390,9 +381,8 @@ Written by unshackle only.
 | `.gitignore` | `unshackle init` creates it, or appends `.unshackle/`, `*.html`, `.env` | never touched again |
 | semantic, queries, knowledge, notebooks, policies | `unshackle build` | rewritten only if unchanged since last build (lock hash matches) |
 | catalog | `unshackle build` | always rewritten, merging what's in the file: column `description` and `visible: false`, table `description`, and `label` (only where the source also has a label) are kept, as are columns the source no longer has; other hand-added keys are dropped |
-| `memory/MEMORY.md` | `unshackle build` | only the tool's marker block is replaced |
 | `evals/*.yaml` | `unshackle verify` | overwritten for every passing case |
-| skills, automations, parity cases | people / agents | never touched |
+| parity cases | people / agents | never touched |
 
 A file that differs from its lock hash, or that existed before unshackle and isn't in
 the lock, is kept and listed under "kept because someone edited them by hand" in
