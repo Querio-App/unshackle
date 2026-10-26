@@ -42,8 +42,9 @@ see what was translated and what remains.
 
 ```bash
 uv tool install "unshackle[run,tableau]"
-unshackle tools
+unshackle tools tableau          # each variable and where to find it
 cd your-analytics-repo
+unshackle check tableau --prompt # asks for unset variables (secrets hidden), saves .env, checks the connection
 unshackle migrate tableau
 ```
 
