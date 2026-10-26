@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from unshackle.cli import main
 from unshackle.sources import _tableau_data, looker, qlik, quicksight
 
-FORMAT = re.compile(r'^.+ needs the `(\w+)` extra: uv tool install --force "unshackle\[run,\1\]" \(or pip install "unshackle\[run,\1\]"\)')
+FORMAT = re.compile(r'''^.+ needs the `(\w+)` extra: uv tool install --force "unshackle\[run,\1\]" \(from a checkout: uv pip install -e '\.\[\1\]'\)''')
 
 
 def _hide(monkeypatch, *modules):
