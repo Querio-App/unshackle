@@ -575,9 +575,9 @@ def relative_bounds(v: str, datatype: str, dialect: str, week_start: str = "mond
     """(start, end) SQL of a relative date filter as Looker writes it on BigQuery, for units second to year:
     `N <unit>` (the current unit and the N-1 before), `N <unit> ago` (that unit), `N <unit> ago for M <unit>`
     (from the start of the unit N ago, for M units), `before N <unit> ago` (end only: start ""),
-    `after N <unit> ago` (start only: end None), `this / last / next <unit>`. Every period starts at the
-    start of its unit (weeks on `week_start`). None for other forms, sub-day units on a date, columns and
-    warehouses."""
+    `after N <unit> ago` (start only: end None), `this / last / next <unit>` (day to year). Every period
+    starts at the start of its unit (weeks on `week_start`), except seconds: Looker counts them from the
+    current moment. None for other forms, sub-day units on a date, columns and warehouses."""
     if dialect != "bigquery" or datatype not in ("date", "timestamp"):
         return None
     date = datatype == "date"
@@ -587,6 +587,8 @@ def relative_bounds(v: str, datatype: str, dialect: str, week_start: str = "mond
             return None
         if unit == "week" and week_start not in WEEKDAYS:
             return None
+        if unit == "second":  # not truncated
+            return "CURRENT_TIMESTAMP()"
         part = f"WEEK({week_start.upper()})" if unit == "week" else unit.upper()
         if date:
             return "CURRENT_DATE()" if unit == "day" else f"DATE_TRUNC(CURRENT_DATE(), {part})"
@@ -625,7 +627,8 @@ def relative_bounds(v: str, datatype: str, dialect: str, week_start: str = "mond
     m = re.fullmatch(rf"(this|last|next) {REL_UNIT}", v)
     if m:
         now, unit = trunc(m.group(2)), m.group(2)
-        if now is None:
+        # this / next hour, minute, second are invalid in Looker; its range for last one is empty
+        if now is None or unit in ("second", "minute", "hour"):
             return None
         start = {"this": now, "last": add(now, -1, unit), "next": add(now, 1, unit)}[m.group(1)]
         return start, add(start, 1, unit)

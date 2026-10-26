@@ -666,7 +666,10 @@ def test_relative_date_filters(bundle_for, db):
 
 
 def _unit_start(t: datetime, unit: str, week_start: str = "monday") -> datetime:
-    """The start of the unit `t` is in: weeks begin on week_start_day, quarters in January, April, July, October."""
+    """The start of the unit `t` is in: weeks begin on week_start_day, quarters in January, April, July, October;
+    seconds are not truncated (Looker counts them from the current moment)."""
+    if unit == "second":
+        return t
     finer = ["second", "minute", "hour"][: ["second", "minute", "hour"].index(unit) if unit in ("second", "minute", "hour") else 3]
     t = t.replace(microsecond=0, **{f: 0 for f in finer if f != unit})
     if unit == "week":
@@ -685,7 +688,8 @@ def _for(start: datetime, n: int, unit: str) -> tuple[datetime, datetime]:
 
 
 # Looker's relative date filters (filter expressions documentation), as [start, end) from the moment `now`:
-# every period starts at the start of its unit; `N <unit>` is the current unit and the N-1 before it,
+# every period starts at the start of its unit (a second at the current moment); `N <unit>` is the current
+# unit and the N-1 before it,
 # `N <unit> ago for M <unit>` starts N units before the current one and lasts M units,
 # `before` / `after N <unit> ago` are < / >= that start, `this / last / next <unit>` are one unit.
 RELATIVE_BOUNDS = {
@@ -710,7 +714,10 @@ RELATIVE_BOUNDS = {
     "last quarter": lambda now, ws="monday": _for(_shift(_unit_start(now, "quarter"), -1, "quarter"), 1, "quarter"),
     "this year": lambda now, ws="monday": _for(_unit_start(now, "year"), 1, "year"),
     "next year": lambda now, ws="monday": _for(_shift(_unit_start(now, "year"), 1, "year"), 1, "year"),
-    "last  Hour": lambda now, ws="monday": _for(_shift(_unit_start(now, "hour"), -1, "hour"), 1, "hour"),
+    "Last  Day": lambda now, ws="monday": _for(_shift(_unit_start(now, "day"), -1, "day"), 1, "day"),
+    "30 seconds": lambda now, ws="monday": _for(_shift(now, -29, "second"), 30, "second"),
+    "10 seconds ago for 5 seconds": lambda now, ws="monday": _for(_shift(now, -10, "second"), 5, "second"),
+    "after 60 seconds ago": lambda now, ws="monday": (_shift(now, -60, "second"), None),
 }
 RELATIVE_TILES = {"fact_relative_years", "fact_relative_hours", "fact_relative_weeks"}
 
@@ -735,18 +742,26 @@ def test_relative_bounds_follow_lookers_periods(value, datatype, week_start):
     con = duckdb.connect()
     con.execute("SET TimeZone = 'UTC'")
     got, before, after = _bounds_now(con, [b for b in rel if b])
-    fmt = (lambda t: f"{t:%Y-%m-%d}") if datatype == "date" else _bq_timestamp_string
-    expected = [[fmt(b) for b in RELATIVE_BOUNDS[value](now, week_start) if b is not None] for now in (before, after)]
-    if datatype == "date":  # DuckDB's DATE + INTERVAL is a TIMESTAMP; BigQuery's DATE_ADD stays a DATE
-        got = [g[:10] for g in got]
-    assert got in expected, (value, rel)
+    # each bound lies between the bounds at the moments before and after the query (equal unless the unit
+    # is a second or the query straddles the start of a unit); DATE_ADD stays a DATE in BigQuery
+    got = [datetime.fromisoformat(g.split("+")[0]) for g in got]
+    lo, hi = ([b for b in RELATIVE_BOUNDS[value](now, week_start) if b is not None] for now in (before, after))
+    if datatype == "date":
+        got, lo, hi = ([datetime.combine(x.date(), datetime.min.time()) for x in xs] for xs in (got, lo, hi))
+    assert all(a <= g <= b for a, g, b in zip(lo, got, hi)), (value, rel, got, lo, hi)
+    if "second" in value:
+        assert "TIMESTAMP_TRUNC" not in str(rel), rel
     if "week" not in value:
         assert relative_bounds(value, datatype, "bigquery", "different days per model") == rel
 
 
 def test_relative_date_filters_beyond_the_grammar_stay_todo():
     for value in ("3 complete days", "today", "2 days from now", "before 2 days ago for 1 day", "0 days",
-                  "1 fiscal quarter", "3 days ago for 0 days"):
+                  "1 fiscal quarter", "3 days ago for 0 days",
+                  # invalid in Looker
+                  "this second", "this minute", "this hour", "next second", "next minute", "next hour",
+                  # Looker's own range for these is empty
+                  "last second", "last minute", "last hour"):
         assert looker_filter_sql("d", value, "time", "timestamp", "bigquery") is None, value
     assert looker_filter_sql("d", "3 days", "time", "timestamp", "snowflake") is None
     assert looker_filter_sql("d", "this week", "time", "date", "bigquery", week_start="different days per model") is None
