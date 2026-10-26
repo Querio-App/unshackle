@@ -1460,6 +1460,7 @@ class TField:
     extra: dict[str, Any] = field(default_factory=dict)
     aliases: list[tuple[str, str]] = field(default_factory=list)  # <alias key= value=>: (member literal, label)
     format: str = ""  # Default Properties > Number Format (`default-format`, e.g. 'c"$"#,##0.00;("$"#,##0.00)')
+    adhoc: bool = False  # typed on a shelf (`user:unnamed`): only its sheets have it, no metric or dimension
 
     @property
     def label(self) -> str:
@@ -2095,6 +2096,16 @@ class _Parser:
                        description=str(meta.get("description") or ""))
         for el in root.findall("datasources/datasource"):
             self._guard(f"{rel} datasource {el.get('caption') or el.get('name', '')}", self._read_wb_datasource, wb, rel, root, el)
+        for dd in root.findall("worksheets/worksheet/table/view/datasource-dependencies"):
+            ds = wb.datasources.get(dd.get("datasource", ""))
+            for col in dd.findall("column") if ds is not None else []:
+                local, calc = _unbracket(col.get("name")), col.find("calculation")
+                if col.get(f"{{{USER_NS}}}unnamed") is None or calc is None or calc.get("class", "tableau") != "tableau" or local in ds.fields:
+                    continue
+                # an ad-hoc calculation (typed on a shelf): Tableau keeps it in the sheets that use it, named by what was typed
+                ds.fields[local] = TField(local, caption=col.get("caption") or "", datatype=col.get("datatype") or "",
+                                          role=col.get("role") or "measure", ftype=col.get("type") or "", formula=calc.get("formula", ""),
+                                          calc_class="tableau", adhoc=True)
         self.workbooks.append(wb)
         self._count_unread(root, wb.name)
 
@@ -2107,7 +2118,7 @@ class _Parser:
 
     def _calcs(self, ds: TDatasource) -> None:
         for f in list(ds.fields.values()):
-            if f.is_calc and not f.param and f.local not in ds.unused:
+            if f.is_calc and not f.param and f.local not in ds.unused and not f.adhoc:
                 self._calc(ds, f)
 
     def _ds_finish(self, ds: TDatasource) -> None:
@@ -2552,7 +2563,7 @@ class _Parser:
     def _count_names(self, sources: list[TDatasource]) -> None:
         for ds in sources:
             for f in ds.fields.values():
-                if f.param or f.local in INTERNAL_FIELDS:
+                if f.param or f.adhoc or f.local in INTERNAL_FIELDS:
                     continue
                 if f.is_calc or (f.role == "measure" and f.datatype in NUMERIC):
                     m = self._field_model(ds, f)
@@ -2696,11 +2707,33 @@ class _Parser:
                     table[key] = table[(ds.origin.uid, f.local)]  # type: ignore[index]
             return res
         try:
-            res = self._translate(ds, f, stack + (key,))
+            res = self._adhoc(ds, f, stack + (key,)) if f.adhoc else self._translate(ds, f, stack + (key,))
         except Exception as exc:  # noqa: BLE001 - one calculation must not stop the migration
             res = self._failed(ds, f, exc)
         self.cache[key] = res
         return res
+
+    def _adhoc(self, ds: TDatasource, f: TField, stack: tuple) -> _Calc:
+        """A calculation typed on a shelf, translated for its sheets' tiles: the metrics, dimensions and names it would add to the
+        semantic layer are dropped again (it has no name of its own there)."""
+        if lod_spans(scan_formula(f.formula or "")[0]):
+            return _Calc("todo", todo=f"an LOD expression typed on a shelf: write it in the tile SQL ({SKILL})")
+        models = list((self.ds_models.get(ds.uid) or {}).values())
+        n_metrics, n_filters = len(self.b.metrics), len(self.b.row_filters)
+        state = [dict(d) for d in (self.metric_sql, self.owner, self.defs)]
+        saved = [(m, len(m.sm.measures), len(m.sm.dimensions), m.elements) for m in models]
+        for m in models:
+            m.elements = set()  # its names don't clash with the model's
+        try:
+            return self._translate(ds, f, stack)
+        finally:
+            del self.b.metrics[n_metrics:], self.b.row_filters[n_filters:]
+            for d, old in zip((self.metric_sql, self.owner, self.defs), state):
+                d.clear()
+                d.update(old)
+            for m, n_measures, n_dims, elements in saved:
+                del m.sm.measures[n_measures:], m.sm.dimensions[n_dims:]
+                m.elements = elements
 
     def _failed(self, ds: TDatasource, f: TField, exc: Exception) -> _Calc:
         """A calculation unshackle failed on: a TODO that keeps its formula, and a warning naming it."""
@@ -6644,7 +6677,7 @@ class _Parser:
     def _field_lines(self, ds: TDatasource) -> tuple[list[str], list[str]]:
         calcs, described = [], []
         for f in ds.fields.values():
-            if f.param or f.local in INTERNAL_FIELDS:
+            if f.param or f.adhoc or f.local in INTERNAL_FIELDS:
                 continue
             desc = f" - {f.description}" if f.description else ""
             if f.formula is not None:

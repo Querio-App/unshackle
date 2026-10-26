@@ -580,3 +580,30 @@ def test_numbered_instances_keep_their_own_settings(tiles):
     twb = next((FIX / "workbooks").glob("*.twb")).read_text()
     assert "name='[cum:sum:post_discount_revenue:qk]'" in twb and "name='[cum:sum:post_discount_revenue:qk:2]'" in twb
     assert "partition by d.paper_type" in tiles["Grid Down"].sql and "partition by d.status" in tiles["Grid Across"].sql
+
+
+# ------------------------------------------------------------------ calculations typed on a shelf
+
+
+def test_ad_hoc_table_calcs(tiles, con, rows):
+    """A calculation typed on a shelf (`user:unnamed`) lives only in its sheet's datasource-dependencies, under a
+    `usr:Calculation_<id>:qk` instance: a table-calc formula, and quick table calcs (percent of total, running total) on it."""
+    m = marks(rows, ["paper_type"], revenue=(REV, "sum"), q=("quantity", "sum"), n=("quantity", "count"))
+    keys = {"paper_type": "paper_type"}
+    check(_run(con, tiles["Ad-hoc Running Total"]), m, keys,
+          {"running_sum_sum_revenue": along(m, [], ["paper_type"], running(REV))})
+    check(_run(con, tiles["Ad-hoc Quick Calcs"]), m, keys, {
+        "pct_of_total_sum_revenue": m[REV] / m[REV].sum(),
+        "running_sum_of_sum_revenue": along(m, [], ["paper_type"], running(REV)),
+    })
+    check(_run(con, tiles["Ad-hoc Aggregate"]), m, keys, {"sum_quantity_count_quantity": m.q / m.n})
+
+
+def test_ad_hoc_calcs_stay_on_their_sheets(bundle, tiles):
+    """No metric for a calculation typed on a shelf; one with no SQL is a TODO named by what the author typed."""
+    labels = {x.label for x in bundle.metrics}
+    assert not labels & {"RUNNING_SUM(SUM([Revenue]))", "SUM([Revenue])", "SUM([Quantity]) / COUNT([Quantity])",
+                         "PREVIOUS_VALUE(0) + SUM([Revenue])"}
+    t = tiles["Ad-hoc Previous Value"]
+    assert not t.sql
+    assert "[PREVIOUS_VALUE(0) + SUM([Revenue])]" in t.todo and "PREVIOUS_VALUE()" in t.todo and "Calculation_7304" not in t.todo
