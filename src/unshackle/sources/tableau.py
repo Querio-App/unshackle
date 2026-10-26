@@ -831,18 +831,24 @@ def d3_format(fmt: str) -> str:
 def alias_sql(expr: str, f: TField) -> str | None:
     """`expr` shown with a field's aliases (Tableau's labels for its members); None when its type has no exact form.
     Members without an alias, and NULL unless it has one, keep their value; booleans show as True / False."""
+    value, expr = expr, _operand(expr)
     if f.datatype == "string":
         whens = []
         for key, label in f.aliases:
             lit = _member_sql(key)
             whens.append(f"when {expr} is null then {_sql_str(label)}" if lit is None else f"when {expr} = {lit} then {_sql_str(label)}")
-        return f"case {' '.join(whens)} else {expr} end"
+        return f"case {' '.join(whens)} else {value} end"
     if f.datatype == "boolean":
         labels = {k.lower(): v for k, v in f.aliases}
         null = f" when {expr} is null then {_sql_str(labels['%null%'])}" if "%null%" in labels else ""
         return (f"case when {expr} then {_sql_str(labels.get('true', 'True'))} when not {expr} then "
                 f"{_sql_str(labels.get('false', 'False'))}{null} end")
     return None
+
+
+def _operand(expr: str) -> str:
+    """`expr` safe beside `=`, `is null` or `not`: a calculation's SQL (`a > 0`) in parentheses, a column as it is."""
+    return expr if re.fullmatch(r'[\w."]+', expr) else f"({expr})"
 
 
 def _sql_str(v: str) -> str:
@@ -4910,7 +4916,7 @@ class _Parser:
             return [f"coalesce({label}, 'Null'){binary}{' desc' if desc else ''}"]
         if srt.kind == "manual":
             members = [m for m in srt.members if m != "%all%"]
-            whens = " ".join(f"when {raw} is null then {n}" if (lit := _member_sql(m)) is None else f"when {raw} = {lit} then {n}"
+            whens = " ".join(f"when {_operand(raw)} is null then {n}" if (lit := _member_sql(m)) is None else f"when {_operand(raw)} = {lit} then {n}"
                              for n, m in enumerate(members, 1))
             return ([f"case {whens} else {len(members) + 1} end"] if members else []) + natural
         return [f"{using}{' desc' if desc else ''}", *natural]
