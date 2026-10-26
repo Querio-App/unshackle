@@ -1103,6 +1103,17 @@ def _px(value: Any) -> float:
 # ------------------------------------------------------------------ source
 
 
+AWS_HINTS = {  # AWS error codes from boto3, and its own exception names
+    "NoCredentials": "no AWS credentials found: set AWS_PROFILE (or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), or run `aws sso login`",
+    "ExpiredToken": "the AWS session has expired: refresh it (`aws sso login`, or a new AWS_SESSION_TOKEN)",
+    "UnrecognizedClient": "AWS does not recognise these credentials: check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or the profile",
+    "InvalidClientTokenId": "AWS does not recognise these credentials: check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or the profile",
+    "SignatureDoesNotMatch": "AWS_SECRET_ACCESS_KEY does not match AWS_ACCESS_KEY_ID",
+    "AccessDenied": "the principal lacks quicksight:List* / Describe* (see the IAM policy in skills/source-quicksight)",
+    "ResourceNotFound": "QuickSight is not set up for this account in this region: check QUICKSIGHT_ACCOUNT_ID and QUICKSIGHT_REGION",
+}
+
+
 class QuickSightSource(Source):
     name = "quicksight"
     label = "Amazon QuickSight"
@@ -1198,6 +1209,19 @@ class QuickSightSource(Source):
     def _url(self, kind: str, rid: str, region: str = "") -> str:
         region = region or self._region
         return f"https://{region}.quicksight.aws.amazon.com/sn/{kind}/{rid}" if region else ""
+
+    def check(self) -> str:
+        """List one dashboard. boto3 errors carry an AWS error code; name what it means."""
+        try:
+            self._call("list_dashboards", MaxResults=1)
+        except Exception as exc:  # botocore errors; boto3 is optional, so no import here
+            cause = exc.__cause__ or exc
+            code = (getattr(cause, "response", None) or {}).get("Error", {}).get("Code", "") or type(cause).__name__
+            for key, hint in AWS_HINTS.items():
+                if key in code:
+                    raise SourceError(f"AWS refused the call ({code}): {hint}") from exc
+            raise exc if isinstance(exc, SourceError) else SourceError(str(exc)) from exc
+        return f"account {self._account} in {self._region}"
 
     def inventory(self) -> Inventory:
         inv = Inventory("quicksight")

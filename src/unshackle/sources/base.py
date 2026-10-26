@@ -89,6 +89,11 @@ class Source(ABC):
     @abstractmethod
     def parse(self, store: RawStore) -> Bundle: ...
 
+    def check(self) -> str:
+        """One cheap authenticated call (`unshackle check`, and before `inventory`). Returns what it reached;
+        errors propagate and unshackle.connect turns them into what to fix."""
+        raise SourceError(f"{self.label} has no connection check yet; run `unshackle inventory {self.name}`")
+
     def import_path(self, path: Path) -> dict[str, bytes]:
         """Map one downloaded file or folder (zips already unpacked) to {raw path: bytes}.
         Return {} when nothing in it is usable; raise SourceError for a file type this tool can't read."""

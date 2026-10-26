@@ -16,7 +16,7 @@ exactly what Metabase runs. Tested against Metabase v0.64.1 (open source); MBQL 
 
 | Variable | Value |
 | --- | --- |
-| `METABASE_URL` | `https://metabase.example.com` (no `/api`) |
+| `METABASE_URL` | the address you open Metabase at, no path: `https://metabase.example.com` |
 | `METABASE_API_KEY` | an API key (Admin > Settings > Authentication > API keys), sent as `X-API-Key` |
 
 - Put the key in the **Administrators** group. A key in another group only sees the

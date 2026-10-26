@@ -243,6 +243,7 @@ def test_network_errors_are_clean_messages(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("LIGHTDASH_URL", "https://example.invalid")
     monkeypatch.setenv("LIGHTDASH_API_KEY", "x")
     monkeypatch.setenv("LIGHTDASH_PROJECT", "p")
+    monkeypatch.setattr(lightdash.LightdashSource, "check", lambda self: "ok")
     monkeypatch.setattr(lightdash.LightdashSource, "inventory", boom)
     run = CliRunner().invoke(main, ["inventory", "lightdash", "--repo", str(tmp_path)])
     assert run.exit_code != 0 and "network error" in run.output and "Traceback" not in run.output

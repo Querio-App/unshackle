@@ -59,9 +59,10 @@ Install `run` plus the extra for your tool, if it has one:
 
 To add an extra later, run the command again with `--force` and the full list of extras.
 
-`unshackle tools` shows the environment variables each source needs, and its extra. Set the ones
-for your tool before running `migrate`; the access instructions are in the
-relevant source guide under [`skills/`](skills/). `migrate` creates the folders,
+`unshackle tools` shows the environment variables each source needs, and its extra;
+`unshackle tools <tool>` says where to find each. Set them in your shell or in `.env` at the
+repo root (git-ignored; real environment variables win), then `unshackle check <tool>`
+confirms they work before running `migrate`. `migrate` creates the folders,
 inventories the source, saves its raw definitions, and builds the translated
 files.
 

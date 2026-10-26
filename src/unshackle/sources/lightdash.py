@@ -211,6 +211,17 @@ class LightdashSource(Source):
             if not items or total is None or offset >= int(total):
                 return out
 
+    def check(self) -> str:
+        self.client().get_json("/api/v1/user")
+        try:
+            project = _results(self.client().get_json(f"/api/v1/projects/{self.project}"))
+        except SourceError as exc:
+            if exc.status not in (400, 403, 404):
+                raise
+            raise SourceError(f"LIGHTDASH_PROJECT={self.project} is not a project this token can open ({exc.status}): copy the "
+                              "UUID after /projects/ in the browser address of the project") from exc
+        return f"project {project.get('name', self.project) if isinstance(project, dict) else self.project} on {self.client().base_url}"
+
     def inventory(self) -> Inventory:
         inv = Inventory("lightdash")
         base = self.client().base_url

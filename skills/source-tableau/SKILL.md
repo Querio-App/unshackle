@@ -9,9 +9,9 @@ description: Use when migrating Tableau (Server or Cloud workbooks, published da
 
 | Variable | Value |
 | --- | --- |
-| `TABLEAU_SERVER_URL` | `https://tableau.acme.com` or `https://prod-useast-a.online.tableau.com` (no `/api`) |
-| `TABLEAU_SITE` | site **content URL** (the `acme` in `/#/site/acme/...`); empty for the Server default site |
-| `TABLEAU_PAT_NAME`, `TABLEAU_PAT_SECRET` | Personal Access Token: My Account Settings > Personal Access Tokens |
+| `TABLEAU_SERVER_URL` | the start of the browser address once the site is open, no path: `https://tableau.example.com` on Server; on Cloud the **pod address**, like `https://prod-useast-b.online.tableau.com`, not the Tableau Cloud Manager address |
+| `TABLEAU_SITE` | the site **content URL**: the part after `#/site/` in the browser address (`acme` in `.../#/site/acme/home`). It can differ from the site's display name. Empty for the Server default site |
+| `TABLEAU_PAT_NAME`, `TABLEAU_PAT_SECRET` | Personal Access Token: your avatar > My Account Settings > Personal Access Tokens > Create new token. The secret is shown once |
 | `TABLEAU_API_VERSION` | optional, default `3.24` (Server 2024.2 / Cloud); older Server: `3.19` (2023.1), `3.15` (2022.1) |
 
 - Use a **Site Administrator Creator** (or Server Admin). Other roles only see

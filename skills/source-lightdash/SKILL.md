@@ -13,7 +13,7 @@ Lightdash actually runs), and falls back to the dbt YAML when there is no API ac
 
 | Variable | Value |
 | --- | --- |
-| `LIGHTDASH_URL` | `https://app.lightdash.cloud` or your self-hosted URL (no `/api/v1`) |
+| `LIGHTDASH_URL` | the address you open Lightdash at, no path: `https://app.lightdash.cloud` or your self-hosted URL |
 | `LIGHTDASH_API_KEY` | personal access token (Settings > Personal access tokens); sent as `Authorization: ApiKey <token>` |
 | `LIGHTDASH_PROJECT` | project UUID (from the URL `/projects/<uuid>/...`) |
 | `LIGHTDASH_DBT_PROJECT_DIR` | optional: local dbt project; `models/**/*.yml` are copied to `raw/dbt/` (and are the only input if the three above are unset) |

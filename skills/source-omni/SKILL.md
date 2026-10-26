@@ -11,7 +11,7 @@ description: Use when migrating Omni (omni.co) shared models (views, topics, rel
 | --- | --- |
 | `OMNI_URL` | `https://<org>.omniapp.co` (or your custom domain; no `/api`) |
 | `OMNI_API_KEY` | **Organization API key** (Admin > API keys), sent as `Authorization: Bearer <key>` |
-| `OMNI_MODEL_ID` | optional: the model to export; default = every `SHARED` model |
+| `OMNI_MODEL_ID` | optional: the model to export (the id in the model IDE's browser address); default = every `SHARED` model |
 
 - Use an **Org API key**, not a personal access token: dashboard export
   (`GET /api/unstable/documents/{id}/export`, `POST /api/v1/content/export-dashboard`)

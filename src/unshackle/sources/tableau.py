@@ -380,6 +380,28 @@ class TableauSource(Source):
             t["from"] = origin[t["datasource"]]
         return tables, errs
 
+    def check(self) -> str:
+        """Sign in and out. A wrong pod address or site content URL are the usual first-run mistakes, so name them."""
+        pod = ("TABLEAU_SERVER_URL must be the address the site runs on: on Tableau Cloud the pod address shown in the browser "
+               "once the site is open (like https://prod-useast-b.online.tableau.com), not the Tableau Cloud Manager address")
+        try:
+            self.client()
+        except SourceError as exc:
+            if exc.status == 401:
+                raise SourceError(
+                    f"Tableau refused the sign-in to site '{self.site()}' (401). Either TABLEAU_SITE is not the site's content "
+                    "URL (the part after #/site/ in the browser address, which can differ from the site's display name; "
+                    "empty for the Server default site), or TABLEAU_PAT_NAME / TABLEAU_PAT_SECRET are wrong or expired "
+                    "(a PAT expires after 15 days unused, or when revoked)") from exc
+            if exc.status in (404, 405):
+                raise SourceError(f"Tableau answered {exc.status} at sign-in: {pod}") from exc
+            raise
+        except ValueError as exc:
+            raise SourceError(f"the server answered with a web page, not the Tableau REST API: {pod}") from exc
+        site = self.site_content_url
+        self._signout()
+        return f"signed in to site '{site}' on {self.server()}" if site else f"signed in to the default site on {self.server()}"
+
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
         errors: list[dict[str, str]] = []
