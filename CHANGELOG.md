@@ -60,6 +60,21 @@
     points to `unshackle import`; `unshackle tools` shows Looker's required and optional variables.
   - Text tiles write their heading once, and simple HTML (bold, italic, line breaks, paragraphs, links) becomes
     Markdown.
+- Tableau end-to-end fixes (extracts, `--with-data`, installs):
+  - Each data source that is an extract gets its own semantic model, named after the data source with or without
+    `--with-data`, so same-named calculations in two extracts no longer collide.
+  - Calculations typed on a shelf (`usr:Calculation_...:qk`) translate in their sheet's tile SQL, including quick
+    percent of total and running total, filters, Color and Label, without becoming metrics; an LOD typed on a shelf
+    stays a TODO with its formula.
+  - A sort on a boolean calculation no longer writes a chained comparison (`a > 0 = true`).
+  - Aliases apply to members containing quotes, and members aliased to one label stay separate marks.
+  - After `--with-data`, `queries/tableau-data.sql` loads DuckDB tables, so notebooks run from any folder; the CLI and
+    `migration/report.md` give the steps, and the `tableau` extra includes `duckdb-engine`.
+- `build` removes files an earlier build of the same tool wrote and this one no longer generates, and the folders that
+  leaves empty. Files edited by hand are kept and listed in `migration/report.md`; files that existed before unshackle
+  are never removed; `--dry-run` lists what would go.
+- Install: every missing-extra error names the extra and the `uv tool install --force` command, `unshackle tools`
+  shows each source's extra, and the README lists the install per tool.
 - The PyPI page links to the repository, issues and changelog.
 - Tests run offline only: the Dunder Mifflin data moved to `tests/data/dunder_mifflin/`, and the
   `live` extra and test marker are gone.
