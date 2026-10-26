@@ -195,3 +195,12 @@
     fields: [quotes.id, quotes.at_time, quotes.at_hour, quotes.at_minute, quotes.at_time_of_day, quotes.at_hour_of_day,
       quotes.in_range]
     sorts: [quotes.id]
+  # an incremental persistent derived table
+  - name: pdt_incremental
+    model: semantics
+    explore: billing
+    type: looker_grid
+    fields: [billing.account, billing.count, billing.total_amount]
+    sorts: [billing.account]
+    filters:
+      billing.account: "-utica"

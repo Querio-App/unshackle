@@ -703,6 +703,8 @@ def strip_sql_comments(sql: str) -> str:
 LIQUID_TAG = re.compile(r"(\{%-?.*?-?%\}|\{\{-?.*?-?\}\})", re.S)
 LIQUID_COMPARE = re.compile(r"""^([\w.]+)\s*(==|!=)\s*(['"])(.*?)\3$""")
 DIALECT_NAME = {"bigquery": "bigquery_standard_sql"}  # _dialect._name, as Looker reported it
+PDT_KEYS = ("datagroup_trigger", "persist_for", "sql_trigger_value", "materialized_view", "increment_key")
+INCREMENT_CONDITION = re.compile(r"\{%-?\s*incrementcondition\s*-?%\}.*?\{%-?\s*endincrementcondition\s*-?%\}", re.S)
 
 
 class Liquid:
@@ -1225,14 +1227,16 @@ class _Parser:
 
     def query_table(self, vname: str, q: _Query | None = None) -> tuple[str, str, str]:
         """(table, note, problem): the table to read in a query, as LookML writes it (quoting kept).
-        A derived table is read under the name it is materialized as; one with Liquid is rendered for
-        the query and inlined, as Looker does."""
+        A derived table is read under the name it is materialized as; a non-persistent one with Liquid
+        is rendered for the query and inlined, as Looker does. A persistent one's Liquid runs only when
+        it is rebuilt, so queries read the materialized table."""
         v = self.views.get(vname) or {}
         raw = str(v.get("sql_table_name") or "")
         if raw and TABLE_NAME.fullmatch(raw) and not LIQUID.search(raw):
             return raw.strip(), "", ""
-        dt_sql = str((v.get("derived_table") or {}).get("sql") or "")
-        if q is not None and LIQUID.search(dt_sql):
+        dt = v.get("derived_table") or {}
+        dt_sql = str(dt.get("sql") or "")
+        if q is not None and LIQUID.search(dt_sql) and not any(dt.get(k) for k in PDT_KEYS):
             rendered, problems = Liquid(self, q).render(vname, dt_sql)
             if problems or LIQUID.search(rendered) or "${" in rendered:
                 return snake(vname), "", f"derived table {vname}: " + ("; ".join(problems) or "reads other views (${...}) inside Liquid")
@@ -1533,17 +1537,28 @@ class _Parser:
             dt, what = {"sql": v["sql_table_name"]}, "sql_table_name that is SQL rather than a table name"
         if dt and not table:
             table = snake(vname)
+            increment = ""
             if dt.get("sql"):
-                sql, problems = self.resolve(vname, dt["sql"])
+                dt_sql = str(dt["sql"])
+                if INCREMENT_CONDITION.search(dt_sql):  # Looker's incremental build; here a full rebuild
+                    dt_sql = INCREMENT_CONDITION.sub("TRUE", dt_sql)
+                    key = dt.get("increment_key")
+                    increment = (f"{{% incrementcondition %}} is TRUE here, a full rebuild: load incrementally on "
+                                 f"increment_key `{key}`" if key else "{% incrementcondition %} is TRUE here, a full rebuild")
+                    if dt.get("increment_offset"):
+                        increment += f", rebuilding the last {dt['increment_offset']} periods as increment_offset does"
+                sql, problems = self.resolve(vname, dt_sql)
             elif dt.get("explore_source"):
                 sql, problems = "", ["native derived table (explore_source)"]
             else:
                 sql, problems = "", ["no `sql` (sql_create or create_process runs custom DDL, e.g. a BigQuery ML model)"]
-            pdt = [k for k in ("datagroup_trigger", "persist_for", "sql_trigger_value", "materialized_view", "increment_key") if dt.get(k)]
+            pdt = [k for k in PDT_KEYS if dt.get(k)]
             todo = (
                 f"Looker {'PDT (' + ', '.join(f'{k}: {dt[k]}' for k in pdt) + ')' if pdt else what}: "
                 f"materialize this SQL as a table or dbt model named `{table}` (the semantic model `{snake(vname)}` points at it)"
             )
+            if increment:
+                todo += f"; {increment}"
             if problems:
                 todo += "; also " + "; ".join(problems)
             body = sql or json.dumps(dt.get("explore_source") or dt, indent=2, default=str)
