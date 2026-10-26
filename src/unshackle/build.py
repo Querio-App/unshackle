@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from unshackle.http import missing_extra
 from unshackle.ir import Bundle
 from unshackle.target import files as tf
 from unshackle.target import notebooks, ossie, policies, semantic
@@ -41,6 +42,7 @@ class BuildResult:
     bundle: Bundle
     writes: WriteResult
     report_path: Path
+    local_db: str = ""  # the DuckDB file this build loaded (see load_local_db)
 
 
 def render_all(bundle: Bundle, target: Target) -> dict[str, tuple[str, bool]]:
@@ -202,8 +204,33 @@ def apply(bundle: Bundle, repo: Path, dry_run: bool = False) -> BuildResult:
         ir_path.parent.mkdir(parents=True, exist_ok=True)
         ir_path.write_text(bundle.to_json())
     target.save()
+    loaded = "" if dry_run else load_local_db(bundle, repo)
     report = write_report(repo, [bundle], target.result, dry_run=dry_run)
-    return BuildResult(bundle=bundle, writes=target.result, report_path=report)
+    return BuildResult(bundle=bundle, writes=target.result, report_path=report, local_db=loaded)
+
+
+def load_local_db(bundle: Bundle, repo: Path) -> str:
+    """Load the data copied out of the tool into bundle.local_db, the DuckDB file the notebooks fall back to.
+
+    Returns its path, or "" (with a warning in the report) when there is nothing to load or it could not be loaded.
+    """
+    if not bundle.local_db:
+        return ""
+    try:
+        import duckdb
+    except ImportError:
+        bundle.warn(bundle.local_db, missing_extra(bundle.tool, "loading the copied data into DuckDB"))
+        return ""
+    path = repo / bundle.local_db
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with duckdb.connect(str(path)) as con:
+            con.execute(f"set file_search_path = '{str(repo.resolve()).replace(chr(39), chr(39) * 2)}'")  # the SQL's paths are repo-relative
+            con.execute(bundle.local_db_sql)
+    except duckdb.Error as exc:  # e.g. a notebook still has the file open
+        bundle.warn(bundle.local_db, f"not loaded: {exc}; close what has it open and run `unshackle build {bundle.tool}` again")
+        return ""
+    return bundle.local_db
 
 
 def _clean_todo(text: str) -> str:

@@ -190,6 +190,8 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
                 _say(f"  {rel}")
         if w.kept_stale:
             _say(f"{len(w.kept_stale)} no longer generated, kept because edited (see report)")
+        if result.local_db:
+            _say(f"loaded {result.local_db}: the notebooks read it when UNSHACKLE_WAREHOUSE_URL is unset (unshackle run)")
         _say(f"report: {result.report_path}")
         if ship and not dry_run:
             todos = len(build.scan_todos(repo, build.all_generated(repo)))
@@ -249,6 +251,33 @@ def verify_cmd(repo: Path, url: str | None) -> None:
         click.echo(f"{r.status:12} {r.name} {r.note}")
     build.write_report(repo)
     if any(r.status != "pass" for r in results):
+        raise SystemExit(1)
+
+
+@main.command(name="run")
+@click.argument("notebooks", nargs=-1, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@REPO
+@click.option("--url", envvar="UNSHACKLE_WAREHOUSE_URL", default=None,
+              help="SQLAlchemy URL of the warehouse. Unset: notebooks read the DuckDB file build loads with --with-data copies.")
+def run_cmd(notebooks: tuple[Path, ...], repo: Path, url: str | None) -> None:
+    """Execute the notebooks (default: all) and report per dashboard: tiles, with SQL, ran, returned rows, errors."""
+    from unshackle.run import run_report
+    from unshackle.target.layout import Layout
+
+    paths = list(notebooks) or sorted((repo / Layout.load(repo).rel("notebooks")).glob("*.ipynb"))
+    if not paths:
+        raise click.ClickException(f"no notebooks in {repo / Layout.load(repo).rel('notebooks')}; run `unshackle build <tool>` first")
+    runs = [run_report(p, url) for p in paths]
+    width = max(len(r.path.stem) for r in runs)
+    click.echo(f"{'dashboard':{width}}  tiles  with SQL  ran  returned rows  errors")
+    for r in runs:
+        click.echo(f"{r.path.stem:{width}}  {r.tiles:5}  {r.with_sql:8}  {r.ran:3}  {r.returned_rows:13}  {len(r.errors):6}")
+        for where, error in r.errors.items():
+            click.echo(f"  {where}: {error}")
+    total = [sum(getattr(r, k) for r in runs) for k in ("tiles", "with_sql", "ran", "returned_rows")]
+    errors = sum(len(r.errors) for r in runs)
+    click.echo(f"{len(runs)} dashboards: {total[0]} tiles, {total[1]} with SQL, {total[2]} ran, {total[3]} returned rows, {errors} errors")
+    if errors:
         raise SystemExit(1)
 
 

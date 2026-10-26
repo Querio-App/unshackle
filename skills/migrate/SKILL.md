@@ -185,7 +185,7 @@ and open a new PR.
 - [ ] Extract + build ran; report warnings read
 - [ ] `unshackle todo` worked through; remaining TODOs have a reason
 - [ ] Ossie documents validate (`validation/validate.py` from apache/ossie); dbt repos: `dbt parse`
-- [ ] Notebooks run (`python -m unshackle.run notebooks/<x>.ipynb`) and are saved without outputs
+- [ ] Notebooks run (`unshackle run`: no tile errors, tiles with SQL return rows) and are saved without outputs
 - [ ] Parity cases written; `unshackle verify` run; diffs fixed or explained
 - [ ] `memory/MEMORY.md` updated; `unshackle report` regenerated
 - [ ] No secrets staged; PR opened with summary; not merged

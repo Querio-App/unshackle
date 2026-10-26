@@ -242,7 +242,7 @@ that opens `.ipynb`, and renders on GitHub. Cells, top to bottom:
 | Cell | Id | Contents |
 | --- | --- | --- |
 | markdown | `title` | `# <dashboard name>`, description, source, link to the original |
-| code | `setup` | imports; `engine = create_engine(os.environ["UNSHACKLE_WAREHOUSE_URL"])` |
+| code | `setup` | imports; `engine = create_engine(os.environ["UNSHACKLE_WAREHOUSE_URL"])` (with data copied by `--with-data`: that URL if set, else the DuckDB file `build` loaded, read-only) |
 | code | `parameters` | tagged `parameters` (papermill): one `name = default` per dashboard filter |
 | per tile, in layout order: | | |
 | markdown | `<tile>-title` | `## <tile title>` |
@@ -284,8 +284,10 @@ compiles to Vega-Lite. Use whatever the source chart needs: facets (`row`, `colu
 A tile with several series is written as a `base` chart with the shared encodings and one
 layer or panel per series. Notebook metadata `unshackle.layout` keeps the source layout
 rows (tile names left to right) for tools that want to rebuild the grid.
-`python -m unshackle.run notebooks/x.ipynb` with `UNSHACKLE_WAREHOUSE_URL` set executes
-it and writes `notebooks/x.html` (git-ignored); the notebook itself is not changed.
+`unshackle run notebooks/x.ipynb` with `UNSHACKLE_WAREHOUSE_URL` set executes
+it and writes `notebooks/x.html` (git-ignored); the notebook itself is not changed. Without
+arguments it runs every notebook and reports, per dashboard, tiles, tiles with SQL, tiles
+that ran, tiles that returned rows, and errors.
 
 ## policies/
 
