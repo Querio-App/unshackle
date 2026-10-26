@@ -6646,12 +6646,12 @@ class _Parser:
             wired = [(fname, label) for key, label in meta.get("filters", {}).items()
                      if (fname := quick.get(key)) and key not in meta.get("bound", set())]
             if wired:
-                note = "; ".join(
+                note = join_todos(
                     f"dashboard filter :{fname} on [{label}] keeps the saved selection (not one value or one range); use "
                     f"(cast(:{fname} as <type>) is null or <col> = :{fname}) or one parameter per value (skills/translate-dashboards)"
                     for fname, label in wired
                 )
-                tile.todo = f"{tile.todo}; {note}" if tile.todo else note
+                tile.todo = join_todos([tile.todo, note])
         notes: list[str] = []
         self._action_notes(actions, dname, [t.title for t in tiles if t.title in metas], boards, metas, filters, notes, gaps)
         for dl in db.findall("devicelayouts/devicelayout"):

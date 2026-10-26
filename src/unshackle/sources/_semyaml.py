@@ -22,7 +22,7 @@ from typing import Any, Iterator
 
 import json
 
-from unshackle.ir import Bundle, Column, Dimension, Entity, Measure, Metric, Permission, SemanticModel, Table, snake
+from unshackle.ir import Bundle, Column, Dimension, Entity, Measure, Metric, Permission, SemanticModel, Table, join_todos, snake
 
 REF = re.compile(r"\$\{\s*([^}]+?)\s*\}")
 IDENT = re.compile(r'^"?([A-Za-z_][A-Za-z0-9_]*)"?$')
@@ -203,7 +203,7 @@ def resolve_sql(t: NTable, sql: str, depth: int = 0) -> tuple[str, str]:
     if "\x00TABLE" in out:
         todos.append("uses ${TABLE} as a relation")
         out = out.replace("\x00TABLE", t.relation or t.name)
-    return out.strip(), "; ".join(dict.fromkeys(todos))
+    return out.strip(), join_todos(dict.fromkeys(todos))
 
 
 def dimension_ref(tables: dict[str, NTable], t: NTable, ref: str) -> tuple[str, str]:
@@ -232,7 +232,7 @@ def filter_expr(tables: dict[str, NTable], t: NTable, filters: list[NFilter]) ->
             todos.append(todo or f"filter operator {f.op!r} on {f.field} has no direct SQL translation")
             continue
         parts.append(pred if len(filters) == 1 else f"({pred})")
-    return " AND ".join(parts), "; ".join(todos)
+    return " AND ".join(parts), join_todos(todos)
 
 
 def add_join(tables: dict[str, NTable], to_table: str, sql_on: str, relationship: str, bundle: Bundle) -> None:
@@ -396,7 +396,7 @@ def build_semantic(bundle: Bundle, tables: list[NTable], language: str) -> None:
             if agg in MF_AGGS:
                 if m.sql:
                     expr, t2 = resolve_sql(t, m.sql)
-                    todo = "; ".join(x for x in (todo, t2) if x)
+                    todo = join_todos(x for x in (todo, t2) if x)
                 elif agg == "count":
                     agg, expr = ("count", model.entities[0].expr) if model.entities else ("sum", "1")
                 else:
@@ -415,7 +415,7 @@ def build_semantic(bundle: Bundle, tables: list[NTable], language: str) -> None:
             )
             if m.filters:
                 metric.filter, ftodo = filter_expr(by_name, t, m.filters)
-                todo = "; ".join(x for x in (todo, ftodo) if x)
+                todo = join_todos(x for x in (todo, ftodo) if x)
             if todo:
                 for item in (measure, metric):
                     item.todo, item.source_expression, item.source_language = todo, m.source or m.sql, language

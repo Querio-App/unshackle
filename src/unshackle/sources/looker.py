@@ -47,6 +47,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -1659,7 +1660,7 @@ class _Parser:
             elif dtype in ("location", "distance", "duration"):
                 problems.append(f"type: {dtype} has no MetricFlow equivalent")
             if problems:
-                dim.todo, dim.source_expression, dim.source_language = "; ".join(problems), _source(d), "lookml"
+                dim.todo, dim.source_expression, dim.source_language = join_todos(problems), _source(d), "lookml"
                 dim.expr = ""
             sm.dimensions.append(dim)
             if tbl is not None and SIMPLE_IDENT.match(expr) and not problems and dtype != "tier":
@@ -1677,7 +1678,7 @@ class _Parser:
             if g.get("datatype") in ("epoch", "yyyymmdd"):
                 problems.append(f"datatype: {g['datatype']} (the column is a number, not a date); convert it to a date or timestamp in the expression")
             if problems:
-                dim.todo, dim.source_expression, dim.source_language, dim.expr = "; ".join(problems), _source(g), "lookml", ""
+                dim.todo, dim.source_expression, dim.source_language, dim.expr = join_todos(problems), _source(g), "lookml", ""
             sm.dimensions.append(dim)
             if tbl is not None and SIMPLE_IDENT.match(expr) and not problems:
                 ctype = "date" if g.get("datatype") == "date" else "timestamp"
@@ -1749,7 +1750,7 @@ class _Parser:
                     if not cross_problems and self._other_views(vname, cross):
                         expr, problems = cross, []
             if problems:
-                return todo("; ".join(problems))
+                return todo(join_todos(problems))
             measure = Measure(name, MEASURE_AGG[mtype], expr, m.get("description", ""), metric.label)
             if self._other_views(vname, expr):
                 measure.source_expression, measure.source_language = source_expr, "lookml"
@@ -1788,7 +1789,7 @@ class _Parser:
                 else:
                     problems.append(f"references non-measure {ref}")
             if problems or not refs:
-                return todo("; ".join(problems) or "number measure with inline aggregate SQL; split into simple measures")
+                return todo(join_todos(problems) or "number measure with inline aggregate SQL; split into simple measures")
             expr = REF.sub(lambda mm: names[mm.group(1)], raw_sql).strip()
             if AGG_FN.search(expr):
                 return todo("mixes aggregate SQL with measure references")
@@ -1904,12 +1905,10 @@ class _Parser:
         expr, problems = self.dim_expr(view, f)
         table = self.model_table(view)
         others = list(dict.fromkeys(e for e in table_explores.get(table, []) if e != ex["name"]))
-        todo = "; ".join(problems)
+        todo = join_todos(problems)
         if others:
-            todo = (todo + "; " if todo else "") + (
-                f"Looker applied this only inside explore {ex['name']}; explore(s) {', '.join(others)} expose {table} "
-                "without it. unshackle row filters apply to every query on the table, so confirm that is intended"
-            )
+            todo = join_todos([todo, f"Looker applied this only inside explore {ex['name']}; explore(s) {', '.join(others)} expose "
+                               f"{table} without it. unshackle row filters apply to every query on the table, so confirm that is intended"])
         rf = RowFilter(name, table, f"{expr} = {{{{ user.{attr} }}}}", source_expression=source, source_ref=src, todo=todo)
         self.b.row_filters.append(rf)
         if view == base:
@@ -1946,7 +1945,7 @@ class _Parser:
         self.b.row_filters.append(
             RowFilter(f"{ex['name']}_always_where", self.model_table(base), "" if problems else expr, ["*"],
                       source_expression=f"explore: {ex['name']} sql_always_where: {raw}", source_ref=src,
-                      todo="; ".join(problems))
+                      todo=join_todos(problems))
         )
 
     def _grant_permissions(self, grant_names: list[str], rtype: str, rid: str, src: str, extra: str = "") -> None:
@@ -2018,7 +2017,7 @@ class _Parser:
         return Tile(
             eid, title, kind, mark, sql.strip(), enc, source_type=vtype,
             source_config={"query": {k: q.get(k) for k in ("model", "view", "fields", "pivots", "filters", "sorts", "limit") if q.get(k)}, "vis_config": vis},
-            todo="; ".join(todos),
+            todo=join_todos(todos),
         )
 
     def _encodings(self, kind: str, mark: str, fields: list[str], pivots: list[str], hidden: set[str],
@@ -2233,7 +2232,7 @@ class _Parser:
             todo.insert(0, "no SQL written, so nothing shows a wrong number")
             sql = ""
         return Tile(eid, str(el.get("title") or eid), kind, mark, sql, enc, source_type=etype,
-                    source_config={"query": query, "vis_config": vis}, todo="; ".join(todo))
+                    source_config={"query": query, "vis_config": vis}, todo=join_todos(todo))
 
     def _element_sql(self, ex: dict[str, Any], el: dict[str, Any], d: dict[str, Any], fields: list[str], pivots: list[str],
                      fdefs: dict[str, Any], filters: dict[str, DashboardFilter],

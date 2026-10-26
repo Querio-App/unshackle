@@ -47,6 +47,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -380,10 +381,10 @@ class _Project:
         todos = [todo] + todos if todo else todos
         if self._deps(raw, df) and not c.get("connection"):
             self.b.warn(self.ref(c), "was Hex dataframe SQL (DuckDB dialect), now inlined as CTEs; check functions against your warehouse", "info")
-        self.df_sql[df] = {"raw": raw, "sql": sql, "todo": "; ".join(todos), "cell": c}
+        self.df_sql[df] = {"raw": raw, "sql": sql, "todo": join_todos(todos), "cell": c}
         self.b.queries.append(
             VerifiedQuery(f"{self.title} - {c['label'] or df}", sql, f"SQL cell from Hex project {self.title}",
-                          datasource=self.b.datasource, source_ref=self.ref(c), todo="; ".join(todos))
+                          datasource=self.b.datasource, source_ref=self.ref(c), todo=join_todos(todos))
         )
 
     def _python(self, c: dict[str, Any]) -> None:
@@ -468,7 +469,7 @@ class _Project:
         elif len(ys) > 1:
             todos.append(f"Hex plotted {len(ys)} y series ({', '.join(_col(y) for y in ys)}); only the first is encoded: fold them in SQL (one row per series) and use color/xOffset")
         return Tile(c["id"], c["label"] or cfg.get("title") or "", "chart", mark, sql, enc, source_type=f"hex:{ctype}",  # type: ignore[arg-type]
-                    source_config=cfg, todo="; ".join(todos), layers=layers)
+                    source_config=cfg, todo=join_todos(todos), layers=layers)
 
 
 def _col(v: Any) -> str:
