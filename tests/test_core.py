@@ -177,3 +177,49 @@ def test_compare_keeps_leading_zeros():
     a = pd.DataFrame({"zip": ["007", "010"], "n": [1, 2]})
     b = pd.DataFrame({"zip": ["7", "10"], "n": [1, 2]})
     assert verify.compare(a, b, ["zip"])[0] == "differs"
+
+
+def _without_orders(b: Bundle) -> Bundle:
+    b.semantic_models[0].name = "sales"
+    for m in b.metrics:
+        m.semantic_model = "sales" if m.semantic_model else m.semantic_model
+    return b
+
+
+def test_rebuild_removes_files_no_longer_generated(tmp_path: Path):
+    build.apply(sample_bundle(), tmp_path)
+    old = tmp_path / "semantic/orders.ossie.yaml"
+    assert old.exists()
+    dry = build.apply(_without_orders(sample_bundle()), tmp_path, dry_run=True)
+    assert dry.writes.removed == ["semantic/orders.ossie.yaml"] and old.exists()
+    result = build.apply(_without_orders(sample_bundle()), tmp_path)
+    assert result.writes.removed == ["semantic/orders.ossie.yaml"] and not result.writes.kept_stale
+    assert not old.exists() and (tmp_path / "semantic/sales.ossie.yaml").exists()
+    assert "semantic/orders.ossie.yaml" not in build.all_generated(tmp_path)
+    assert "1 files removed because this build no longer generates them" in (tmp_path / "migration/report.md").read_text()
+
+
+def test_rebuild_keeps_edited_files_no_longer_generated(tmp_path: Path):
+    build.apply(sample_bundle(), tmp_path)
+    old = tmp_path / "semantic/orders.ossie.yaml"
+    old.write_text(old.read_text() + "# edited by a human\n")
+    result = build.apply(_without_orders(sample_bundle()), tmp_path)
+    assert result.writes.kept_stale == ["semantic/orders.ossie.yaml"] and not result.writes.removed
+    assert "edited by a human" in old.read_text()
+    report = (tmp_path / "migration/report.md").read_text()
+    assert "no longer generated, kept because edited" in report and "`semantic/orders.ossie.yaml`" in report
+    # still reported on the next build, until someone deletes or merges it
+    again = build.apply(_without_orders(sample_bundle()), tmp_path)
+    assert again.writes.kept_stale == ["semantic/orders.ossie.yaml"]
+
+
+def test_rebuild_leaves_other_tools_files(tmp_path: Path):
+    build.apply(sample_bundle(), tmp_path)
+    other = sample_bundle()
+    other.tool = "other"
+    other.semantic_models[0].name = "returns"
+    for m in other.metrics:
+        m.semantic_model = "returns" if m.semantic_model else m.semantic_model
+    build.apply(other, tmp_path)
+    result = build.apply(sample_bundle(), tmp_path)
+    assert not result.writes.removed and (tmp_path / "semantic/returns.ossie.yaml").exists()

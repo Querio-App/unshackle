@@ -4,6 +4,7 @@
 - A file someone edited (hash differs from the lock), or that unshackle didn't create, is kept.
 - A file another tool's build owns is never overwritten: the new one gets a `.<tool>` suffix.
 - Paths are always inside the repo, whatever names the source used.
+- A file this tool's earlier build wrote and this build didn't is removed, unless edited by hand.
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ class WriteResult:
     unchanged: list[str] = field(default_factory=list)
     kept_hand_edits: list[str] = field(default_factory=list)
     renamed: dict[str, str] = field(default_factory=dict)
+    removed: list[str] = field(default_factory=list)
+    kept_stale: list[str] = field(default_factory=list)
 
 
 def normalize(content: str) -> str:
@@ -86,6 +89,24 @@ class Target:
     def read(self, rel: str) -> str | None:
         path = self._safe(rel)
         return normalize(path.read_bytes().decode("utf-8", errors="replace")) if path.exists() else None
+
+    def prune(self) -> None:
+        """Remove files this tool's earlier builds wrote that this build didn't (kept if edited by hand)."""
+        r = self.result
+        touched = set(r.written) | set(r.unchanged) | set(r.kept_hand_edits)
+        for rel, owner in sorted(self.lock.owners.items()):
+            if owner != self.tool or not self.tool or rel in touched:
+                continue
+            path = self._safe(rel)
+            if path.exists():
+                if self.lock.is_hand_edited(rel, path.read_bytes().decode("utf-8", errors="replace")):
+                    r.kept_stale.append(rel)
+                    continue
+                r.removed.append(rel)
+                if not self.dry_run:
+                    path.unlink()
+            self.lock.files.pop(rel, None)
+            self.lock.owners.pop(rel, None)
 
     def save(self) -> None:
         if self.dry_run:

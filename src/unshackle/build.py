@@ -55,10 +55,12 @@ def render_all(bundle: Bundle, target: Target) -> dict[str, tuple[str, bool]]:
         for sm in bundle.semantic_models:
             if sm.sql:  # a model defined by a query: MetricFlow refs it as a dbt model
                 out[layout.rel("sql_models", f"{sm.table.split('.')[-1]}.sql")] = (f"-- {sm.source_ref or bundle.tool}\n{sm.sql.strip()}\n", False)
+        # dbt reads every YAML file under models/ as properties and rejects Ossie's `metrics`.
+        # Rendered on every build, even when unchanged, so it never looks like a file this build dropped.
         ignore = target.read(".dbtignore") or ""
         if DBTIGNORE not in ignore.splitlines():
-            # dbt reads every YAML file under models/ as properties and rejects Ossie's `metrics`
-            out[".dbtignore"] = (ignore + ("\n" if ignore and not ignore.endswith("\n") else "") + DBTIGNORE + "\n", True)
+            ignore += ("\n" if ignore and not ignore.endswith("\n") else "") + DBTIGNORE + "\n"
+        out[".dbtignore"] = (ignore, True)
     for rel, content in tf.catalog_files(bundle, layout, target.read).items():
         out[rel] = (content, True)
     for group in (
@@ -194,6 +196,7 @@ def apply(bundle: Bundle, repo: Path, dry_run: bool = False) -> BuildResult:
             target.write(rel, content, merged=merged)
         except UnsafePath as exc:
             bundle.warn(rel, str(exc), "block")
+    target.prune()
     if not dry_run:
         ir_path = repo / "migration" / "ir" / f"{bundle.tool}.json"
         ir_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,6 +295,12 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
         if writes.kept_hand_edits:
             lines.append(f"- {len(writes.kept_hand_edits)} files kept because someone edited them by hand:")
             lines += [f"  - `{r}`" for r in writes.kept_hand_edits]
+        if writes.removed:
+            lines.append(f"- {len(writes.removed)} files removed because this build no longer generates them:")
+            lines += [f"  - `{r}`" for r in writes.removed]
+        if writes.kept_stale:
+            lines.append(f"- {len(writes.kept_stale)} files no longer generated, kept because edited. Merge or delete them by hand:")
+            lines += [f"  - `{r}`" for r in writes.kept_stale]
         lines.append("")
     gaps = [(b.tool, d) for b in stored.values() for d in b.dashboards if d.not_migrated]
     if gaps:
