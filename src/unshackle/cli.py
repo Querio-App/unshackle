@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,6 +16,7 @@ from unshackle.http import SourceError
 from unshackle.lock import Lock
 from unshackle.raw import RawStore
 from unshackle.sources import TOOLS, get_source, source_class
+from unshackle.sources.base import Source
 
 REPO = click.option("--repo", type=click.Path(file_okay=False, path_type=Path), default=Path("."), show_default=True, help="Target repo.")
 TOOL = click.argument("tool", type=click.Choice(sorted(TOOLS)))
@@ -70,7 +72,11 @@ def tools() -> None:
     """List supported tools and the environment variables each needs."""
     for name in TOOLS:
         cls = source_class(name)
-        click.echo(f"{name:12} {', '.join(cls.env_vars)}")
+        if not cls.required_env:
+            click.echo(f"{name:12} {', '.join(cls.env_vars)}")
+            continue
+        optional = [v for v in cls.env_vars if v not in cls.required_env]
+        click.echo(f"{name:12} required: {', '.join(cls.required_env)}" + (f"; optional: {', '.join(optional)}" if optional else ""))
 
 
 @main.command()
@@ -188,12 +194,26 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
 @click.option("--with-data", is_flag=True, help="Also copy data that lives only in the tool to Parquet (see extract).")
 def migrate(tool: str, repo: Path, only: tuple[str, ...], with_data: bool) -> None:
     """init + inventory + extract + build in one go."""
+    _check_env(tool)
     ctx = click.get_current_context()
     with _voyage("setting up", "taking inventory", "extracting", "parsing", "writing"):
         ctx.invoke(init, repo=repo, name=None, update_skills=False)
         ctx.invoke(inventory, tool=tool, repo=repo)
         ctx.invoke(extract, tool=tool, repo=repo, only=only, with_data=with_data)
         ctx.invoke(build_cmd, tool=tool, repo=repo, dry_run=False)
+
+
+def _check_env(tool: str) -> None:
+    """Fail before anything is written when the API variables are missing, naming the import path if the tool has one."""
+    cls = source_class(tool)
+    missing = [v for v in cls.required_env if not os.environ.get(v)]
+    if not missing:
+        return
+    message = f"missing environment variable{'s' if len(missing) > 1 else ''} {', '.join(missing)}"
+    if cls.import_path is not Source.import_path:
+        message += (f"\nno API credentials: to use files ({cls.manual_files}), run `unshackle import {tool} <files>`, "
+                    f"then `unshackle build {tool}`")
+    raise click.ClickException(message)
 
 
 @main.command()
