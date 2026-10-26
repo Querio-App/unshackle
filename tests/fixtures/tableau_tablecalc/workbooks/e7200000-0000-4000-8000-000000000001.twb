@@ -1810,5 +1810,110 @@
       </table>
       <simple-id uuid='{7A3B0004-0000-4000-8000-000000000004}' />
     </worksheet>
+    <worksheet name="Ad-hoc Row Measure">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="[Revenue] * [Quantity]" datatype='real' name='[Calculation_7305]' role='measure' type='quantitative' user:unnamed='Ad-hoc Row Measure'><calculation class='tableau' formula="[post_discount_revenue] * [quantity]" /></column><column-instance column='[Calculation_7305]' derivation='Sum' name='[sum:Calculation_7305:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[sum:Calculation_7305:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0005-0000-4000-8000-000000000005}' />
+    </worksheet>
+    <worksheet name="Ad-hoc Row Dimension">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="IF [Status] = &quot;COMPLETED&quot; THEN &quot;Done&quot; ELSE &quot;Open&quot; END" datatype='string' name='[Calculation_7306]' role='dimension' type='nominal' user:unnamed='Ad-hoc Row Dimension'><calculation class='tableau' formula="IF [status] = &quot;COMPLETED&quot; THEN &quot;Done&quot; ELSE &quot;Open&quot; END" /></column><column-instance column='[Calculation_7306]' derivation='None' name='[none:Calculation_7306:nk]' pivot='key' type='nominal' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:Calculation_7306:nk]</rows>
+        <cols>[federated.tablecalc0].[sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0006-0000-4000-8000-000000000006}' />
+    </worksheet>
+    <worksheet name="Ad-hoc LOD">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column caption="{FIXED [Paper Type] : SUM([Revenue])}" datatype='real' name='[Calculation_7307]' role='measure' type='quantitative' user:unnamed='Ad-hoc LOD'><calculation class='tableau' formula="{FIXED [paper_type] : SUM([post_discount_revenue])}" /></column><column-instance column='[Calculation_7307]' derivation='Sum' name='[sum:Calculation_7307:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[sum:Calculation_7307:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0007-0000-4000-8000-000000000007}' />
+    </worksheet>
+    <worksheet name="Ad-hoc Filters">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="IF [Status] = &quot;COMPLETED&quot; THEN &quot;Done&quot; ELSE &quot;Open&quot; END" datatype='string' name='[Calculation_7308]' role='dimension' type='nominal' user:unnamed='Ad-hoc Filters'><calculation class='tableau' formula="IF [status] = &quot;COMPLETED&quot; THEN &quot;Done&quot; ELSE &quot;Open&quot; END" /></column><column-instance column='[Calculation_7308]' derivation='None' name='[none:Calculation_7308:nk]' pivot='key' type='nominal' /><column caption="SUM([Quantity])" datatype='integer' name='[Calculation_7309]' role='measure' type='quantitative' user:unnamed='Ad-hoc Filters'><calculation class='tableau' formula="SUM([quantity])" /></column><column-instance column='[Calculation_7309]' derivation='User' name='[usr:Calculation_7309:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <filter class='categorical' column='[federated.tablecalc0].[none:Calculation_7308:nk]'><groupfilter function='member' level='[none:Calculation_7308:nk]' member='&quot;Done&quot;' /></filter><filter class='quantitative' column='[federated.tablecalc0].[usr:Calculation_7309:qk]' included-values='in-range'><min>50000</min></filter>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0008-0000-4000-8000-000000000008}' />
+    </worksheet>
+    <worksheet name="Ad-hoc Marks">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column-instance column='[post_discount_revenue]' derivation='Sum' name='[sum:post_discount_revenue:qk]' pivot='key' type='quantitative' /><column datatype='string' name='[status]' role='dimension' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="IF [Status] = &quot;COMPLETED&quot; THEN &quot;Done&quot; ELSE &quot;Open&quot; END" datatype='string' name='[Calculation_7311]' role='dimension' type='nominal' user:unnamed='Ad-hoc Marks'><calculation class='tableau' formula="IF [status] = &quot;COMPLETED&quot; THEN &quot;Done&quot; ELSE &quot;Open&quot; END" /></column><column-instance column='[Calculation_7311]' derivation='None' name='[none:Calculation_7311:nk]' pivot='key' type='nominal' /><column caption="SUM([Revenue]) / SUM([Quantity])" datatype='real' name='[Calculation_7310]' role='measure' type='quantitative' user:unnamed='Ad-hoc Marks'><calculation class='tableau' formula="SUM([post_discount_revenue]) / SUM([quantity])" /></column><column-instance column='[Calculation_7310]' derivation='User' name='[usr:Calculation_7310:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><color column='[federated.tablecalc0].[none:Calculation_7311:nk]' /><text column='[federated.tablecalc0].[usr:Calculation_7310:qk]' /></encodings>
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[sum:post_discount_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0009-0000-4000-8000-000000000009}' />
+    </worksheet>
   </worksheets>
 </workbook>
