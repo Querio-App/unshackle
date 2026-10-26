@@ -762,12 +762,18 @@ def param_bind(p: "TField") -> str:
     return f"cast({bind} as {'date' if p.datatype == 'date' else 'timestamp'})" if p.datatype in TIME_TYPES else bind
 
 
+def _member_unesc(v: str) -> str:
+    """The text inside a quoted member literal, as Tableau writes it: a quote doubled (`""`) or any character after a
+    backslash (`\\"`, `\\%`, `\\\\`)."""
+    return re.sub(r'\\(.)|""', lambda m: m.group(1) or '"', v)
+
+
 def _member_sql(v: str | None) -> str | None:
     """Tableau member literal ("West", 2024, #2024-01-01#, %null%) -> SQL literal; None for null."""
     if v is None or v == "%null%":
         return None
     if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
-        return "'" + v[1:-1].replace('""', '"').replace("'", "''") + "'"
+        return "'" + _member_unesc(v[1:-1]).replace("'", "''") + "'"
     if v.startswith("#") and v.endswith("#"):
         return f"'{v[1:-1]}'"
     if re.fullmatch(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", v) or v.lower() in ("true", "false"):
@@ -2658,8 +2664,8 @@ class _Parser:
             if not (f.format or f.aliases) or f.param:
                 continue
             fmt = {"format": d3_format(f.format), "source_format": f.format}
-            labels = [{"value": _param_value(k, f.datatype) if k != "%null%" else None, "label": v} for k, v in f.aliases
-                      ] if f.datatype in ("string", "boolean") else []
+            labels = [{"value": None if k == "%null%" else _member_unesc(k[1:-1]) if k[:1] == '"' else _param_value(k, f.datatype),
+                       "label": v} for k, v in f.aliases] if f.datatype in ("string", "boolean") else []
             model = self._field_model(ds, f)
             for el in [*(model.sm.dimensions + model.sm.measures if model is not None else []), *self.b.metrics]:  # type: ignore[operator]
                 mine = (el.source_ref == f"{ds.src} datasource: {ds.caption} field: {f.label}" if isinstance(el, Metric)
