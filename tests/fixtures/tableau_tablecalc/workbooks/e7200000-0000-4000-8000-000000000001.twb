@@ -1729,5 +1729,86 @@
       </table>
       <simple-id uuid='{7B1AF9C4-302D-5A11-8889-C3D7C3383D58}' />
     </worksheet>
+    <worksheet name="Ad-hoc Running Total">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="RUNNING_SUM(SUM([Revenue]))" datatype='real' name='[Calculation_7301]' role='measure' type='quantitative' user:unnamed='Ad-hoc Running Total'><calculation class='tableau' formula="RUNNING_SUM(SUM([post_discount_revenue]))" /></column><column-instance column='[Calculation_7301]' derivation='User' name='[usr:Calculation_7301:qk]' pivot='key' type='quantitative'><table-calc ordering-type='Columns' /></column-instance></datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[usr:Calculation_7301:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0001-0000-4000-8000-000000000001}' />
+    </worksheet>
+    <worksheet name="Ad-hoc Quick Calcs">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="SUM([Revenue])" datatype='real' name='[Calculation_7302]' role='measure' type='quantitative' user:unnamed='Ad-hoc Quick Calcs'><calculation class='tableau' formula="SUM([post_discount_revenue])" /></column><column-instance column='[Calculation_7302]' derivation='User' name='[pcto:usr:Calculation_7302:qk]' pivot='key' type='quantitative'><table-calc ordering-type='Columns' type='PctTotal' /></column-instance><column-instance column='[Calculation_7302]' derivation='User' name='[cum:usr:Calculation_7302:qk]' pivot='key' type='quantitative'><table-calc aggregation='Sum' ordering-type='Columns' type='CumTotal' /></column-instance></datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            <encodings><tooltip column='[federated.tablecalc0].[cum:usr:Calculation_7302:qk]' /></encodings>
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[pcto:usr:Calculation_7302:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0002-0000-4000-8000-000000000002}' />
+    </worksheet>
+    <worksheet name="Ad-hoc Aggregate">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Quantity" datatype='integer' name='[quantity]' role='measure' type='quantitative' /><column caption="SUM([Quantity]) / COUNT([Quantity])" datatype='real' name='[Calculation_7303]' role='measure' type='quantitative' user:unnamed='Ad-hoc Aggregate'><calculation class='tableau' formula="SUM([quantity]) / COUNT([quantity])" /></column><column-instance column='[Calculation_7303]' derivation='User' name='[usr:Calculation_7303:qk]' pivot='key' type='quantitative' /></datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[usr:Calculation_7303:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0003-0000-4000-8000-000000000003}' />
+    </worksheet>
+    <worksheet name="Ad-hoc Previous Value">
+      <table>
+        <view>
+          <datasources><datasource caption='Dunder Mifflin Table Calcs' name='federated.tablecalc0' /></datasources>
+          <datasource-dependencies datasource='federated.tablecalc0'><column datatype='string' name='[paper_type]' role='dimension' type='nominal' /><column-instance column='[paper_type]' derivation='None' name='[none:paper_type:nk]' pivot='key' type='nominal' /><column caption="Revenue" datatype='real' name='[post_discount_revenue]' role='measure' type='quantitative' /><column caption="PREVIOUS_VALUE(0) + SUM([Revenue])" datatype='real' name='[Calculation_7304]' role='measure' type='quantitative' user:unnamed='Ad-hoc Previous Value'><calculation class='tableau' formula="PREVIOUS_VALUE(0) + SUM([post_discount_revenue])" /></column><column-instance column='[Calculation_7304]' derivation='User' name='[usr:Calculation_7304:qk]' pivot='key' type='quantitative'><table-calc ordering-type='Columns' /></column-instance></datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view><breakdown value='auto' /></view>
+            <mark class='Bar' />
+            
+          </pane>
+        </panes>
+        <rows>[federated.tablecalc0].[none:paper_type:nk]</rows>
+        <cols>[federated.tablecalc0].[usr:Calculation_7304:qk]</cols>
+      </table>
+      <simple-id uuid='{7A3B0004-0000-4000-8000-000000000004}' />
+    </worksheet>
   </worksheets>
 </workbook>
