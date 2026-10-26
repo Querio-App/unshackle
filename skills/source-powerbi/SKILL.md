@@ -100,7 +100,7 @@ and `Retry-After`; unshackle polls `GET /v1/operations/{id}` until `Succeeded`, 
 | `Value.NativeQuery(src, "sql")` / `[Query="sql"]` | `queries/<table>-source.sql` (TODO: materialize as SQL model) + semantic model on a table named after it |
 | Direct Lake: `partition = entity` with `entityName`, `schemaName` on a SQL endpoint expression | `catalog/` table `<schemaName>.<entityName>` (the lakehouse / warehouse SQL endpoint table) |
 | `partition = entity` on `AnalysisServices.Database(..)` (composite model, DirectQuery to another semantic model) | SQL-model TODO: migrate the remote model first; its measures (`EXTERNALMEASURE`) are TODOs |
-| column | dimension (`dateTime` -> time, day grain); the only date column is `agg_time_dimension`; with several, a TODO lists them |
+| column | dimension (`dateTime` -> time, day grain); the only date column is the default time dimension (`default_time_dimension` in `custom_extensions`); with several, a TODO lists them |
 | calculated column `column X = <DAX>` with same-table refs, `IF`, `SWITCH`, `&`, arithmetic, `YEAR`... | dimension `expr` in SQL; `RELATED` etc. -> TODO |
 | relationship `fromColumn: Sales.CustomerKey` -> `toColumn: Customer.CustomerKey` (active) | `customer` primary entity on Customer, foreign entity on Sales |
 | many-to-many (`toCardinality: many`), or a relationship to a column that isn't the table's key | no entity, a warning (an entity would join on the wrong or a non-unique key) |
@@ -114,8 +114,8 @@ and `Retry-After`; unshackle polls `GET /v1/operations/{id}` until `Succeeded`, 
 | `CALCULATE([M])` (no filters) | the same as `[M]` |
 | `CALCULATE(SUM(..), T[c] = "x") + 0`, `[A] - CALCULATE([A], ..)` | derived over a filtered simple metric (`<name>_1`); `+ 0` -> `coalesce(x, 0)` |
 | `CALCULATE([M], T[c] = "x")`, `IN {..}`, `<>`, `&&`, `\|\|`, `KEEPFILTERS` | simple metric with `filter: "{{ Dimension('t__c') }} = 'x'"` |
-| `TOTALYTD/QTD/MTD([M], 'Date'[Date])`, `CALCULATE([M], DATESYTD(..))` | cumulative `grain_to_date` |
-| `CALCULATE([M], SAMEPERIODLASTYEAR(..))`, `DATEADD(.., -n, MONTH)` | derived with `offset_window: 1 year` / `n months` |
+| `TOTALYTD/QTD/MTD([M], 'Date'[Date])`, `CALCULATE([M], DATESYTD(..))` | cumulative `grain_to_date` (not in Ossie, kept in `custom_extensions`) |
+| `CALCULATE([M], SAMEPERIODLASTYEAR(..))`, `DATEADD(.., -n, MONTH)` | derived with `offset_window: 1 year` / `n months` (not in Ossie, kept in `custom_extensions`) |
 | role `tablePermission T = [Col] = "x"` | row filter `Col = 'x'` on `T`'s table; `USERPRINCIPALNAME()`/`USERNAME()` -> `{{ user.email }}` |
 | role members | `groups` of the row filter + Cedar `permit query` on the datasource |
 | OLS `columnPermission X` / table `metadataPermission: none` | Cedar `forbid query` on the Column/Table for the role |
@@ -129,11 +129,11 @@ Metric and measure names are snake_case of the DAX names (`Margin %` -> `margin_
 CamelCase column names split: `OrderDate` -> `order_date`). Labels keep the originals.
 Measure-only tables (`_Measures`, `Key Measures`) are not models.
 
-## DAX -> MetricFlow / SQL
+## DAX -> semantic model / SQL
 
-MetricFlow has no filter context, so first ask what the DAX *returns in the visual*.
+Ossie metrics have no filter context, so first ask what the DAX *returns in the visual*.
 
-- **CALCULATE filter context.** Column predicates become metric `filter:`. A filter on
+- **CALCULATE filter context.** Column predicates become a metric filter (`CASE WHEN` inside the aggregate). A filter on
   a column of the fact table, or of a dimension joined through an entity, is the same
   thing. `FILTER(Sales, Sales[Amount] > 100)` is a row condition: measure
   `expr: case when amount > 100 then amount end`, or a metric filter on a dimension.
@@ -141,7 +141,7 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
 - **ALL / REMOVEFILTERS / ALLEXCEPT / ALLSELECTED, `FILTER(ALL(..)/ALLSELECTED(..), ..)`**
   (share of total, % of parent, running totals): the value depends on the visual's
   grouping, so the metric stays a TODO, and `build` writes it into the tile SQL (see
-  Reports). Neither MetricFlow nor Ossie can say "ignore this filter": Ossie 0.2 metrics
+  Reports). Ossie can't say "ignore this filter": its 0.2 metrics
   are aggregates over fields, and grain calculations are a future extension of its
   expression language. If the number is reused everywhere, write a SQL model at the
   fixed grain (`queries/models/`) plus a measure on it.
@@ -149,17 +149,16 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
   SQL model joining the tables (`select s.*, p.price from sales s join product p ...`),
   then `sum(qty * price)` on it. Same-table iterators are already translated, and
   iterators over `VALUES(T[c])` are translated in tile SQL (a metric would need a
-  nested aggregation, which neither format has).
-- **Time intelligence.** YTD/QTD/MTD -> cumulative `grain_to_date`; rolling
-  `DATESINPERIOD(d, MAX(d), -3, MONTH)` -> cumulative `window: 3 months`;
-  `SAMEPERIODLASTYEAR`/`DATEADD` -> derived `offset_window`; `PARALLELPERIOD`/
-  `PREVIOUSYEAR` -> derived over a metric queried at that period grain. Fiscal
-  years (`TOTALYTD(.., "6/30")`) need a fiscal time spine / dimension; otherwise a
-  verified query.
+  nested aggregation, which unshackle doesn't write).
+- **Time intelligence.** YTD/QTD/MTD (`grain_to_date`) and `SAMEPERIODLASTYEAR`/`DATEADD`
+  (`offset_window`) have no Ossie metric: they're kept in `custom_extensions` (`pending`)
+  with a TODO. Write them as window SQL in the tile (`sum(m) over (partition by year order
+  by month)`, `lag(m, 12) over (order by month)`), rolling `DATESINPERIOD` too; `PARALLELPERIOD`/
+  `PREVIOUSYEAR` -> a SQL model at that period grain. Fiscal years (`TOTALYTD(.., "6/30")`)
+  need a fiscal dimension; otherwise a verified query.
 - **USERELATIONSHIP** (inactive relationship, often ShipDate): add a second foreign
-  entity or time dimension (`ship_date`) and a metric that uses it
-  (`agg_time_dimension` on the measure, or query `--group-by metric_time` with
-  `ship_date`).
+  entity or time dimension (`ship_date`) and group or filter the tile by `ship_date`
+  instead of the active date.
 - **VAR / RETURN**: unshackle inlines variables used in plain arithmetic, `DIVIDE`, `IF`
   and `SWITCH`. A variable is evaluated once, where it is defined, so one used inside
   `CALCULATE`, an iterator or a table function (`VAR p = DATESINPERIOD(..) RETURN
@@ -176,14 +175,14 @@ MetricFlow has no filter context, so first ask what the DAX *returns in the visu
 - **SELECTEDVALUE / HASONEVALUE / ISINSCOPE**: these read the visual. Turn the slicer
   into a notebook `:param`, or split tiles by hierarchy level.
 - **RANKX / TOPN**: `rank() over (order by ..)` / `order by .. limit n` in tile SQL.
-- **LASTNONBLANK / CLOSINGBALANCE* / LASTDATE** (balances): measure with
-  `non_additive_dimension: {name: <date>, window_choice: max}`.
+- **LASTNONBLANK / CLOSINGBALANCE* / LASTDATE** (balances): SQL model or tile SQL
+  keeping the rows of the latest date per group, then `sum`.
 - **Calculation groups**: each item applied to each targeted measure is its own
   metric (`sales_ytd`, `sales_py`...); the knowledge file lists the items' DAX.
 - **Field parameters** (tables of `NAMEOF(...)`): a notebook parameter that picks the
   column/metric; not a model.
 - **Calculated tables** (`partition = calculated`, `CALENDARAUTO()`, `SUMMARIZE`): a SQL
-  model; date tables -> the dbt/MetricFlow time spine.
+  model; date tables -> a calendar SQL model with its date as time dimension.
 
 Example (what `build` writes for a column chart of the share by region):
 
@@ -215,7 +214,7 @@ What `build` translates on its own, and what stays a `TODO(unshackle)` with the 
 | `DIVIDE`, `/`, `+`, `-`, `*`, `COALESCE` over measures | translated (ratio / derived; `+`/`-` with DAX BLANK semantics) |
 | `DIVIDE(a, b, alt)` | translated (derived: `alt` where `b` is 0 or BLANK) |
 | `CALCULATE` with column predicates (`=`, `<>`, `<`, `IN {..}`, `&&`, `\|\|`, `NOT`, `KEEPFILTERS`) | translated (metric `filter`) |
-| `TOTALYTD/QTD/MTD`, `DATESYTD/QTD/MTD` | translated (cumulative `grain_to_date`) |
+| `TOTALYTD/QTD/MTD`, `DATESYTD/QTD/MTD` | translated (cumulative `grain_to_date`; not in Ossie, kept in `custom_extensions`) |
 | `SAMEPERIODLASTYEAR`, `DATEADD(.., -n, YEAR/QUARTER/MONTH/DAY)` | translated (derived `offset_window`; not in Ossie, kept in `custom_extensions`) |
 | `VAR`/`RETURN` (context-free use) | translated after inlining |
 | fiscal `TOTALYTD(.., "6/30")`, `DATESINPERIOD`, `PARALLELPERIOD`, `PREVIOUSMONTH/YEAR` | TODO (rolling or whole-period windows) |
@@ -327,7 +326,7 @@ the measure's KPI expressions (`kpi` in the TMDL): compute them in the tile. Vis
 `Categorical` filters become `WHERE` clauses; slicers become `(col = :p OR :p IS NULL)`
 (dates: `:p_from` / `:p_to`). TopN, relative-date and measure (Values) filters are TODOs:
 `order by .. limit n`, a pinned date window, `having`. Time-intelligence measures have no
-single-query SQL: query the metric (`mf query`) or write the window by hand.
+single-query SQL: write the window by hand.
 Report-level measures (`reportExtensions.json`) are not read; add them to the model.
 
 ## Parity
@@ -378,7 +377,7 @@ their last refresh (`GET /datasets/{id}/refreshes`).
   (titles, filters). Editing a legacy report in the service converts it.
 - **Auto date/time** hierarchies (`LocalDateTable_*`) are Power BI internals: unshackle
   maps them to `DATE_TRUNC` on the source column; turn the option off in the model.
-- **Bi-directional relationships** and many-to-many: MetricFlow joins many-to-one;
+- **Bi-directional relationships** and many-to-many: unshackle writes many-to-one relationships only;
   check distinct counts that relied on bidirectional filtering.
 - **Power BI dashboards** (pinned tiles) are not migrated; their tiles come from
   reports that are.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Docs: the README is rewritten around what you get and how to get started, with one page per tool under
+  `docs/tools/` (install, credentials, what you get, what's left, checking the numbers). The per-tool guides in
+  `skills/` describe the Ossie output.
+- Removed the unused `sql` extra: install `unshackle[run]` plus your tool's extra.
+
 - Tableau hardening: generated SQL follows Tableau's semantics, and anything that can't be translated exactly stays a
   `TODO(unshackle)` instead of a wrong number.
   - Warehouse SQL: tile and model SQL follow the warehouse type in `unshackle.toml` (else the export's): BigQuery and

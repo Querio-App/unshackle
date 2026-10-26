@@ -17,7 +17,7 @@ The parser reads only members that exist in botocore's QuickSight API model.
 
 ## Access
 
-Install the extra: `uv tool install "unshackle[run,sql,quicksight]"` (adds boto3).
+Install the extra: `uv tool install "unshackle[run,quicksight]"` (adds boto3).
 
 | Variable | Value |
 | --- | --- |

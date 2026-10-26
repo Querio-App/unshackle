@@ -73,7 +73,7 @@ unshackle build lightdash
 | --- | --- |
 | explore table (`sqlTable`, `schema`, `database`) / dbt model (`config.alias/schema/database`) | `catalog/` table + semantic model (`node_relation`) |
 | dimension (`type: string/number/boolean`) | categorical dimension; `${TABLE}.col` -> `col`, `${other_dim}` inlined |
-| `type: timestamp/date` | time dimension (granularity day); generated interval dims (`created_at_month`) are dropped - MetricFlow grains replace them |
+| `type: timestamp/date` | time dimension (granularity day); generated interval dims (`created_at_month`) are dropped - truncate the time dimension at query time instead |
 | `meta.primary_key` (or guessed `id` / `<table>_id`, info warning) | primary entity named after the table |
 | `joins: [{join, sql_on: ${a.x} = ${b.y}, relationship}]` | foreign entity on the many side (`many_to_one`, `one_to_many`, `one_to_one`); aliased joins warned |
 | metric `type: sum/count/count_distinct/average/min/max/median/percentile/sum_boolean` | measure + simple metric (`percentile: 90` -> `agg_params`) |
@@ -98,7 +98,7 @@ Field names in tile SQL and encodings are Lightdash field ids (`orders_created_a
   COUNT(DISTINCT ${TABLE}.b)`): split into simple measures and a ratio
   (`a_sum / b_count_distinct`).
 - **`type: max/min` on dates, `type: date`, `string` metrics**: `max` measure on the
-  date column; string metrics (`LISTAGG`) have no MetricFlow agg - verified query.
+  date column; string metrics (`LISTAGG`) stay TODO (no such aggregate is written) - verified query.
 - **`average_distinct`, `sum_distinct`** (symmetric aggregates keyed by `distinct_keys`):
   pre-aggregate in a SQL model at the key grain, then `average`/`sum`.
 - **Metric filters on joined tables or relative dates** (`inThePast 30 days`):
@@ -156,7 +156,7 @@ keys: [orders_created_at_month]
 ```
 
 For metrics, compile a query of one metric by month and compare with
-`mf query --metrics total_revenue --group-by metric_time__month`. Numbers from Lightdash
+the metric's SQL run on the warehouse, grouped by month. Numbers from Lightdash
 itself: run the chart and download CSV, or the query API (`runQuery` / v2 async query).
 
 ## Alternatives

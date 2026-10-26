@@ -2,155 +2,117 @@
   <img src="assets/banner.svg" alt="unshackle" width="760">
 </h1>
 
-`unshackle` is a command-line tool for moving definitions out of a BI tool and into
-files in a Git repository. It extracts the original definitions, translates what
-it can, and lists what still needs work. You can run it without a coding agent.
+unshackle moves your metrics, dashboards and permissions out of a BI tool and into files in a Git repository you own.
 
-Supported tools are listed below. The generated files include table descriptions,
-metrics, queries, dashboards, and permissions when the source provides them.
+## What you get
+
+| You had in your BI tool | You get in your repo |
+| --- | --- |
+| Metrics, measures, calculated fields | Metrics in [Apache Ossie](https://github.com/apache/ossie), an open semantic-layer format (`semantic/`) |
+| Dashboards | Jupyter notebooks: one SQL query and one chart per tile (`notebooks/`) |
+| Tables and data sources | Table and column descriptions (`catalog/`) |
+| Permissions, row-level security | [Cedar](https://www.cedarpolicy.com) policies and SQL row filters (`policies/`) |
+| Descriptions, glossaries | Markdown (`knowledge/`) |
+
+What unshackle can't translate faithfully is marked `TODO(unshackle)`, with the
+original formula next to it. It doesn't guess.
+
+## How it works
+
+1. **Extract:** reads definitions through your tool's API, or from files you download.
+2. **Translate:** writes the files above. Nothing changes in your BI tool.
+3. **Report:** `migration/report.md` shows, per dashboard, what was translated and what blocks the rest.
+4. **Check:** compares the migrated queries with your tool's own numbers.
+
+## Get started
+
+You need [uv](https://docs.astral.sh/uv/) and access to your BI tool.
+
+```bash
+uv tool install "unshackle[run]"      # add your tool's extra: "unshackle[run,tableau]"
+cd your-analytics-repo
+unshackle check <tool> --prompt       # asks for credentials, saves them to .env (git-ignored)
+unshackle migrate <tool>
+```
+
+Then:
+
+```bash
+unshackle run       # run the notebooks; see which tiles return data
+unshackle verify    # compare migrated numbers with your tool's
+unshackle todo      # list what's left to finish
+```
+
+`unshackle tools <tool>` says where to find each credential.
 
 ## Supported tools
 
-Every tool can be extracted through its API. To import downloaded files instead, see
-[No API access? Import files](#no-api-access-import-files).
+| Tool | Extra | Import files instead of the API |
+| --- | --- | --- |
+| [Tableau](docs/tools/tableau.md) | `tableau` | `.twb`, `.twbx`, `.tds`, `.tdsx` |
+| [Power BI](docs/tools/powerbi.md) | | Power BI project (`.pbip`, model as TMDL) |
+| [Looker](docs/tools/looker.md) | `looker` | LookML project (Git checkout or `.zip`) |
+| [Qlik Sense](docs/tools/qlik.md) | `qlik` | `qlik app unbuild` folder per app |
+| [Amazon QuickSight](docs/tools/quicksight.md) | `quicksight` | `.qs` asset bundle |
+| [Metabase](docs/tools/metabase.md) | | API only |
+| [Lightdash](docs/tools/lightdash.md) | | dbt project folder |
+| [Apache Superset](docs/tools/superset.md) | | export `.zip` |
+| [Redash](docs/tools/redash.md) | | API only |
+| [Omni](docs/tools/omni.md) | | model YAML folder (Git sync) |
+| [Hex](docs/tools/hex.md) | | project YAML (Git export) |
+| [ThoughtSpot](docs/tools/thoughtspot.md) | | `.tml` files or Export TML `.zip` |
+| [Sigma](docs/tools/sigma.md) | | API only |
 
-Tableau, Power BI, Looker, Qlik Sense, Amazon QuickSight, Metabase, Lightdash, Apache
-Superset, Redash, Omni, Hex, ThoughtSpot and Sigma.
+Each tool's page covers connecting, what you get, what's left to finish and how to check the numbers.
 
-Each source is tested offline on saved exports in `tests/fixtures/`: exports over a
-fictional dataset, and for Looker and Power BI, open-source projects people built. The
-generated SQL runs in DuckDB on that dataset. If you use one of these tools, an
-anonymized export (a "Fixture submission" issue) is the most useful thing you can
-contribute.
+## API or files
 
-## Try it without connecting a BI tool
+**API** gets the most: definitions, dashboards people built in the tool, usage,
+sharing, and for most tools the SQL the tool itself runs.
+
+**Files** work when you can't get API credentials. They carry less (usually no usage
+or sharing, and for Looker and Omni no user-built dashboards); the report lists
+what's missing.
 
 ```bash
-git clone https://github.com/Querio-App/unshackle
-cd unshackle
-uv venv
-uv pip install -e ".[dev]"
+unshackle import <tool> <files or folder>
+unshackle build <tool>
+```
+
+## Data that lives only in your BI tool
+
+Tableau extracts, Excel and CSV files have no warehouse behind them. `migrate` asks
+whether to copy that data to `data/` (git-ignored) so the notebooks can run on it
+locally.
+
+## Check the numbers
+
+`unshackle verify` runs the cases in `migration/parity/` against your warehouse and
+compares them with the source tool's numbers. For Tableau, `unshackle verify --init tableau`
+writes the cases from Tableau's own view data. For other tools, write them by hand:
+see the [verify guide](skills/verify/SKILL.md).
+
+## With a coding agent
+
+unshackle runs fine on its own. If you use a coding agent (Claude Code, Codex,
+Cursor), point it at the repo: `AGENTS.md` explains the layout, and the guides in
+`migration/skills/` walk it through finishing each kind of TODO.
+
+## Try it without a BI tool
+
+```bash
+git clone https://github.com/Querio-App/unshackle && cd unshackle
+uv venv && uv pip install -e ".[dev]"
 ./examples/tableau-demo/run.sh /tmp/acme
 ```
 
-The demo reads a saved Tableau export, writes the generated files to
-`/tmp/acme`, and compares one migrated dashboard query with Tableau's exported
-results using a local DuckDB database. Open `/tmp/acme/migration/report.md` to
-see what was translated and what remains.
+The demo migrates a saved Tableau export into `/tmp/acme` and checks a dashboard's
+numbers against Tableau's.
 
-## Use it with your BI tool
+## More
 
-```bash
-uv tool install "unshackle[run,tableau]"
-unshackle tools tableau          # each variable and where to find it
-cd your-analytics-repo
-unshackle check tableau --prompt # asks for unset variables (secrets hidden), saves .env, checks the connection
-unshackle migrate tableau
-```
-
-Install `run` plus the extra for your tool, if it has one:
-
-| Tool | Install |
-| --- | --- |
-| Tableau (`--with-data` copies extracts, Excel and CSV) | `uv tool install "unshackle[run,tableau]"` |
-| Looker | `uv tool install "unshackle[run,looker]"` |
-| Qlik | `uv tool install "unshackle[run,qlik]"` |
-| QuickSight | `uv tool install "unshackle[run,quicksight]"` |
-| Every other tool | `uv tool install "unshackle[run]"` |
-
-To add an extra later, run the command again with `--force` and the full list of extras.
-
-`unshackle tools` shows the environment variables each source needs, and its extra;
-`unshackle tools <tool>` says where to find each. Set them in your shell or in `.env` at the
-repo root (git-ignored; real environment variables win), then `unshackle check <tool>`
-confirms they work before running `migrate`. `migrate` creates the folders,
-inventories the source, saves its raw definitions, and builds the translated
-files.
-
-You can also run those steps separately with `unshackle init`, `unshackle inventory`,
-`unshackle extract`, and `unshackle build`. The CLI runs in your terminal and connects
-to the source tool's API when inventorying or extracting.
-
-In an interactive terminal you'll see the *Endurance* working its way through the
-pack ice while each step runs. Piped output, CI, `NO_COLOR` and `unshackle --quiet`
-get plain text.
-
-## No API access? Import files
-
-If you can't get API credentials but can download definitions from the tool, import
-the files instead of extracting:
-
-```bash
-unshackle init
-unshackle import tableau "Superstore Sales.twbx" datasources/
-unshackle build tableau
-```
-
-| Tool | What to import |
-| --- | --- |
-| Tableau | `.twb`, `.twbx`, `.tds`, `.tdsx` (extracts inside packaged files are ignored) |
-| Power BI | a Power BI project (`.pbip` and its folders), with the semantic model saved as TMDL. Not `.pbix` |
-| Looker | the LookML project folder (Git checkout or `.zip`) |
-| Lightdash | the dbt project folder, plus `lightdash download` output if you have it |
-| Omni | a model's YAML folder (from Git sync), one folder per model |
-| ThoughtSpot | `.tml` files or the `.zip` from Export TML |
-| Hex | project YAML (Git export) and `hex context semantic-project pull` output |
-| Qlik Sense | a `qlik app unbuild` folder per app (add the app's data metadata as `data-metadata.json` for `LOAD *` columns and joins) |
-| Sigma | not supported: Sigma has no download of workbook or data model definitions |
-
-`import` replaces `migration/raw/<tool>/` with the files, unpacking `.zip` downloads,
-and never runs anything inside them. Files can't carry usage, sharing permissions
-or, for most tools, the SQL the tool generates; Looker and Omni files carry no
-dashboards. `migration/report.md` lists what is missing for each import.
-
-## What it writes
-
-| Path | Contents |
-| --- | --- |
-| `semantic/*.ossie.yaml` | [Apache Ossie](https://github.com/apache/ossie) semantic models and metrics, one document per model |
-| `models/semantic/*.yml` | MetricFlow semantic models and metrics, only in dbt projects |
-| `catalog/` | Table and column descriptions |
-| `knowledge/` | Business context in Markdown |
-| `queries/` | SQL or Python queries |
-| `notebooks/*.ipynb` | Dashboards as Jupyter notebooks: SQL per tile, Altair (Vega-Lite) charts |
-| `policies/` | Cedar policies and SQL row filters |
-| `migration/raw/` | Definitions extracted from the source tool |
-| `migration/report.md` | Counts, warnings, and unfinished translations |
-
-If the target repo has `dbt_project.yml`, semantic files go to `models/semantic/`
-and MetricFlow YAML is written next to the Ossie documents. Paths can be changed in `unshackle.toml`. The full
-current layout is in [`spec/layout.md`](spec/layout.md).
-
-When unshackle cannot translate something faithfully, it leaves a `TODO(unshackle)`
-with the original expression. Run `unshackle todo` to find those items. The
-instructions copied to `migration/skills/` can help a person or a coding agent
-finish them, but using an agent is optional. Rebuilding preserves hand edits to
-generated files and reports where it kept them.
-
-## Check the results
-
-`unshackle` does not automatically prove that every number matches the old tool.
-Write comparison cases in `migration/parity/*.yaml`, then run `unshackle verify`
-with a warehouse connection. It compares the source results with the migrated
-query and records the outcome. See [`skills/verify/SKILL.md`](skills/verify/SKILL.md)
-for the case format and process.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Source parsers are tested from saved
-exports in `tests/fixtures/`, so translation work doesn't need a BI account. Please report security issues privately; see [SECURITY.md](SECURITY.md).
-
-## The name
-
-In January 1915, Ernest Shackleton's ship *Endurance* froze into the pack ice of
-the Weddell Sea. It drifted with the ice for most of a year before it was crushed
-and sank. All 28 men aboard still made it home, after a lifeboat crossing to South
-Georgia that is still hard to believe. The wreck was found in 2022, 3,000 metres
-down. Data stuck in a BI tool is a smaller problem, but we liked the name.
-
-If you've never read the story, start with Alfred Lansing's *Endurance:
-Shackleton's Incredible Voyage* (1959). For Frank Hurley's photographs from the
-expedition, see *The Endurance Photographs*, published with the Royal Geographical
-Society.
+- [Repo layout](spec/layout.md): every folder and file unshackle writes
+- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md)
+- [The name](docs/name.md): why a BI migration tool is named after Shackleton
 
 Apache 2.0. Built and maintained by [Querio](https://querio.ai).

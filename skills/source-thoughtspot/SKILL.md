@@ -120,14 +120,14 @@ alias; the axis `title` keeps "Month(Order Date)".
 
 ThoughtSpot formula functions and what to write instead:
 
-| ThoughtSpot | SQL / MetricFlow |
+| ThoughtSpot | SQL / semantic model |
 | --- | --- |
 | `group_aggregate ( sum ( m ) , { [dim] } , query_filters ( ) )` (LOD) | SQL model at that grain (`select dim, sum(m) ... group by dim`) + semantic model on it; for share-of-total in a chart, tile SQL `m / sum(m) over (partition by ...)` |
 | `group_sum ( m , dim )`, `group_count`, `group_average`, `group_unique_count` | same as `group_aggregate` with that aggregate |
-| `cumulative_sum ( m , date )`, `cumulative_average` | `cumulative` metric (`window` / `grain_to_date`) or `sum(m) over (order by date)` in the tile |
+| `cumulative_sum ( m , date )`, `cumulative_average` | `sum(m) over (order by date)` in the tile (Ossie has no cumulative metric) |
 | `moving_average ( m , 2 , 0 , date )`, `moving_sum` | tile SQL `avg(m) over (order by date rows between 2 preceding and current row)` |
 | `rank ( m , 'desc' )`, `rank_percentile` | `rank() over (order by m desc)` / `percent_rank()` in tile SQL |
-| `last_value ( m , query_groups ( ) , { date } )` (semi-additive) | measure with `non_additive_dimension: {name: date, window_choice: max}` |
+| `last_value ( m , query_groups ( ) , { date } )` (semi-additive) | SQL model or tile SQL keeping the rows of the latest `date` per group, then `sum(m)` |
 | `diff_days ( a , b )`, `add_days ( d , n )`, `month_number ( d )`, `day_of_week ( d )` | `datediff('day', b, a)`, `dateadd(day, n, d)`, `extract(month from d)`, `dayname(d)` (dialect) |
 | `contains ( s , 'x' )`, `strpos`, `substr`, `to_string`, `to_integer` | `s like '%x%'`, `position`, `substr`, `cast(... as varchar)`, `cast(... as integer)` |
 | `sql_string_op ( 'md5({0})' , x )`, `sql_int_op`, `sql_date_op`, `sql_number_op` (passthrough) | substitute `{0}`, `{1}` with the args: `md5(x)` |
@@ -189,7 +189,7 @@ Numbers straight from ThoughtSpot: `POST /api/rest/2.0/searchdata` with the answ
 `POST /report/liveboard` (CSV/XLSX) for a whole liveboard. Pin relative filters
 (`[Order Date] = 'last 12 months'` -> fixed dates) on both sides.
 
-Metrics: compare `mf query --metrics total_revenue --group-by metric_time__month` with a
+Metrics: compare the metric's SQL run on the warehouse, grouped by month, with a
 `searchdata` call `[Revenue] [Order Date].monthly`.
 
 ## Alternatives
@@ -214,11 +214,11 @@ Metrics: compare `mf query --metrics total_revenue --group-by metric_time__month
   hand.
 - `BAR` in ThoughtSpot is horizontal; `COLUMN` is vertical.
 - ThoughtSpot wraps sums as `CASE WHEN sum(x) IS NOT NULL THEN sum(x) ELSE 0 END`: empty
-  groups show 0, not NULL. MetricFlow returns NULL; use `coalesce` in the tile if the
-  chart depended on it, or `fill_nulls_with: 0` on the metric.
+  groups show 0, not NULL. An Ossie `SUM(x)` metric returns NULL; use `coalesce` in the tile
+  if the chart depended on it, or `COALESCE(SUM(x), 0)` as the metric's expression.
 - Answer column names ("Total Revenue", "Unique Number of Order Id") are generated from
   the aggregation; unshackle strips those prefixes when matching columns.
 - Chasm traps: ThoughtSpot avoids double counting across fan-out joins automatically;
-  MetricFlow does too through entities, but check distinct counts after joins.
+  unshackle keeps each measure on one table, but check distinct counts after joins.
 - Multi-org clusters: every guid is per org; run extract once per `THOUGHTSPOT_ORG_ID`
   into separate repos or prefix the notebooks.

@@ -21,9 +21,9 @@ or `unshackle build`; refresh with `unshackle init --update-skills`). A referenc
 1. Pick the source skill: `skills/source-<tool>/SKILL.md` where `<tool>` is one of
    `looker lightdash omni hex sigma thoughtspot powerbi tableau metabase superset redash quicksight qlik`. Load it now; it
    covers auth, API quirks and what that tool's parser leaves as TODO.
-2. Install: `uv tool install "unshackle[run,sql]"`
-   (add the tool's extra if `unshackle tools` lists one: `tableau` for `--with-data`, `looker`, `qlik`, `quicksight`). The CLI is `unshackle`. Don't `pip install unshackle`:
-   that name on PyPI is an unrelated project. From a checkout: `uv pip install -e '<path>[run,sql]'`.
+2. Install: `uv tool install "unshackle[run]"`
+   (add the tool's extra if `unshackle tools` lists one: `tableau` for `--with-data`, `looker`, `qlik`, `quicksight`). The CLI is `unshackle`.
+   From a checkout: `uv pip install -e '<path>[run]'`.
 3. `unshackle tools` prints the env vars each tool needs; `unshackle tools <tool>` says where
    to find each. Ask the user to export them in their shell or put them in `.env` at the
    repo root (git-ignored; unshackle reads it, and `unshackle check <tool> --prompt` writes

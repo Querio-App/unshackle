@@ -65,7 +65,7 @@ unshackle build looker
 | `include:` in a model | explores in included files (`explores/*.explore.lkml`) belong to that model; `*`, `**`, relative paths and a missing `.lkml` work |
 | `dimension` | categorical dimension; `${TABLE}.col` -> `col`, `${other_dim}` inlined, `case:` -> `CASE WHEN` |
 | `${created_date}` and other timeframe refs | the group's SQL with Looker's value for the timeframe (table below) |
-| measure over fields of a joined view (`sum: ${sale_price} - ${inventory_items.cost}`) | measure over `{{ Dimension('view__field') }}` refs -> Ossie model-scoped metric (`SUM(order_items.sale_price - inventory_items.cost)`); MetricFlow keeps it pending |
+| measure over fields of a joined view (`sum: ${sale_price} - ${inventory_items.cost}`) | measure over `{{ Dimension('view__field') }}` refs -> Ossie model-scoped metric (`SUM(order_items.sale_price - inventory_items.cost)`) |
 | `primary_key: yes` | primary entity named after the view |
 | `dimension_group: type: time` | time dimension named after the group; granularity = smallest timeframe (`date` -> day, `time` -> second, `datatype: date` caps at day) |
 | measure `sum/average/count_distinct/min/max/median/percentile` | measure + simple metric |
@@ -112,12 +112,12 @@ becomes `<view>_<name>`. Labels keep Looker's labels.
 ## Finishing TODOs
 
 - **Liquid** (`{% if %}`, `{{ _filters['x'] }}`, `{% parameter %}`, `{% condition %}`):
-  MetricFlow has no templating. A `parameter` switch becomes one metric per branch
+  Ossie expressions are plain SQL. A `parameter` switch becomes one metric per branch
   (`revenue_usd`, `revenue_eur`); `{% condition f %} col {% endcondition %}` becomes
   a metric `filter` or a `:param` in the notebook SQL; `_user_attributes` becomes
   a row filter.
 - **Cross-view refs in a dimension** (`${customers.region}` in `orders`): move the
-  dimension to the view that owns the column; MetricFlow joins through entities.
+  dimension to the view that owns the column; Ossie relationships join it in.
   Measures built on it are translated when the join allows (see above).
 - **Cross-view measures that stay TODO**: for a one_to_many join, pre-aggregate the
   other view per row of the measure's view in a SQL model (what Looker's symmetric
@@ -125,8 +125,8 @@ becomes `<view>_<name>`. Labels keep Looker's labels.
 - **Timeframe refs left TODO** (`${created_quarter}`, `${created_day_of_week}`):
   write Looker's value in your dialect (quarter is `'2024-01'` style for the first
   month, `day_of_week` the day's name), or reference `${created_raw}` and truncate.
-- **Relative date filters** (`"30 days"`, `"last month"`): no MetricFlow equivalent
-  in a metric filter that stays correct over time; either drop the filter and use a
+- **Relative date filters** (`"30 days"`, `"last month"`): left TODO in a metric
+  filter (only absolute dates are translated there); either drop the filter and use a
   time constraint at query time, or write
   `{{ TimeDimension('orders__created', 'day') }} >= CURRENT_DATE - 30`.
 - **sum_distinct / average_distinct** (symmetric aggregates): pre-aggregate in a SQL
@@ -232,9 +232,8 @@ target:
 keys: [orders_created_month, customers_region]
 ```
 
-Replace relative filters in both sides with fixed dates. For metrics, compare
-`mf query --metrics total_revenue --group-by metric_time__month` output (or the
-compiled SQL) against a Looker query of the same fields. Numbers straight from Looker:
+Replace relative filters in both sides with fixed dates. For metrics, run the
+metric's SQL on the warehouse, grouped by month, against a Looker query of the same fields. Numbers straight from Looker:
 `GET /queries/{id}/run/csv` (or `run_inline_query` with `result_format: csv`), saved
 under `migration/parity/data/`.
 
@@ -265,6 +264,6 @@ under `migration/parity/data/`.
   localization keys come through as the key).
 - Join aliases (`join: buyer { from: customers }`) need a second entity by hand
   (role-playing dimensions).
-- Looker counts with symmetric aggregates across fan-out joins; a MetricFlow `count`
-  on a many_to_one join stays correct, but compare distinct counts after joins.
+- Looker counts with symmetric aggregates across fan-out joins; unshackle translates
+  cross-view measures only over x_to_one joins, but compare distinct counts after joins.
 - Snowflake uppercases unquoted aliases; pandas lower-cases them, so `keys` match.

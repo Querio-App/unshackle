@@ -98,7 +98,7 @@ TIME_INTEL = {
     "DATESYTD", "DATESQTD", "DATESMTD", "DATESINPERIOD", "DATESBETWEEN", "NEXTYEAR", "NEXTMONTH",
 }
 TO_DATE = {"DATESYTD": "year", "DATESQTD": "quarter", "DATESMTD": "month", "TOTALYTD": "year", "TOTALQTD": "quarter", "TOTALMTD": "month"}
-# construct -> hint for the agent (see skills/source-powerbi "DAX -> MetricFlow / SQL")
+# construct -> hint for the agent (see skills/source-powerbi "DAX -> semantic model / SQL")
 DAX_HINT = {
     **{f: f"removes filter context ({f}): its value depends on the visual's grouping, so it is no metric; tile SQL computes it"
        for f in ("ALL", "ALLEXCEPT", "REMOVEFILTERS")},

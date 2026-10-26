@@ -86,7 +86,7 @@ the Sigma metric name; labels keep the original.
 
 Sigma formulas are spreadsheet-style with `[Element/Column]` references. Map them:
 
-| Sigma | SQL / MetricFlow |
+| Sigma | SQL / semantic model |
 | --- | --- |
 | `Lookup([Customers/Name], [Customer Id], [Customers/Customer Id])` | drop the column; use `customer__name` through the `customer` entity (relationship already migrated). If there is no relationship, add a foreign entity for the key |
 | `Rollup(Sum([Items/Amount]), [Order Id], [Items/Order Id])` | a measure on the child model (`items.amount`, sum) queried by `order`; or a SQL model that pre-aggregates items per order |
@@ -184,7 +184,7 @@ warehouse: count workbook view events per workbook id over the last 90 days), th
   in workbooks break the match with the data model. Check TODOs that say "references
   another element".
 - Snowflake identifiers: Sigma quotes upper-case names (`"AMOUNT_USD"`); unshackle lower-
-  cases them in MetricFlow `expr` (unquoted = case-insensitive). Mixed-case columns
+  cases them in semantic model expressions (unquoted = case-insensitive). Mixed-case columns
   need quotes by hand.
 - Custom SQL elements and CSV uploads have no table: materialize them first.
 - `limit 25000` in Sigma SQL is Sigma's row cap, not business logic: drop it for
