@@ -28,10 +28,10 @@ documented REST API v2 with `httpx` and parses TML as plain YAML with `pyyaml`.
 
 | Variable | Value |
 | --- | --- |
-| `THOUGHTSPOT_URL` | `https://<cluster>.thoughtspot.cloud` (no path) |
-| `THOUGHTSPOT_USERNAME` | service user (admin, or can-manage-data + access to all content) |
+| `THOUGHTSPOT_URL` | the address you open ThoughtSpot at, no path: `https://<cluster>.thoughtspot.cloud` |
+| `THOUGHTSPOT_USERNAME` | the login name of a service user (admin, or can-manage-data + access to all content); Admin > Users lists it |
 | `THOUGHTSPOT_PASSWORD` or `THOUGHTSPOT_SECRET_KEY` | password, or the trusted-authentication secret key (Develop > Security settings); secret key wins if both are set |
-| `THOUGHTSPOT_ORG_ID` | optional: org id on multi-org clusters (numeric). Run once per org |
+| `THOUGHTSPOT_ORG_ID` | optional: org id on multi-org clusters (numeric; `POST /api/rest/2.0/orgs/search` lists them). Run once per org |
 
 - Auth: `POST /api/rest/2.0/auth/token/full` `{username, password | secret_key,
   validity_time_in_sec, org_id}` -> bearer `token`; unshackle re-logs in before

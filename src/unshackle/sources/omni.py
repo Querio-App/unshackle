@@ -195,6 +195,10 @@ class OmniSource(Source):
         shared = [m for m in models if str(m.get("modelKind", "")).upper() == "SHARED"]
         return shared or [m for m in models if str(m.get("modelKind", "")).upper() not in ("WORKBOOK", "BRANCH")]
 
+    def check(self) -> str:
+        self.client().get_json("/api/v1/models", params={"pageSize": 1})
+        return f"{self.client().base_url}, models readable"
+
     def inventory(self) -> Inventory:
         inv = Inventory("omni")
         base = self.client().base_url

@@ -24,9 +24,11 @@ or `unshackle build`; refresh with `unshackle init --update-skills`). A referenc
 2. Install: `uv tool install "unshackle[run,sql]"`
    (add the tool's extra if `unshackle tools` lists one: `tableau` for `--with-data`, `looker`, `qlik`, `quicksight`). The CLI is `unshackle`. Don't `pip install unshackle`:
    that name on PyPI is an unrelated project. From a checkout: `uv pip install -e '<path>[run,sql]'`.
-3. `unshackle tools` prints the env vars each tool needs. Ask the user to export them in
-   their shell or put them in `.env` / `.unshackle/` (both git-ignored). Never write a
-   credential into a tracked file, a commit, the report or a PR description.
+3. `unshackle tools` prints the env vars each tool needs; `unshackle tools <tool>` says where
+   to find each. Ask the user to export them in their shell or put them in `.env` at the
+   repo root (git-ignored; unshackle reads it, and `unshackle check <tool> --prompt` writes
+   it with hidden input). Then `unshackle check <tool>` confirms the server, site and token
+   work. Never write a credential into a tracked file, a commit, the report or a PR description.
 4. Make a branch before writing anything: `git switch -c unshackle/<tool>-migration`.
    Never commit to or push `main`.
 5. `unshackle init` creates `AGENTS.md`, `unshackle.toml` and the folders without touching

@@ -167,6 +167,16 @@ SQL_RESERVED = {"date", "order", "group", "user", "table", "select", "from", "wh
 SIMPLE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+AADSTS_HINTS = {  # Entra ID sign-in error codes (learn.microsoft.com/entra/identity-platform/reference-error-codes)
+    "AADSTS90002": "tenant not found: POWERBI_TENANT_ID is the Directory (tenant) ID on the app registration's Overview page",
+    "AADSTS900023": "POWERBI_TENANT_ID is not a tenant id or domain: copy the Directory (tenant) ID from the app registration",
+    "AADSTS700016": "application not found in this tenant: POWERBI_CLIENT_ID is the Application (client) ID on the app "
+                    "registration's Overview page, in the tenant POWERBI_TENANT_ID names",
+    "AADSTS7000215": "invalid client secret: POWERBI_CLIENT_SECRET is the secret's Value (shown once when created), not its Secret ID",
+    "AADSTS7000222": "the client secret has expired: create a new one under Certificates & secrets and update POWERBI_CLIENT_SECRET",
+}
+
+
 class PowerBISource(Source):
     name = "powerbi"
     label = "Power BI / Microsoft Fabric"
@@ -347,6 +357,17 @@ class PowerBISource(Source):
                     cur["last_viewed"] = max(cur["last_viewed"], str(ev.get("CreationTime") or ""))
                 url = None if page.get("lastResultSet", True) else page.get("continuationUri")
         return out
+
+    def check(self) -> str:
+        """Get a token and list one workspace. Entra ID login errors carry an AADSTS code; name the variable it points at."""
+        try:
+            self._get("/groups", params={"$top": 1})
+        except SourceError as exc:
+            for code, hint in AADSTS_HINTS.items():
+                if code in exc.body:
+                    raise SourceError(f"Entra ID refused the sign-in ({code}): {hint}") from exc
+            raise
+        return "Power BI REST API, workspaces readable"
 
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)

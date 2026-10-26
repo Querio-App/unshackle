@@ -392,6 +392,10 @@ class MetabaseSource(Source):
         res = self._get("/api/search", params={"models": ["card", "dataset", "metric", "dashboard"]})
         return [i for i in (res.get("data", []) if isinstance(res, dict) else res) if isinstance(i, dict) and not i.get("archived")]
 
+    def check(self) -> str:
+        me = self._get("/api/user/current")
+        return f"{self.client().base_url} as {me.get('common_name') or me.get('email') or me.get('id')}"
+
     def inventory(self) -> Inventory:
         inv = Inventory("metabase")
         base = self.client().base_url

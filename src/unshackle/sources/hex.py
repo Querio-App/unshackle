@@ -125,6 +125,10 @@ class HexSource(Source):
     def projects(self) -> list[dict[str, Any]]:
         return self._pages("/projects", {"limit": 100})
 
+    def check(self) -> str:
+        self.client().get_json("/projects", params={"limit": 1})
+        return f"{self.base_url()}, projects readable"
+
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
         inv.notes.append("The Hex API needs a Team or Enterprise workspace token and reads the draft version of each project.")

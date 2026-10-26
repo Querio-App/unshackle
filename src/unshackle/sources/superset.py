@@ -261,6 +261,10 @@ class SupersetSource(Source):
             page += 1
         return out
 
+    def check(self) -> str:
+        self._get("/api/v1/dashboard/", params={"q": "(page:0,page_size:1)"})
+        return f"{self.client().base_url}, dashboards readable"
+
     def inventory(self) -> Inventory:
         inv = Inventory("superset")
         base = self.client().base_url

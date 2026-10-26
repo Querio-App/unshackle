@@ -22,8 +22,8 @@ Install the extra: `uv tool install "unshackle[run,sql,quicksight]"` (adds boto3
 | Variable | Value |
 | --- | --- |
 | AWS credentials | the standard boto3 chain: `AWS_PROFILE`, or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`, SSO, instance roles |
-| `QUICKSIGHT_REGION` | the region the assets live in (`us-east-1`); defaults to the profile's region |
-| `QUICKSIGHT_ACCOUNT_ID` | the 12-digit AWS account id; defaults to `sts get-caller-identity` |
+| `QUICKSIGHT_REGION` | the region the assets live in (`us-east-1`, the region in the QuickSight browser address); defaults to the profile's region |
+| `QUICKSIGHT_ACCOUNT_ID` | the 12-digit AWS account id (the account menu at the top right of the AWS console); defaults to `sts get-caller-identity` |
 | `QUICKSIGHT_NAMESPACE` | for users and groups; default `default` |
 | `QUICKSIGHT_IDENTITY_REGION` | where users and groups live when it isn't `QUICKSIGHT_REGION` (QuickSight serves `ListUsers` / `ListGroups` only in the identity region) |
 

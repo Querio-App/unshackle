@@ -30,7 +30,8 @@ Folders in the customer's repo (each appears only once something is written to i
 | `data/` | Data copied out of the tool with `--with-data` (git-ignored) |
 | `migration/` | unshackle's own area: raw exports, report, lock, skills, parity cases |
 
-Rules: credentials stay in the environment, never in files. Work on a branch and
+Rules: credentials stay in the environment or the repo's git-ignored `.env`, never in
+tracked files. Work on a branch and
 open a pull request. Never delete a `TODO(unshackle)` without resolving it.
 
 ## Working on unshackle itself

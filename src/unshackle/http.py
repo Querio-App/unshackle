@@ -10,7 +10,10 @@ import httpx
 
 
 class SourceError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None, body: str = ""):
+        super().__init__(message)
+        self.status = status  # the HTTP status when the error is a response from the tool
+        self.body = body
 
 
 def missing_extra(extra: str, what: str) -> str:
@@ -77,7 +80,7 @@ class Client:
                 delay = min(delay * 2, 30)
                 continue
             if resp.status_code >= 400:
-                raise SourceError(f"{method} {path} -> {resp.status_code}: {resp.text[:500]}")
+                raise SourceError(f"{method} {path} -> {resp.status_code}: {resp.text[:500]}", resp.status_code, resp.text[:2000])
             return resp
         raise SourceError(f"{method} {path} failed after retries")
 

@@ -9,10 +9,11 @@ description: Use when migrating Power BI / Microsoft Fabric (semantic models in 
 
 | Variable | Value |
 | --- | --- |
-| `POWERBI_TENANT_ID` | Entra ID tenant (directory) id |
-| `POWERBI_CLIENT_ID`, `POWERBI_CLIENT_SECRET` | app registration (service principal) with a client secret |
+| `POWERBI_TENANT_ID` | Entra ID tenant: **Directory (tenant) ID** on the app registration's Overview page (Entra admin center > App registrations) |
+| `POWERBI_CLIENT_ID` | **Application (client) ID** on the same Overview page |
+| `POWERBI_CLIENT_SECRET` | the app registration's Certificates & secrets > New client secret: copy its **Value** (shown once), not the Secret ID |
 | `POWERBI_ACCESS_TOKEN` | alternative to the three above: a pre-obtained bearer token (`az account get-access-token --resource https://analysis.windows.net/powerbi/api`). Used for both APIs unless `POWERBI_FABRIC_ACCESS_TOKEN` is set |
-| `POWERBI_WORKSPACES` | optional comma list of workspace ids (or names); default every workspace the principal can see |
+| `POWERBI_WORKSPACES` | optional comma list of workspace ids (the id after `/groups/` in the workspace's browser address) or names; default every workspace the principal can see |
 | `POWERBI_ADMIN` | `1` to use admin APIs: scanner fallback + usage (ViewReport activity events) |
 | `POWERBI_USAGE_DAYS` | days of activity events to read (default and max 30) |
 

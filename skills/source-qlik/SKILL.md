@@ -21,9 +21,9 @@ rebuild it in the warehouse (dbt or SQL models) first.
 
 | Variable | Value |
 | --- | --- |
-| `QLIK_TENANT_URL` | `https://<tenant>.<region>.qlikcloud.com` |
-| `QLIK_CLIENT_ID` / `QLIK_CLIENT_SECRET` | an OAuth **machine-to-machine** client; exchanged at `POST /oauth/token` (`grant_type: client_credentials`, scope `user_default`) |
-| `QLIK_API_KEY` | instead of an OAuth client: sent as `Authorization: Bearer <key>` |
+| `QLIK_TENANT_URL` | the address you open Qlik Cloud at, no path: `https://<tenant>.<region>.qlikcloud.com` |
+| `QLIK_CLIENT_ID` / `QLIK_CLIENT_SECRET` | an OAuth **machine-to-machine** client (Administration > OAuth > Create new, below); exchanged at `POST /oauth/token` (`grant_type: client_credentials`, scope `user_default`). The secret is shown once |
+| `QLIK_API_KEY` | instead of an OAuth client: your avatar > Profile settings > API keys > Generate new key; sent as `Authorization: Bearer <key>` |
 
 - A tenant admin creates the OAuth client (Administration > OAuth) as a
   machine-to-machine client with the **Trusted** consent method. Without Trusted the

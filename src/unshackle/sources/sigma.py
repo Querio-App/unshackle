@@ -222,6 +222,10 @@ class SigmaSource(Source):
                 break
         return out
 
+    def check(self) -> str:
+        self._get("/v2/workbooks", limit=1)
+        return f"{self._client().base_url}, workbooks readable"
+
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
         inv.notes.append(

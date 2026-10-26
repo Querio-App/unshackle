@@ -15,7 +15,7 @@ exactly what Superset runs. Tested against Superset 6.1.0.
 
 | Variable | Value |
 | --- | --- |
-| `SUPERSET_URL` | `https://superset.example.com` (no `/api`) |
+| `SUPERSET_URL` | the address you open Superset at, no path: `https://superset.example.com` |
 | `SUPERSET_USERNAME` / `SUPERSET_PASSWORD` | a database or LDAP user; exchanged at `POST /api/v1/security/login` |
 | `SUPERSET_AUTH_PROVIDER` | `db` (default) or `ldap` |
 | `SUPERSET_API_KEY` | instead of a password: sent as `Authorization: Bearer <key>` |

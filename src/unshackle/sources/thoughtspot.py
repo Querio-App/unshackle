@@ -254,6 +254,10 @@ class ThoughtSpotSource(Source):
         c = self._client_obj
         return c.base_url if c is not None else env("THOUGHTSPOT_URL", required=False).rstrip("/")
 
+    def check(self) -> str:
+        self._post("/metadata/search", {"metadata": [{"type": "LIVEBOARD"}], "record_size": 1, "record_offset": 0})
+        return f"{self._base_url()} as {env('THOUGHTSPOT_USERNAME')}"
+
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
         base = ""

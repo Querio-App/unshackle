@@ -10,7 +10,7 @@ description: Use when migrating Hex (hex.tech) projects, apps and semantic model
 | Variable | Value |
 | --- | --- |
 | `HEX_API_TOKEN` | Workspace token (Settings > API keys) or personal token (User settings > API keys) |
-| `HEX_BASE_URL` | optional, default `https://app.hex.tech/api/v1`; single-tenant/EU: `https://<host>/api/v1` |
+| `HEX_BASE_URL` | optional, default `https://app.hex.tech/api/v1`; single-tenant/EU: the address you open Hex at plus `/api/v1` |
 | `HEX_EXPORT_DIR` | optional: folder of Git-exported project YAML (charts, inputs, app layout) |
 | `HEX_SEMANTIC_DIR` | optional: output of `hex context semantic-project pull` (semantic models) |
 

@@ -1268,6 +1268,10 @@ class QlikSource(Source):
                  "hasSectionAccess": (r.get("resourceAttributes") or {}).get("hasSectionAccess", False)}
                 for r in self._pages("/api/v1/items", resourceType="app", limit=100)]
 
+    def check(self) -> str:
+        me = self.client().get_json("/api/v1/users/me")
+        return f"{self.client().base_url} as {me.get('name') or me.get('id')}"
+
     def inventory(self) -> Inventory:
         inv = Inventory("qlik")
         base = self.client().base_url

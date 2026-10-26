@@ -235,6 +235,10 @@ class RedashSource(Source):
                 break
         return out
 
+    def check(self) -> str:
+        self._get("/api/queries", params={"page": 1, "page_size": 1})
+        return f"{self.client().base_url}, queries readable"
+
     def inventory(self) -> Inventory:
         inv = Inventory("redash")
         base = self.client().base_url

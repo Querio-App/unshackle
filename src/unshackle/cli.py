@@ -12,7 +12,7 @@ from pathlib import Path
 import click
 import httpx
 
-from unshackle import build, scaffold, verify, voyage
+from unshackle import build, connect, envfile, scaffold, verify, voyage
 from unshackle.http import SourceError
 from unshackle.lock import Lock
 from unshackle.raw import RawStore
@@ -30,6 +30,7 @@ TOOL = click.argument("tool", type=click.Choice(sorted(TOOLS)))
 def main(ctx: click.Context, quiet: bool) -> None:
     """Unshackle your BI tool: extract its definitions into open formats in a Git repo you own."""
     ctx.ensure_object(dict)["quiet"] = quiet
+    envfile.load(Path.cwd())
 
 
 def _state() -> dict:
@@ -69,8 +70,13 @@ def _say(message: str, err: bool = False) -> None:
 
 
 @main.command()
-def tools() -> None:
-    """List supported tools, the environment variables each needs, and the install extra beyond `run`."""
+@click.argument("tool", required=False, type=click.Choice(sorted(TOOLS)))
+def tools(tool: str | None) -> None:
+    """List supported tools, the environment variables each needs, and the install extra beyond `run`.
+    With TOOL: where to find each of its variables."""
+    if tool:
+        click.echo(_access(tool))
+        return
     for name in TOOLS:
         cls = source_class(name)
         extra = f"  (install unshackle[run,{cls.extra}])" if cls.extra else ""
@@ -79,6 +85,45 @@ def tools() -> None:
             continue
         optional = [v for v in cls.env_vars if v not in cls.required_env]
         click.echo(f"{name:12} required: {', '.join(cls.required_env)}" + (f"; optional: {', '.join(optional)}" if optional else "") + extra)
+    click.echo("where to find each variable: unshackle tools <tool>; put them in .env at the repo root (git-ignored)")
+
+
+def _access(tool: str) -> str:
+    """The Access section of the tool's source skill: each variable and where to find it."""
+    from unshackle.resources import data_dir
+
+    text = (data_dir("skills") / f"source-{tool}" / "SKILL.md").read_text(encoding="utf-8")
+    section = text.split("\n## Access\n", 1)[1].split("\n## ", 1)[0]
+    return section.strip() + "\n\nCheck the connection: unshackle check " + tool
+
+
+@main.command()
+@TOOL
+@REPO
+@click.option("--prompt", is_flag=True, help="Ask for each unset variable (secrets hidden) and save them to REPO/.env first.")
+def check(tool: str, repo: Path, prompt: bool) -> None:
+    """Check TOOL's credentials with one cheap authenticated call."""
+    if prompt:
+        _prompt_env(tool, repo)
+    try:
+        reached = connect.check(get_source(tool))
+    except SourceError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"ok: {reached}")
+
+
+def _prompt_env(tool: str, repo: Path) -> None:
+    values = {}
+    for var in source_class(tool).env_vars:
+        if os.environ.get(var):
+            continue
+        secret = any(w in var for w in ("SECRET", "KEY", "TOKEN", "PASSWORD"))
+        value = click.prompt(f"{var} (enter to skip)", default="", show_default=False, hide_input=secret)
+        if value:
+            values[var] = os.environ[var] = value
+    if values:
+        envfile.write(repo / ".env", values)
+        click.echo(f"saved {', '.join(values)} to {repo / '.env'} (keep it out of Git: `unshackle init` ignores it)")
 
 
 @main.command()
@@ -96,8 +141,10 @@ def init(repo: Path, name: str | None, update_skills: bool) -> None:
 @REPO
 def inventory(tool: str, repo: Path) -> None:
     """List everything in TOOL, with usage, into migration/inventory.<tool>.md."""
+    src = get_source(tool)
     with _voyage("taking inventory"):
-        inv = _run(lambda: get_source(tool).inventory())
+        _run(lambda: connect.check(src))
+        inv = _run(lambda: src.inventory())
     out = repo / "migration"
     out.mkdir(parents=True, exist_ok=True)
     (out / f"inventory.{tool}.md").write_text(inv.to_markdown())

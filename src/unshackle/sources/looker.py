@@ -279,6 +279,10 @@ class LookerSource(Source):
             offset += limit
         return rows
 
+    def check(self) -> str:
+        me = self.client().get_json("/user")
+        return f"{self.base_url()} as {me.get('display_name') or me.get('email') or me.get('id')}"
+
     def inventory(self) -> Inventory:
         inv = Inventory(tool=self.name)
         inv.notes.append(

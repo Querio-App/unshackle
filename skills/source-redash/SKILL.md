@@ -15,7 +15,7 @@ BSD-2).
 
 | Variable | Value |
 | --- | --- |
-| `REDASH_URL` | `https://redash.example.com` (no `/api`) |
+| `REDASH_URL` | the address you open Redash at, no path: `https://redash.example.com` |
 | `REDASH_API_KEY` | a **user** API key (Edit Profile -> API Key), sent as `Authorization: Key <key>` |
 
 - Use an **admin**'s key. Other users only see queries on their groups' data sources,

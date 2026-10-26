@@ -9,7 +9,7 @@ description: Use when migrating Looker (LookML models, explores, dashboards, Loo
 
 | Variable | Value |
 | --- | --- |
-| `LOOKER_BASE_URL` | `https://<instance>.cloud.looker.com` (no `/api/4.0`; self-hosted: include the port, often `:19999`) |
+| `LOOKER_BASE_URL` | the address you open Looker at, no path: `https://<instance>.cloud.looker.com` (self-hosted: the API host and port, often `:19999`; Admin > API shows the API Host URL) |
 | `LOOKER_CLIENT_ID`, `LOOKER_CLIENT_SECRET` | API3 key: Admin > Users > edit user > Edit Keys |
 | `LOOKER_LOOKML_DIR` | optional but recommended: local clone of the LookML project's Git repo (production branch) |
 
