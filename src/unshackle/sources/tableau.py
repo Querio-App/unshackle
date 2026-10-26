@@ -773,7 +773,7 @@ def _member_sql(v: str | None) -> str | None:
     if v is None or v == "%null%":
         return None
     if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
-        return "'" + _member_unesc(v[1:-1]).replace("'", "''") + "'"
+        return "'" + v[1:-1].replace('""', '"').replace("'", "''") + "'"
     if v.startswith("#") and v.endswith("#"):
         return f"'{v[1:-1]}'"
     if re.fullmatch(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", v) or v.lower() in ("true", "false"):
@@ -848,7 +848,7 @@ def alias_sql(expr: str, f: TField) -> str | None:
     if f.datatype == "string":
         whens = []
         for key, label in f.aliases:
-            lit = _member_sql(key)
+            lit = _sql_str(_member_unesc(key[1:-1])) if len(key) >= 2 and key[0] == key[-1] == '"' else _member_sql(key)
             whens.append(f"when {expr} is null then {_sql_str(label)}" if lit is None else f"when {expr} = {lit} then {_sql_str(label)}")
         return f"case {' '.join(whens)} else {value} end"
     if f.datatype == "boolean":
