@@ -20,7 +20,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from unshackle.http import SourceError
+from unshackle.http import SourceError, missing_extra
 from unshackle.ir import snake
 
 SCHEMA = "tableau_data"  # where the copied tables live in the warehouse (DuckDB: views over the Parquet files)
@@ -38,7 +38,6 @@ SAME = {"string": ("VARCHAR",), "integer": ("BIGINT", "INTEGER", "SMALLINT", "TI
         "real": ("DOUBLE", "FLOAT", "DECIMAL"), "date": ("DATE",), "datetime": ("TIMESTAMP",), "boolean": ("BOOLEAN",)}
 CONVERTS = {"string": ("BIGINT", "INTEGER", "SMALLINT"), "integer": ("VARCHAR",), "real": ("VARCHAR", "BIGINT", "INTEGER", "SMALLINT"),
             "date": ("VARCHAR", "TIMESTAMP"), "datetime": ("VARCHAR", "DATE"), "boolean": ("VARCHAR",)}
-EXTRA = 'the `tableau` extra: pip install "unshackle[tableau]"'
 
 
 def _parts(s: str) -> list[str]:
@@ -108,7 +107,7 @@ def check_installed() -> None:
 
     missing = [m for m in ("tableauhyperapi", "openpyxl", "duckdb") if importlib.util.find_spec(m) is None]
     if missing:
-        raise SourceError(f"--with-data needs {EXTRA} (missing: {', '.join(missing)})")
+        raise SourceError(f"{missing_extra('tableau', '--with-data')} (missing: {', '.join(missing)})")
 
 
 def write_tables(package: bytes, sources: list[tuple[str, ET.Element, ET.Element, str]], data_root: Path, rel_root: str,
@@ -156,7 +155,7 @@ def _from_hyper(path: Path, parts: list[str], columns: list[tuple[int, str, str]
     try:
         from tableauhyperapi import Connection, HyperProcess, TableName, Telemetry, escape_string_literal
     except ImportError as exc:
-        raise ImportError(f"reading a .hyper extract needs {EXTRA}") from exc
+        raise ImportError(missing_extra("tableau", "reading a .hyper extract")) from exc
     with HyperProcess(Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU, parameters={"log_dir": str(tmp)}) as hyper:
         with Connection(hyper.endpoint, str(path)) as con:
             names = [t for s in con.catalog.get_schema_names() for t in con.catalog.get_table_names(s)]
@@ -179,7 +178,7 @@ def _retype(out: Path, columns: list[tuple[int, str, str]], tmp: Path) -> tuple[
     try:
         import duckdb
     except ImportError as exc:
-        raise ImportError(f"copying extracts needs {EXTRA}") from exc
+        raise ImportError(missing_extra("tableau", "copying extracts")) from exc
     want = {name: typ for _, name, typ in columns}
     con = duckdb.connect()
     try:
@@ -210,7 +209,7 @@ def _from_file(path: Path, t: dict[str, Any], columns: list[tuple[int, str, str]
     try:
         import duckdb
     except ImportError as exc:
-        raise ImportError(f"copying Excel and CSV data needs {EXTRA}") from exc
+        raise ImportError(missing_extra("tableau", "copying Excel and CSV data")) from exc
     if not columns:
         raise SourceError("no metadata records for this table, so its columns and types are unknown")
     text = path
@@ -243,7 +242,7 @@ def _excel_to_csv(path: Path, table: str, out: Path) -> None:
     try:
         import openpyxl
     except ImportError as exc:
-        raise ImportError(f"reading Excel data needs {EXTRA}") from exc
+        raise ImportError(missing_extra("tableau", "reading Excel data")) from exc
     if path.suffix.lower() not in (".xlsx", ".xlsm"):
         raise SourceError(f"{path.suffix} workbooks are not read by unshackle (save the file as .xlsx and re-run)")
     if not table.endswith("$"):

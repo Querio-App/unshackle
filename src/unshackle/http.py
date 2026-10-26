@@ -13,6 +13,12 @@ class SourceError(RuntimeError):
     pass
 
 
+def missing_extra(extra: str, what: str) -> str:
+    """The error for a feature whose optional dependencies aren't installed, naming the extra and how to add it."""
+    spec = f"unshackle[run,{extra}]"
+    return f'{what} needs the `{extra}` extra: uv tool install --force "{spec}" (or pip install "{spec}")'
+
+
 def env(name: str, required: bool = True, default: str = "") -> str:
     value = os.environ.get(name, default)
     if required and not value:

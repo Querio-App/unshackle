@@ -635,7 +635,7 @@ in Tableau.
 file and application connectors (Salesforce, Google Analytics, Box, OneDrive, web data
 connectors...), and extracts with no connection behind them. `inventory` flags published ones
 (`data_only_in_tableau`, from the REST `type`) and the report lists each one. To migrate their
-data, install the `tableau` extra (`pip install "unshackle[tableau]"`: Tableau's Hyper API,
+data, install the `tableau` extra (`uv tool install --force "unshackle[run,tableau]"`: Tableau's Hyper API,
 openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
 
 - Those workbooks and data sources are downloaded again with `includeExtract=true`.
