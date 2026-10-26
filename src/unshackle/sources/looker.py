@@ -217,6 +217,7 @@ class LookerSource(Source):
     name = "looker"
     label = "Looker"
     env_vars = ("LOOKER_BASE_URL", "LOOKER_CLIENT_ID", "LOOKER_CLIENT_SECRET", "LOOKER_LOOKML_DIR")
+    required_env = ("LOOKER_BASE_URL", "LOOKER_CLIENT_ID", "LOOKER_CLIENT_SECRET")
     docs = "https://cloud.google.com/looker/docs/reference/looker-api/latest"
     manual_files = "the LookML project folder (a Git checkout, or its .zip download) or .lkml files"
     manual_gaps = (

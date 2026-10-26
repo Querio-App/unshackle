@@ -73,6 +73,7 @@ class Source(ABC):
     name: str = ""
     label: str = ""
     env_vars: tuple[str, ...] = ()
+    required_env: tuple[str, ...] = ()  # env_vars the API path can't run without; `migrate` checks them first
     docs: str = ""
     manual_files: str = ""  # what `unshackle import` accepts, named in errors
     manual_gaps: tuple[str, ...] = ()  # what those files can't carry; listed in migration/report.md

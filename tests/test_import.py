@@ -349,3 +349,23 @@ def test_superset_rejects_other_files(tmp_path: Path):
     (tmp_path / "empty/readme.md").write_text("hi\n")
     r = _cli("import", "superset", tmp_path / "empty", "--repo", tmp_path)
     assert r.exit_code != 0 and "nothing Apache Superset can use" in r.output
+
+
+def test_migrate_without_api_variables_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    for var in ("LOOKER_BASE_URL", "LOOKER_CLIENT_ID", "LOOKER_CLIENT_SECRET"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("LOOKER_LOOKML_DIR", str(tmp_path / "lookml"))
+    repo = tmp_path / "repo"
+    r = _cli("migrate", "looker", "--repo", repo)
+    assert r.exit_code != 0
+    assert "missing environment variables LOOKER_BASE_URL, LOOKER_CLIENT_ID, LOOKER_CLIENT_SECRET" in r.output
+    assert "no API credentials" in r.output
+    assert "`unshackle import looker <files>`, then `unshackle build looker`" in r.output
+    assert not repo.exists()
+
+
+def test_tools_shows_required_and_optional():
+    r = _cli("tools")
+    assert r.exit_code == 0, r.output
+    line = next(ln for ln in r.output.splitlines() if ln.startswith("looker "))
+    assert "required: LOOKER_BASE_URL, LOOKER_CLIENT_ID, LOOKER_CLIENT_SECRET; optional: LOOKER_LOOKML_DIR" in line
