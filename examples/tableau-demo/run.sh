@@ -39,19 +39,7 @@ echo "== 5. render a migrated dashboard"
 "$PY" -m unshackle.run notebooks/executive-overview.ipynb
 
 echo "== 6. parity: Tableau's own numbers vs the migrated SQL"
-mkdir -p migration/parity
-CSV=$(ls migration/raw/tableau/views/*.csv | head -n 1)
-cat > migration/parity/sales-trend.yaml <<YAML
-name: Sales trend by category and month
-question: What were monthly sales by category in East and West?
-source:
-  csv: $CSV
-target:
-  notebook: notebooks/executive-overview.ipynb
-  tile: sales_trend
-keys: [category, month_of_order_date]
-tolerance: 0.0001
-YAML
+"$UNSHACKLE" verify --init tableau
 "$UNSHACKLE" verify
 
 echo

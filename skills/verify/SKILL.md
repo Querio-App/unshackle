@@ -8,7 +8,7 @@ description: Use when proving a migration's numbers match the source BI tool - w
 A parity case runs the same question on both sides and compares the results.
 `unshackle verify` runs every `migration/parity/*.yaml`, writes
 `migration/parity/results.json`, updates `migration/report.md`, and copies each
-passing case to `evals/<slug>.yaml`.
+passing case to `evals/<id>.yaml`.
 
 ```
 UNSHACKLE_WAREHOUSE_URL=snowflake://user@account/db/schema?warehouse=wh unshackle verify
@@ -16,6 +16,21 @@ UNSHACKLE_WAREHOUSE_URL=snowflake://user@account/db/schema?warehouse=wh unshackl
 
 (`unshackle verify --url ...` also works; needs the `run` extra plus the warehouse's
 SQLAlchemy driver. Never put the URL with a password in a tracked file.)
+
+## Start from the source's own numbers
+
+```
+unshackle verify --init tableau
+```
+
+writes `migration/parity/<tile>.yaml` for each view CSV that `extract tableau` saved
+(`migration/raw/tableau/views/`) and that matches a tile with SQL: the CSV as the source,
+the notebook tile as the target with the dashboard's default filter values pinned in
+`params`, CSV headers mapped to the tile's columns, dimensions as `keys`, and a display
+format for each column the CSV shows formatted (`$1,234`, `11.9%`, `0.1M`). Existing case
+files are kept. Check each case's `keys` and `params` (the CSV holds the view as last
+saved, with its filters), then run `unshackle verify`. Other tools get the same once their
+parser records a `parity_csv` on the tile.
 
 ## Case format
 
@@ -29,6 +44,8 @@ target:
   tile: monthly_revenue                            # runs monthly_revenue_sql
   params: {date_from: '2025-01-01', date_to: '2025-07-01'}   # override the parameters cell
 keys: [month, region]
+columns: {"Sum of Revenue": revenue}   # optional: source name -> target name
+formats: {"Profit Ratio": "0.0%"}      # optional: compare at the precision the source shows
 tolerance: 0.0001
 ```
 
@@ -37,9 +54,15 @@ tolerance: 0.0001
   `<tile>_sql` with the notebook's parameters cell merged with `params`).
 - `keys`: columns that identify a row; both sides are sorted by them. Omit only for
   single-row results.
-- Column names are compared lower-cased and trimmed. Only columns present on both
-  sides are compared; extra source columns are noted. Alias target columns to the
-  source's names (`as "month of order date"`) when comparing with a CSV.
+- Column names are compared lower-cased and trimmed. Map renamed columns with
+  `columns:` ({source name: target name}). A source column the target doesn't have is
+  noted in the result and not compared; list it in `ignore:` to silence the note, or set
+  `strict: true` to fail the case on it. A case with nothing but its keys in common fails.
+- `formats`: a display format per source column (`0.0%`, `$#,##0`, `0.00`, `$0.0M`,
+  `#,##0K`). Values pass when they are at most half a displayed step apart (`0.0%`:
+  0.05 points), so an exact half-way tie passes whichever way the tool rounds. Use it for
+  exports rounded as displayed; it never makes the comparison stricter than `tolerance`.
+- `id`: the eval's file name (`evals/<id>.yaml`); defaults to the case's file name.
 - Statuses: `pass`, `differs` (with the first bad column and values), `not checked`
   (an error loading a side; the note has it).
 
@@ -83,7 +106,9 @@ snapshot tables, pin the snapshot date too. Use the same timezone on both sides.
   the report.
 
 The comparison is relative: `|a - b| / max(|a|, |b|)`. Numbers formatted as text in
-a CSV (`"1,234.50"`, `"12%"`) compare as strings; clean them or use the SQL source.
+a CSV (`"1,234.50"`, `"$1,234"`, `"12%"`, `"0.1M"`, `"(3.2)"`) are parsed as numbers;
+when they are rounded for display, add the column's `formats:` entry rather than
+loosening `tolerance`.
 
 ## What to cover
 
@@ -112,7 +137,7 @@ passes, or write down why it can't.
 
 ## After it passes
 
-Passing cases are written to `evals/<slug>.yaml` with the expected row count and a
-20-row sample, so they keep running after the migration. `unshackle verify` overwrites
-these on every run; put hand-written evals under a different file name. Report the
+Passing cases are written to `evals/<id>.yaml` (the case's `id:`, else its file name)
+with the expected row count and a 20-row sample, so they keep running after the
+migration. An eval that already exists is kept; delete it to record a new sample. Report the
 pass rate (`## Parity (n/m pass)` in `migration/report.md`) in the PR.
