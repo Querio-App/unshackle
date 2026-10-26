@@ -607,3 +607,38 @@ def test_ad_hoc_calcs_stay_on_their_sheets(bundle, tiles):
     t = tiles["Ad-hoc Previous Value"]
     assert not t.sql
     assert "[PREVIOUS_VALUE(0) + SUM([Revenue])]" in t.todo and "PREVIOUS_VALUE()" in t.todo and "Calculation_7304" not in t.todo
+
+
+def test_ad_hoc_row_level_calcs(tiles, con, rows):
+    """A row-level calculation typed on a shelf: a measure is aggregated per mark like a data source field (SUM by
+    default), a dimension groups the marks."""
+    r = rows.assign(rq=rows[REV] * rows.quantity, done=np.where(rows.status == "COMPLETED", "Done", "Open"))
+    m = marks(r, ["paper_type"], rq=("rq", "sum"))
+    check(_run(con, tiles["Ad-hoc Row Measure"]), m, {"paper_type": "paper_type"}, {"revenue_quantity": m.rq})
+    m = marks(r, ["done"], revenue=(REV, "sum"))
+    check(_run(con, tiles["Ad-hoc Row Dimension"]), m, {"if_status_completed_then_done_else_open_end": "done"},
+          {"revenue": m.revenue})
+
+
+def test_ad_hoc_calcs_as_filters_and_marks(tiles, con, rows):
+    """Calculations typed on the Filters shelf (a dimension filter first, then a filter on an aggregate over the marks),
+    and on Color and Label."""
+    done = rows.status == "COMPLETED"
+    m = marks(rows[done], ["paper_type"], revenue=(REV, "sum"), q=("quantity", "sum"))
+    m = m[m.q >= 50000].reset_index(drop=True)
+    assert 0 < len(m) < rows.paper_type.nunique()
+    check(_run(con, tiles["Ad-hoc Filters"]), m, {"paper_type": "paper_type"}, {"revenue": m.revenue})
+    r = rows.assign(done=np.where(done, "Done", "Open"))
+    m = marks(r, ["paper_type", "done"], revenue=(REV, "sum"), q=("quantity", "sum"))
+    df = _run(con, tiles["Ad-hoc Marks"])
+    check(df, m, {"paper_type": "paper_type", "if_status_completed_then_done_else_open_end": "done"},
+          {"revenue": m.revenue, "sum_revenue_sum_quantity": m.revenue / m.q})
+    assert tiles["Ad-hoc Marks"].encodings["color"].field == "if_status_completed_then_done_else_open_end"
+
+
+def test_ad_hoc_lod_stays_a_todo(bundle, tiles):
+    """An LOD expression typed on a shelf has no SQL; its TODO keeps the formula as typed."""
+    t = tiles["Ad-hoc LOD"]
+    assert not t.sql
+    assert "[{FIXED [Paper Type] : SUM([Revenue])}]" in t.todo and "LOD" in t.todo and "Calculation_7307" not in t.todo
+    assert not {x.label for x in bundle.metrics} & {"{FIXED [Paper Type] : SUM([Revenue])}", "[Revenue] * [Quantity]"}
