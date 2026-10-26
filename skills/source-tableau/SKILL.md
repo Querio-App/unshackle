@@ -90,7 +90,7 @@ unshackle build tableau
 | `<relation type='table' table='[schema].[table]'>` | `catalog/` table + semantic model (one per table; the same table in many workbooks merges into one) |
 | `<metadata-record class='column'>` | catalog column (`remote-name`, `local-type`); primary entity guessed from `row_id` / `id` / `<table>_id` / the only `*_id` column |
 | numeric column (`role='measure'`) | measure with the column's default aggregation (`Sum`, `Avg`, `CountD`...; `<column aggregation='Avg'>` set in Desktop wins over the metadata record) + simple metric |
-| date / datetime column | time dimension (`day`); the only one is `agg_time_dimension`; with several, a TODO lists them |
+| date / datetime column | time dimension (`day`); the only one is the default time dimension; with several, a TODO lists them |
 | `SUM([Sales])`, `AVG`, `COUNT`, `COUNTD`, `MIN`, `MAX`, `MEDIAN` | measure + simple metric (`COUNTD` -> `count_distinct`) |
 | `SUM(IF [Returned] = 'Yes' THEN 1 ELSE 0 END)`, `SUM(ZN([x]))` | measure whose `expr` is the row expression |
 | `SUM([Profit]) / SUM([Sales])`, `[Calc A] / [Calc B]` | ratio metric (implied measures/metrics added when needed) |
@@ -109,7 +109,7 @@ unshackle build tableau
 | story | one notebook, a section per story point (its caption, then the captured sheet or dashboard with the filters the point captured) |
 | worksheets on no dashboard (or story) | one extra notebook `<workbook>-sheets` |
 | group Read / Write on a workbook | Cedar `view` / `edit` on each of its notebooks (`Deny` -> `forbid`) |
-| calc formulas, `<desc>`, parameters, hierarchies (`<drill-path>`), folders, hidden fields, sheet captions, lineage | `knowledge/<workbook>-glossary.md`; `<desc>` is also the field's description in Ossie and MetricFlow |
+| calc formulas, `<desc>`, parameters, hierarchies (`<drill-path>`), folders, hidden fields, sheet captions, lineage | `knowledge/<workbook>-glossary.md`; `<desc>` is also the field's description in Ossie |
 
 Names: snake_case of the caption (`Profit Ratio` -> `profit_ratio`, `Margin %` ->
 `margin_pct`). A caption used in two tables becomes `<model>_<name>`
@@ -447,7 +447,7 @@ Filter actions saved with marks selected stay TODO.
 ## Finishing TODOs
 
 **FIXED LODs that stay TODO**: several FIXED dimensions in the semantic layer (tiles
-work). This is by design: entities are single-column, MetricFlow has no composite entities,
+work). This is by design: entities are single-column, so Ossie keys and relationships are too,
 and a concatenated surrogate key isn't faithful (NULLs, separators inside values). The TODO
 holds the grain's SQL: save it as a SQL model with a key on those columns and relate it by
 hand. A FIXED aggregate inside an expression as a metric (it combines two models: tiles
@@ -578,7 +578,7 @@ relationship maps it: Tableau splits the marks by it), a filter on a secondary f
 link, an LOD, set or alias of the secondary, totals, the same field instance from both
 sources, a primary with relationships, and a calc that reads another data source
 (`[other_ds].[field]`): aggregate each side by the linking dimensions, then left join; or
-model both tables with entities and let MetricFlow join.
+model both tables with entities and let the Ossie relationship join them.
 
 **Several measures, dual axis**: several measures on rows become stacked panels
 (`alt.vconcat`), on columns side-by-side panels (`alt.hconcat`), each with its pane's mark.
@@ -807,7 +807,7 @@ keys: [category, month of order date]
   definition of a calc name wins; a later, different formula under the same caption is
   skipped with a warning in the report: reconcile them (rename one) before migrating.
 - Joined datasources (`<relation type='join'>`) give one model per table, related by
-  foreign entities when the join is on the other table's key. Ossie and MetricFlow
+  foreign entities when the join is on the other table's key. Ossie
   consumers usually read a relationship as a left join, while a Tableau inner join drops
   unmatched rows and repeats one-side rows per match: the models' descriptions say so,
   and tiles keep the join. Joins on several columns or on non-key columns get no

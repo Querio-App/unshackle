@@ -90,14 +90,14 @@ omni_query` so Altair fields are plain.
 ## Finishing TODOs
 
 - **Measures with `aggregate_type: list`, `sum_distinct_on`, `average_distinct_on`**:
-  `list` has no MetricFlow agg (verified query); distinct-on -> SQL model at the key
+  `list` stays TODO (no list aggregate is written; verified query); distinct-on -> SQL model at the key
   grain, then `sum` / `average`.
 - **Measures whose `sql` aggregates raw columns** (`SUM(${sale_price}) / COUNT(...)`):
   split into simple measures and a ratio.
 - **Cross-view refs in a dimension** (`${users.country}` in `order_items`): move it to
-  the owning view; MetricFlow joins through entities.
-- **Filters on relative dates** ("last 30 days" style measure filters): no stable
-  MetricFlow equivalent; `{{ TimeDimension(...) }} >= current_date - 30`, or constrain at
+  the owning view; Ossie relationships join it in.
+- **Filters on relative dates** ("last 30 days" style measure filters): left TODO
+  (not translated); `{{ TimeDimension(...) }} >= current_date - 30`, or constrain at
   query time.
 - **Views defined by `sql:`** (derived views): materialize as a warehouse view / dbt model
   and point `node_relation` at it.
@@ -164,7 +164,7 @@ SQL literals on both sides. Numbers from Omni itself: `POST /api/v1/query/run` w
 `planOnly` (returns Arrow/JSON; counts against the 60/min limit) or download the tile.
 
 **Omni MCP server** (Omni's hosted MCP, `runQuery` / pick model / pick topic tools): ask
-the same question against the topic and compare with `mf query` - good for spot checks
+the same question against the topic and compare with the metric's SQL - good for spot checks
 of metrics by an agent; it runs real queries, so pin dates.
 
 ## Alternatives

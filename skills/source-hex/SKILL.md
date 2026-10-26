@@ -96,7 +96,7 @@ unshackle build hex
   `color` and `xOffset`.
 - **Semantic `func_sql` with several aggregates**: split into simple measures and a
   derived metric (`SUM(a) / COUNT(DISTINCT c)` -> `a_sum`, `c_count` + `a_sum / c_count`).
-- **stddev/variance**: no MetricFlow agg; derived metric from `sum`, `sum of squares`
+- **stddev/variance**: left TODO (no such aggregate is written); derived metric from `sum`, `sum of squares`
   and `count`, or a SQL query.
 - **Relations that are not key equalities** (ranges, composite keys): add a SQL model
   with the join, or composite entity `expr`.
@@ -120,7 +120,7 @@ keys: [month, region]
 ```
 
 For semantic models, compare a Hex Explore on the semantic model (same measures,
-group-by, filters) with `mf query --metrics revenue --group-by metric_time__month`.
+group-by, filters) with the metric's SQL run on the warehouse, grouped by month.
 Pin the date window on both sides.
 
 ## Alternatives
