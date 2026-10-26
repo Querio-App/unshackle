@@ -125,6 +125,28 @@
     fields: [facts.count]
     filters:
       facts.at_month: "2027-07"
+  # relative date filters (counted against the time the test runs)
+  - name: fact_relative_years
+    model: semantics
+    explore: facts
+    type: single_value
+    fields: [facts.count]
+    filters:
+      facts.at_date: "3 years ago for 3 years,1 years"
+  - name: fact_relative_hours
+    model: semantics
+    explore: facts
+    type: single_value
+    fields: [facts.count]
+    filters:
+      facts.at_date: "48 hours,before 0 seconds ago,after 2 weeks ago"
+  - name: fact_relative_weeks
+    model: semantics
+    explore: facts
+    type: single_value
+    fields: [facts.count]
+    filters:
+      facts.on_date: "52 weeks ago for 52 weeks,next year"
   # Liquid projects use, quoted filter values, hour timeframes
   - name: dialect
     model: semantics
