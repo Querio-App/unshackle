@@ -3629,13 +3629,13 @@ class _Parser:
         while queue:
             here = queue.pop(0)
             for kind, a, b in edges:
-                for (hr, hc), (tr, tc) in ((a, b), (b, a)):
+                for (hr, hc), (tr, tcol) in ((a, b), (b, a)):
                     if hr != here or tr in preds or tr not in by_rel:
                         continue
                     if kind != "inner" or by_rel[tr].rel.kind != "table" or by_rel[here].rel.kind != "table":
                         missed.append(tr)
                         continue
-                    preds[tr] = f"{_ident(tc)} in (select {_ident(hc)} from {by_rel[here].sm.table} where {preds[here]})"
+                    preds[tr] = f"{_ident(tcol)} in (select {_ident(hc)} from {by_rel[here].sm.table} where {preds[here]})"
                     queue.append(tr)
         for rel, pred in preds.items():
             if rel == start:
@@ -4451,7 +4451,7 @@ class _Parser:
                 return ax.Unary(n.op, walk(n.operand, g))
             if isinstance(n, ax.Ref):
                 h = ds.fields.get(n.name)
-                if h is not None and h.formula is not None and h is not g and (c := self._calc(ds, h)).kind in ("agg", "todo"):
+                if h is not None and h.formula is not None and h is not g and self._calc(ds, h).kind in ("agg", "todo"):
                     return walk(self._rel_formula(ds, h), h)  # an aggregate calculation inside: its aggregates are placed too
                 raise _NoSQL(f"[{f.label}]: a row-level field outside an aggregate, over related tables; write it in the tile SQL ({SKILL})")
             return n

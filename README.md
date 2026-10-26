@@ -47,21 +47,25 @@ unshackle todo      # list what's left to finish
 
 ## Supported tools
 
-| Tool | Extra | Import files instead of the API |
-| --- | --- | --- |
-| [Tableau](docs/tools/tableau.md) | `tableau` | `.twb`, `.twbx`, `.tds`, `.tdsx` |
-| [Power BI](docs/tools/powerbi.md) | | Power BI project (`.pbip`, model as TMDL) |
-| [Looker](docs/tools/looker.md) | `looker` | LookML project (Git checkout or `.zip`) |
-| [Qlik Sense](docs/tools/qlik.md) | `qlik` | `qlik app unbuild` folder per app |
-| [Amazon QuickSight](docs/tools/quicksight.md) | `quicksight` | `.qs` asset bundle |
-| [Metabase](docs/tools/metabase.md) | | API only |
-| [Lightdash](docs/tools/lightdash.md) | | dbt project folder |
-| [Apache Superset](docs/tools/superset.md) | | export `.zip` |
-| [Redash](docs/tools/redash.md) | | API only |
-| [Omni](docs/tools/omni.md) | | model YAML folder (Git sync) |
-| [Hex](docs/tools/hex.md) | | project YAML (Git export) |
-| [ThoughtSpot](docs/tools/thoughtspot.md) | | `.tml` files or Export TML `.zip` |
-| [Sigma](docs/tools/sigma.md) | | API only |
+| Tool | Maturity | Extra | Import files instead of the API |
+| --- | --- | --- | --- |
+| [Tableau](docs/tools/tableau.md) | Most complete | `tableau` | `.twb`, `.twbx`, `.tds`, `.tdsx` |
+| [Power BI](docs/tools/powerbi.md) | Real projects | | Power BI project (`.pbip`, model as TMDL) |
+| [Looker](docs/tools/looker.md) | Real projects | `looker` | LookML project (Git checkout or `.zip`) |
+| [Qlik Sense](docs/tools/qlik.md) | Saved exports | `qlik` | `qlik app unbuild` folder per app |
+| [Amazon QuickSight](docs/tools/quicksight.md) | Saved exports | `quicksight` | `.qs` asset bundle |
+| [Metabase](docs/tools/metabase.md) | Saved exports | | API only |
+| [Lightdash](docs/tools/lightdash.md) | Saved exports | | dbt project folder |
+| [Apache Superset](docs/tools/superset.md) | Saved exports | | export `.zip` |
+| [Redash](docs/tools/redash.md) | Saved exports | | API only |
+| [Omni](docs/tools/omni.md) | Early | | model YAML folder (Git sync) |
+| [Hex](docs/tools/hex.md) | Early | | project YAML (Git export) |
+| [ThoughtSpot](docs/tools/thoughtspot.md) | Early | | `.tml` files or Export TML `.zip` |
+| [Sigma](docs/tools/sigma.md) | Early | | API only |
+
+**Maturity:** *Most complete*: the most translated and tested. *Real projects*: also tested on
+open-source projects people built. *Saved exports*: tested on exports over a fictional dataset.
+*Early*: the basics; expect more TODOs.
 
 Each tool's page covers connecting, what you get, what's left to finish and how to check the numbers.
 
@@ -91,6 +95,17 @@ locally.
 compares them with the source tool's numbers. For Tableau, `unshackle verify --init tableau`
 writes the cases from Tableau's own view data. For other tools, write them by hand:
 see the [verify guide](skills/verify/SKILL.md).
+
+## How it's tested
+
+- **Against numbers, not snapshots.** Most tests build a migration from a saved export, run the
+  generated SQL in DuckDB on a fictional dataset, and compare the result with the same numbers
+  computed independently, following the source tool's own rules.
+- About 1,270 tests run offline: `uv pip install -e ".[dev]" && pytest`.
+- `unshackle verify` does the same on your data: migrated SQL against your tool's own numbers.
+
+unshackle is built with [Claude Code](https://claude.com/claude-code); every change goes through
+those tests.
 
 ## With a coding agent
 

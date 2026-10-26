@@ -230,7 +230,7 @@ def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
         f, to = f"{y}-02-03", f"{y}-04-05"
         lo, hi = f":{bind}_from", f":{bind}_to"
         on_day = re.compile(rf"({COL})\s+BETWEEN\s+date\s+'{f}'\s+AND\s+date\s+'{to}'")  # date columns
-        ts = rf"timestamp\s+'{{}}\s+00:00:00(?:\.0+)?'"  # timestamp without time zone: [from, to + 1 day)
+        ts = r"timestamp\s+'{}\s+00:00:00(?:\.0+)?'"  # timestamp without time zone: [from, to + 1 day)
         on_ts = re.compile(rf"(\(\s*)?({COL})\s*>=\s*{ts.format(f)}\s*(?(1)\))\s*AND\s*"
                            rf"(\(\s*)?\2\s*<\s*{ts.format(f'{y}-04-06')}\s*(?(3)\))")
         out = on_day.sub(lambda m: _range(m[1], lo, hi), sql)
@@ -702,7 +702,7 @@ class MetabaseSource(Source):
         return False
 
     def _metric_filter(self, filters: list[Any], t: NTable, tables: dict[str, NTable]) -> tuple[str, str]:
-        parts, todos = [], []
+        todos = []
 
         def one(f: Any) -> str:
             op, args, _ = _clause(f)
