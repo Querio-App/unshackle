@@ -209,6 +209,7 @@ query unshackleCustomSql($first: Int, $after: String) {
 class TableauSource(Source):
     name = "tableau"
     label = "Tableau"
+    extra = "tableau"
     env_vars = ("TABLEAU_SERVER_URL", "TABLEAU_SITE", "TABLEAU_PAT_NAME", "TABLEAU_PAT_SECRET", "TABLEAU_API_VERSION")
     docs = "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api.htm"
     manual_files = "Tableau workbooks (.twb, .twbx) and data sources (.tds, .tdsx), or folders of them"

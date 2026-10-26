@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterator, Union
 
-from unshackle.http import SourceError, env
+from unshackle.http import SourceError, env, missing_extra
 from unshackle.ir import (
     Bundle,
     Dashboard,
@@ -1105,6 +1105,7 @@ def _px(value: Any) -> float:
 class QuickSightSource(Source):
     name = "quicksight"
     label = "Amazon QuickSight"
+    extra = "quicksight"
     env_vars = ("QUICKSIGHT_ACCOUNT_ID", "QUICKSIGHT_REGION", "QUICKSIGHT_NAMESPACE", "QUICKSIGHT_IDENTITY_REGION", "AWS_PROFILE",
                 "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
     docs = "https://docs.aws.amazon.com/quicksight/latest/APIReference/"
@@ -1133,7 +1134,7 @@ class QuickSightSource(Source):
             try:
                 import boto3
             except ImportError as exc:
-                raise SourceError("QuickSight needs boto3: install unshackle[quicksight]") from exc
+                raise SourceError(missing_extra("quicksight", "QuickSight")) from exc
             session = boto3.Session()
             region = env("QUICKSIGHT_REGION", required=False) or session.region_name
             if not region:

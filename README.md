@@ -41,13 +41,25 @@ see what was translated and what remains.
 ## Use it with your BI tool
 
 ```bash
-uv tool install "unshackle[run]"
+uv tool install "unshackle[run,tableau]"
 unshackle tools
 cd your-analytics-repo
 unshackle migrate tableau
 ```
 
-`unshackle tools` shows the environment variables each source needs. Set the ones
+Install `run` plus the extra for your tool, if it has one:
+
+| Tool | Install |
+| --- | --- |
+| Tableau (`--with-data` copies extracts, Excel and CSV) | `uv tool install "unshackle[run,tableau]"` |
+| Looker | `uv tool install "unshackle[run,looker]"` |
+| Qlik | `uv tool install "unshackle[run,qlik]"` |
+| QuickSight | `uv tool install "unshackle[run,quicksight]"` |
+| Every other tool | `uv tool install "unshackle[run]"` |
+
+To add an extra later, run the command again with `--force` and the full list of extras.
+
+`unshackle tools` shows the environment variables each source needs, and its extra. Set the ones
 for your tool before running `migrate`; the access instructions are in the
 relevant source guide under [`skills/`](skills/). `migrate` creates the folders,
 inventories the source, saves its raw definitions, and builds the translated
