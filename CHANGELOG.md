@@ -48,6 +48,18 @@
   - Robustness: a failure in one workbook, data source, calculation, sheet or dashboard becomes a warning naming it
     and the rest migrates; `migration/report.md` counts unread XML and TODOs by kind; a sheet with Aggregate Measures
     off and a second calculation with an existing name become TODOs instead of wrong SQL.
+- Looker: dashboards built from LookML files get tile SQL in more cases.
+  - Relative date filters on BigQuery follow Looker's grammar for dates and timestamps: `N <unit>`, `N <unit> ago`,
+    `N <unit> ago for M <unit>`, `before` / `after N <unit> ago` and `this` / `last` / `next <unit>`, from second to
+    year, with weeks on the model's `week_start_day`; comma-separated values are OR. Seconds count from the current
+    moment. Forms Looker rejects or leaves empty (`this` / `next` / `last` second, minute, hour), other warehouses
+    and sub-day units on dates stay TODO.
+  - Tiles on persistent derived tables read the materialized table instead of rendering its build-time Liquid; in
+    the derived-table query, `{% incrementcondition %}` becomes a full rebuild with a TODO about `increment_key`.
+  - `migrate` checks a source's required variables before writing anything and, when API credentials are missing,
+    points to `unshackle import`; `unshackle tools` shows Looker's required and optional variables.
+  - Text tiles write their heading once, and simple HTML (bold, italic, line breaks, paragraphs, links) becomes
+    Markdown.
 - The PyPI page links to the repository, issues and changelog.
 - Tests run offline only: the Dunder Mifflin data moved to `tests/data/dunder_mifflin/`, and the
   `live` extra and test marker are gone.
