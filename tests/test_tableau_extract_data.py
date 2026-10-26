@@ -325,8 +325,10 @@ def test_notebooks_run_on_the_copies_from_their_own_folder(repo: Path, frames, m
     build.apply(b, repo)
     report = (repo / "migration" / "report.md").read_text()
     assert "data/tableau/tableau.duckdb" in report and "UNSHACKLE_WAREHOUSE_URL=duckdb:///" in report
-    (load,) = re.findall(r"`python -c \"(.+?)\"`", next(w.message for w in b.warnings if "tableau.duckdb" in w.message))
-    subprocess.run([sys.executable, "-c", load], cwd=repo, check=True)
+    ((cmd, load),) = re.findall(r"`(uv run --no-project --with duckdb python -c \"(.+?)\")`",
+                                next(w.message for w in b.warnings if "tableau.duckdb" in w.message))
+    uv = shutil.which("uv") and subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
+    subprocess.run(cmd if uv else [sys.executable, "-c", load], shell=bool(uv), cwd=repo, check=True)  # without uv: its python part
     db = repo / "data" / "tableau" / "tableau.duckdb"
     assert db.exists()
 
@@ -335,7 +337,9 @@ def test_notebooks_run_on_the_copies_from_their_own_folder(repo: Path, frames, m
     html = run_notebook(path, url=f"duckdb:///{db}").read_text()
     o = frames["orders"]
     want = o[o.status == "COMPLETED"].groupby("paper_type").post_discount_revenue.sum()
-    assert "Error" not in html and all(k in html for k in want.index)
+    assert "Error" not in html
+    got = {k: float(v) for k, v in re.findall(r'"paper_type": "([^"]+)", "revenue": ([-0-9.e+]+)', html)}  # the chart's data
+    assert got == pytest.approx(want.to_dict())
 
 
 def test_unreadable_files_are_errors_not_guesses(tmp_path: Path, packages):

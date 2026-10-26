@@ -273,5 +273,5 @@ def next_steps(data_dir: str, sql: str = "queries/tableau-data.sql") -> str:
     """How to run the notebooks on the copies with DuckDB. `data_dir` is the copies' folder, relative to the repo root."""
     db = f"{data_dir}/tableau.duckdb"
     return (f"to run the notebooks on the copied data with DuckDB, after `unshackle build tableau`, load it from the repo root: "
-            f"`python -c \"import duckdb; duckdb.connect('{db}').execute(open('{sql}').read())\"` (again after each copy), "
+            f"`uv run --no-project --with duckdb python -c \"import duckdb; duckdb.connect('{db}').execute(open('{sql}').read())\"` (again after each copy), "
             f"then `export UNSHACKLE_WAREHOUSE_URL=duckdb:///$PWD/{db}` and run the notebooks from any folder")
