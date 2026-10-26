@@ -179,6 +179,12 @@ def build_cmd(tool: str, repo: Path, dry_run: bool) -> None:
             lock.save()
         w = result.writes
         _say(f"{len(w.written)} written, {len(w.unchanged)} unchanged, {len(w.kept_hand_edits)} hand edits kept")
+        if w.removed:
+            _say(f"{len(w.removed)} no longer generated, {'would be ' if dry_run else ''}removed:")
+            for rel in w.removed:
+                _say(f"  {rel}")
+        if w.kept_stale:
+            _say(f"{len(w.kept_stale)} no longer generated, kept because edited (see report)")
         _say(f"report: {result.report_path}")
         if ship and not dry_run:
             todos = len(build.scan_todos(repo, build.all_generated(repo)))
