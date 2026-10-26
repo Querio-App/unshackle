@@ -648,8 +648,10 @@ openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
   NULL. Not read (an extract error, the data source stays on its file): Data Interpreter
   (`cleaning='yes'`), named ranges, `.xls`.
 - `build` points their models at `tableau_data.<table>` and writes `queries/tableau-data.sql`
-  with a TODO to choose where they live: on DuckDB run it from the repo root (views over the
-  Parquet files); for another warehouse, load each file into `tableau_data.<table>` (Snowflake
+  with a TODO to choose where they live: on DuckDB run it from the repo root into
+  `data/tableau/tableau.duckdb` (it loads tables from the Parquet files; run it again after each
+  copy) and set `UNSHACKLE_WAREHOUSE_URL=duckdb:///<absolute path of that file>` — the report
+  gives the command, and the notebooks then run from any folder; for another warehouse, load each file into `tableau_data.<table>` (Snowflake
   `COPY INTO`, `bq load`, Redshift `COPY`, a dbt seed or dbt-duckdb external source), replace
   the file with that step and set the warehouse type. Also decide how the tables are refreshed
   (Tableau refreshed the extract).

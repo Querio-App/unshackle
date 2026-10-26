@@ -40,7 +40,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote
 
@@ -550,6 +550,12 @@ class TableauSource(Source):
             except zipfile.BadZipFile as exc:
                 raise SourceError(f"{p.name}: not a valid packaged file ({exc})") from exc
         return out
+
+    def data_next_steps(self, repo: Path) -> str:
+        """What to do after `--with-data` to run the notebooks on the copies."""
+        from unshackle.target.layout import Layout
+
+        return tdata.next_steps(Layout.load(repo).rel("data", "tableau"))
 
     def import_data(self, store: RawStore, path: Path) -> dict[str, bytes]:
         """`import --with-data`: data packaged in .twbx/.tdsx files that lives only in Tableau (extracts, Excel, CSV) ->
@@ -2312,6 +2318,8 @@ class _Parser:
                   "(Tableau refreshed the extract). The Parquet files hold the data itself, so `unshackle init` lists their folder in "
                   ".gitignore; remove that line only if the data belongs in Git"),
         ))
+        if tables:
+            self.b.warn("Tableau data", tdata.next_steps(str(PurePosixPath(tables[0]["parquet"]).parent)), "info")
 
     def _assign_models(self, ds: TDatasource) -> None:
         item = f"{ds.src} datasource {ds.caption}"

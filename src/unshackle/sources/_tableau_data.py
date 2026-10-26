@@ -261,8 +261,17 @@ def _excel_to_csv(path: Path, table: str, out: Path) -> None:
 
 
 def load_sql(tables: list[dict[str, Any]]) -> str:
-    """DuckDB views over the Parquet copies, in the schema the models read."""
+    """DuckDB tables loaded from the Parquet copies, in the schema the models read. Tables, not views over the files: a
+    view resolves its relative path when it is queried, so it would break in a notebook that runs from notebooks/."""
     lines = [f"create schema if not exists {SCHEMA};"]
     for t in tables:
-        lines.append(f"create or replace view {SCHEMA}.{t['table']} as select * from read_parquet('{t['parquet']}');")
+        lines.append(f"create or replace table {SCHEMA}.{t['table']} as select * from read_parquet('{t['parquet']}');")
     return "\n".join(lines)
+
+
+def next_steps(data_dir: str, sql: str = "queries/tableau-data.sql") -> str:
+    """How to run the notebooks on the copies with DuckDB. `data_dir` is the copies' folder, relative to the repo root."""
+    db = f"{data_dir}/tableau.duckdb"
+    return (f"to run the notebooks on the copied data with DuckDB, after `unshackle build tableau`, load it from the repo root: "
+            f"`python -c \"import duckdb; duckdb.connect('{db}').execute(open('{sql}').read())\"` (again after each copy), "
+            f"then `export UNSHACKLE_WAREHOUSE_URL=duckdb:///$PWD/{db}` and run the notebooks from any folder")
