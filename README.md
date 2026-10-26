@@ -47,23 +47,23 @@ unshackle todo      # list what's left to finish
 
 ## Supported tools
 
-| Tool | Extra | Import files instead of the API | Guide |
-| --- | --- | --- | --- |
-| Tableau | `tableau` | `.twb`, `.twbx`, `.tds`, `.tdsx` | [source-tableau](skills/source-tableau/SKILL.md) |
-| Power BI | | Power BI project (`.pbip`, model as TMDL) | [source-powerbi](skills/source-powerbi/SKILL.md) |
-| Looker | `looker` | LookML project (Git checkout or `.zip`) | [source-looker](skills/source-looker/SKILL.md) |
-| Qlik Sense | `qlik` | `qlik app unbuild` folder per app | [source-qlik](skills/source-qlik/SKILL.md) |
-| Amazon QuickSight | `quicksight` | `.qs` asset bundle | [source-quicksight](skills/source-quicksight/SKILL.md) |
-| Metabase | | API only | [source-metabase](skills/source-metabase/SKILL.md) |
-| Lightdash | | dbt project folder | [source-lightdash](skills/source-lightdash/SKILL.md) |
-| Apache Superset | | export `.zip` | [source-superset](skills/source-superset/SKILL.md) |
-| Redash | | API only | [source-redash](skills/source-redash/SKILL.md) |
-| Omni | | model YAML folder (Git sync) | [source-omni](skills/source-omni/SKILL.md) |
-| Hex | | project YAML (Git export) | [source-hex](skills/source-hex/SKILL.md) |
-| ThoughtSpot | | `.tml` files or Export TML `.zip` | [source-thoughtspot](skills/source-thoughtspot/SKILL.md) |
-| Sigma | | API only | [source-sigma](skills/source-sigma/SKILL.md) |
+| Tool | Extra | Import files instead of the API |
+| --- | --- | --- |
+| [Tableau](docs/tools/tableau.md) | `tableau` | `.twb`, `.twbx`, `.tds`, `.tdsx` |
+| [Power BI](docs/tools/powerbi.md) | | Power BI project (`.pbip`, model as TMDL) |
+| [Looker](docs/tools/looker.md) | `looker` | LookML project (Git checkout or `.zip`) |
+| [Qlik Sense](docs/tools/qlik.md) | `qlik` | `qlik app unbuild` folder per app |
+| [Amazon QuickSight](docs/tools/quicksight.md) | `quicksight` | `.qs` asset bundle |
+| [Metabase](docs/tools/metabase.md) | | API only |
+| [Lightdash](docs/tools/lightdash.md) | | dbt project folder |
+| [Apache Superset](docs/tools/superset.md) | | export `.zip` |
+| [Redash](docs/tools/redash.md) | | API only |
+| [Omni](docs/tools/omni.md) | | model YAML folder (Git sync) |
+| [Hex](docs/tools/hex.md) | | project YAML (Git export) |
+| [ThoughtSpot](docs/tools/thoughtspot.md) | | `.tml` files or Export TML `.zip` |
+| [Sigma](docs/tools/sigma.md) | | API only |
 
-Each guide covers access, what's translated and how to finish the TODOs.
+Each tool's page covers connecting, what you get, what's left to finish and how to check the numbers.
 
 ## API or files
 
