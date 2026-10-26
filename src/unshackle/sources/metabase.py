@@ -51,6 +51,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -727,7 +728,7 @@ class MetabaseSource(Source):
             op, args, _ = _clause(f)
             flat += args if op == "and" else [f]
         expr = " AND ".join(one(f) for f in flat)
-        return expr, "; ".join(todos)
+        return expr, join_todos(todos)
 
     # ------------------------------------------------------------ cards -> SQL, tiles, queries
 
@@ -814,7 +815,7 @@ class MetabaseSource(Source):
             todos.append(f"Metabase {display} chart has no Altair mapping; pick a mark or rebuild")
         if not sql:
             todos.append("no SQL for this card; re-run extract with API access or write it")
-        tile.todo = "; ".join(dict.fromkeys(todos))
+        tile.todo = join_todos(dict.fromkeys(todos))
         return tile
 
     def _dashboards(self, b: Bundle) -> set[int]:
@@ -871,7 +872,7 @@ class MetabaseSource(Source):
                 tile = self._tile(card, merged, tid, title, sql, todos)
                 if dc.get("series"):
                     extra = ", ".join(str(s.get("name") or s.get("id")) for s in dc["series"])
-                    tile.todo = "; ".join(x for x in (tile.todo, f"overlays other cards ({extra}); add them as layers") if x)
+                    tile.todo = join_todos(x for x in (tile.todo, f"overlays other cards ({extra}); add them as layers") if x)
                 dash.tiles.append(tile)
                 grid.append((tid, float(dc.get("col") or 0), row))
                 for m in dc.get("parameter_mappings") or []:
@@ -941,7 +942,7 @@ class MetabaseSource(Source):
                 plist = [f":{_bind(n)} ({t.get('type')}{', default ' + repr(t['default']) if t.get('default') is not None else ''})"
                          for n, t in tags.items() if t.get("type") not in ("card", "snippet") and f":{_bind(n)}" in sql]
                 desc = " ".join(x for x in (desc, f"Parameters: {', '.join(plist)}." if plist else "", " ".join(notes)) if x)
-                todo = "; ".join(todos)
+                todo = join_todos(todos)
             else:
                 sql = self._card_sql(cid)
                 if not sql:
@@ -949,7 +950,7 @@ class MetabaseSource(Source):
                     continue
             if kind == "model":
                 self._model(b, cid, card)
-                todo = "; ".join(x for x in (todo, f"Metabase model: materialize as a SQL model (queries/models/{snake(card['name'])}.sql; "
+                todo = join_todos(x for x in (todo, f"Metabase model: materialize as a SQL model (queries/models/{snake(card['name'])}.sql; "
                                                  f"dbt: models/unshackle/{snake(card['name'])}.sql) so semantic model {snake(card['name'])} has a table") if x)
             elif cid in on_dash and not (dq and _is_native(dq)):
                 continue  # query-builder questions live on as dashboard tiles; native SQL is kept as a query too

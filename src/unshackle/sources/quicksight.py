@@ -58,6 +58,7 @@ from unshackle.ir import (
     RowFilter,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -1469,7 +1470,7 @@ class QuickSightSource(Source):
                 for pid in fsc.rels or set(ds.rels):
                     t = rel_model.get((did, pid))
                     if t:
-                        t.todo = "; ".join(x for x in (t.todo, f"dataset {ds.name!r} keeps only rows where {expr}; "
+                        t.todo = join_todos(x for x in (t.todo, f"dataset {ds.name!r} keeps only rows where {expr}; "
                                                        "add that filter to a SQL model or to each metric") if x)
             for msg in ds.todos:
                 b.warn(f"dataset {ds.name}", msg)
@@ -1696,7 +1697,7 @@ class QuickSightSource(Source):
         for alias, _, f, _ in select:
             by_role.setdefault(f.role, []).append(alias)
         todos += self._encode(tile, vtype, conf, enc, by_role)
-        tile.todo = "; ".join(dict.fromkeys(t for t in todos if t))
+        tile.todo = join_todos(dict.fromkeys(t for t in todos if t))
         return tile
 
     def _field_sql(self, f: VField, sc: Scope, problems: list[str]) -> tuple[str, str]:
@@ -1941,7 +1942,7 @@ class QuickSightSource(Source):
             todo.append("rules dataset uses FormatVersion VERSION_1; check how it treats empty cells before relying on the predicate")
         if rrel.kind == "sql":
             todo.append("the rules dataset is custom SQL, inlined as a subquery")
-        rf.todo = "; ".join(todo)
+        rf.todo = join_todos(todo)
         b.row_filters.append(rf)
 
     def _tag_rls(self, ds: DS, cfg: dict[str, Any]) -> None:
@@ -1968,7 +1969,7 @@ class QuickSightSource(Source):
                     rf.predicate = pred
             if cfg.get("TagRuleConfigurations"):
                 todos.append("TagRuleConfigurations combine tags per rule set; check the predicates against them")
-            rf.todo = "; ".join(todos)
+            rf.todo = join_todos(todos)
             self.b.row_filters.append(rf)
 
 

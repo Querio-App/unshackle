@@ -68,6 +68,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -658,7 +659,7 @@ class _Workbook:
                     t = tiles_by_id[el_id]
                     note = (f"Sigma control {flt.name!r} filters this element on {flt.field or '?'}; the extracted SQL has the "
                             f"control's value at extract time baked in - replace that literal with :{flt.name}")
-                    t.todo = "; ".join(x for x in (t.todo, note) if x)
+                    t.todo = join_todos(x for x in (t.todo, note) if x)
         self.grants(d, wb_id)
         b.dashboards.append(d)
 
@@ -748,7 +749,7 @@ class _Workbook:
             tile.kind, tile.mark = "table", "table"
             if kind == "pivot":
                 todos.append("pivot table: Sigma SQL returns the unpivoted rows; pivot in pandas if needed")
-            tile.todo = "; ".join(todos)
+            tile.todo = join_todos(todos)
             return tile
         if kind == "kpi":
             tile.kind, tile.mark = "kpi", "text"
@@ -807,7 +808,7 @@ class _Workbook:
             gone = [n for n in missing if any(aliases.get(n, n) == e.field for e in tile.encodings.values())]
             if gone:
                 todos.append(f"Sigma SQL has no output column named {', '.join(gone)}; alias the SELECT columns to match the chart fields")
-        tile.todo = "; ".join(todos)
+        tile.todo = join_todos(todos)
         return tile
 
 

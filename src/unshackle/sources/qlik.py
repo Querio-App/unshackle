@@ -74,6 +74,7 @@ from unshackle.ir import (
     RowFilter,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -949,7 +950,7 @@ class AppModel:
                     defined, t.untranslated = {c: c for c in defined}, {}
                 t.fields = {c: defined.get(c) for c in [c for c in defined if c in meta_cols or not meta_cols]
                             + [c for c in meta_cols if c not in defined]}
-            t.todo = "; ".join(dict.fromkeys(todos))
+            t.todo = join_todos(dict.fromkeys(todos))
             self.tables[name] = t
         self.field_tables: dict[str, list[str]] = {}
         for t in self.tables.values():
@@ -1661,7 +1662,7 @@ class _App:
                 for prop, note in _objects(c, masters):
                     tile = self._tile(prop, used, filters)
                     if note:
-                        tile.todo = "; ".join(x for x in (note, tile.todo) if x)
+                        tile.todo = join_todos(x for x in (note, tile.todo) if x)
                     dash.tiles.append(tile)
                     cells.append((tile.id, float(cell.get("col") or 0), float(cell.get("row") or 0)))
             dash.layout = grid_rows(cells)
@@ -1737,7 +1738,7 @@ class _App:
                 tile.encodings[ych] = mcols[0]
                 if len(mcols) > 1:
                     todos.append(f"{len(mcols)} measures on a bar chart; only the first is encoded: fold them and use color/xOffset")
-        tile.todo = "; ".join(dict.fromkeys(todos))
+        tile.todo = join_todos(dict.fromkeys(todos))
         return tile
 
     def _dim_def(self, d: dict[str, Any], todos: list[str]) -> tuple[str, str, bool]:
@@ -1913,7 +1914,7 @@ class _App:
                                                predicate="" if why else pred, groups=[who] if p != "*" else ["*"],
                                                source_expression=f"Section Access for {p}: "
                                                                  + ", ".join(f"{f} = {sorted({r[f] for r in prow})}" for f in fields),
-                                               source_ref=ref, todo="; ".join(todos)))
+                                               source_ref=ref, todo=join_todos(todos)))
             for row in prow:
                 omit = row.get("OMIT", "")
                 for t in self.model.tables.values():

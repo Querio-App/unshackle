@@ -241,7 +241,7 @@ def test_build_outputs(tmp_path: Path):
                        "average_order_value": "1.0 * SUM(post_discount_revenue) / nullif(COUNT(1), 0)"}
     assert "TODO(unshackle): metric discount_rate" in text
     nb = notebook_source(repo / "notebooks/sales-overview.ipynb")
-    assert "status = None" in nb and "params={'status': status}" in nb and nb.count("TODO(unshackle)") == 2  # the pie, twice
+    assert "status = None" in nb and "params={'status': status}" in nb and nb.count("TODO(unshackle)") == 3  # the pie: two reasons, one line each, and its empty SQL
     assert "materialize as a SQL model" in (repo / "queries/shipped-orders.sql").read_text()
     cedar = (repo / "policies/superset.cedar").read_text()
     assert 'principal in Group::"Sales"' in cedar and 'resource in Table::"warehouse.public.orders"' in cedar

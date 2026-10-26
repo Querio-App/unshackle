@@ -11,7 +11,8 @@ import random
 import sys
 import threading
 import time
-from typing import TextIO
+from contextlib import contextmanager
+from typing import Iterator, TextIO
 
 SHIP = r"""
                     │              │              │
@@ -127,6 +128,19 @@ class Voyage:
             self.stream.write(message + "\n")
             self.drawn = False
             self._draw()
+
+    @contextmanager
+    def paused(self) -> Iterator[None]:
+        """Stop drawing while the user answers a question, then carry on."""
+        with self.lock:
+            self._clear()
+            self.stream.write("\x1b[?25h")
+            self.stream.flush()
+            try:
+                yield
+            finally:
+                self.stream.write("\x1b[?25l")
+                self._draw()
 
     # -- drawing ------------------------------------------------------------
     def _span(self) -> int:

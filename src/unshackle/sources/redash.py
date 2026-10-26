@@ -44,6 +44,7 @@ from unshackle.ir import (
     Permission,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -390,7 +391,7 @@ class RedashSource(Source):
             desc = " ".join(x for x in (q.get("description") or "", _describe(params, binds),
                                         f"Redash visualizations: {', '.join(charts)}." if charts else "") if x)
             b.queries.append(VerifiedQuery(q.get("name") or f"query {qid}", sql.strip().rstrip(";").rstrip(), desc, datasource=b.datasource,
-                                           source_ref=f"redash:query/{qid}", todo="; ".join(dict.fromkeys(([src] if src else []) + todos))))
+                                           source_ref=f"redash:query/{qid}", todo=join_todos(dict.fromkeys(([src] if src else []) + todos))))
 
     # ------------------------------------------------------------ visualizations -> tiles
 
@@ -427,7 +428,7 @@ class RedashSource(Source):
         else:
             tile.kind = "unknown"
             todos.append(f"Redash {vtype} visualization has no Altair mapping; pick a mark or rebuild")
-        tile.todo = "; ".join(dict.fromkeys(todos))
+        tile.todo = join_todos(dict.fromkeys(todos))
         return tile
 
     def _chart(self, tile: Tile, o: dict[str, Any], types: dict[str, str], todos: list[str]) -> None:

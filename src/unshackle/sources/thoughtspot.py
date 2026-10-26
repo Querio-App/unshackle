@@ -67,6 +67,7 @@ from unshackle.ir import (
     Table,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -1102,7 +1103,7 @@ class _Ctx:
             tile.kind, tile.mark = "table", "table"
             if ctype == "PIVOT_TABLE":
                 todos.append("pivot table: pivot the rows in pandas if needed")
-            tile.todo = "; ".join(todos)
+            tile.todo = join_todos(todos)
             return tile
         if ctype == "KPI":
             tile.kind, tile.mark = "kpi", "text"
@@ -1147,7 +1148,7 @@ class _Ctx:
                 typ = "nominal"
             aliased = bool(sql) and sql2 != sql
             tile.encodings[target] = Encoding(field=_alias(n) if aliased else n, type=typ, title=n if aliased else "")  # type: ignore[arg-type]
-        tile.todo = "; ".join(todos)
+        tile.todo = join_todos(todos)
         return tile
 
     def _is_measure_name(self, name: str, models: list[str]) -> bool:

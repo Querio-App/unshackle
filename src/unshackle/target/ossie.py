@@ -32,7 +32,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from unshackle.ir import Bundle, Measure, Metric, SemanticModel, snake
+from unshackle.ir import Bundle, Measure, Metric, SemanticModel, snake, todo_reasons
 from unshackle.target.layout import Layout
 from unshackle.target.semantic import HEADER, _clean, _col, _has_jinja, _mf, _one_line, _reason, _unique, dump_yaml
 
@@ -149,7 +149,7 @@ class _Dataset:
 
     def skip(self, kind: str, item: Any, reason: str) -> None:
         self.pending.append(_pending(kind, item, reason))
-        self.todos.append(f"{kind} {self.name}.{_mf(item.name)}: {_one_line(reason)}")
+        self.todos += [f"{kind} {self.name}.{_mf(item.name)}: {r}" for r in todo_reasons(reason)]
 
 
 def _dataset(model: SemanticModel, name: str, dialect: str, reserved: set[str]) -> _Dataset:
@@ -425,7 +425,7 @@ def render(bundle: Bundle, layout: Layout) -> dict[str, str]:
                 expr = _Resolver(datasets, by_name, members, qualify=False).metric(m)
         except _Skip as skip:
             model_pending.setdefault(home, []).append(_pending("metric", m, skip.reason))
-            model_todos.setdefault(home, []).append(f"metric {mname}: {_one_line(skip.reason)}")
+            model_todos.setdefault(home, []).extend(f"metric {mname}: {r}" for r in todo_reasons(skip.reason))
             if not skip.from_source:
                 bundle.warn(f"metric {m.name}", f"kept in custom_extensions of {home}.ossie.yaml, not as an Ossie metric: {skip.reason}")
             continue
@@ -470,7 +470,7 @@ def render(bundle: Bundle, layout: Layout) -> dict[str, str]:
                 "custom_extensions": _ext({"tool": bundle.tool, "warehouse": warehouse, "todo": ds.model.todo, "pending": model_pending.get(name, [])}),
             }
         )
-        todos = ([f"semantic_model {name}: {_one_line(ds.model.todo)}"] if ds.model.todo else []) + ds.todos + model_todos.get(name, [])
+        todos = [f"semantic_model {name}: {r}" for r in todo_reasons(ds.model.todo)] + ds.todos + model_todos.get(name, [])
         text = header + dump_yaml(doc) + "".join(f"# TODO(unshackle): {t}\n" for t in todos)
         out[layout.rel("semantic", f"{name}.ossie.yaml")] = text
     return out

@@ -41,6 +41,7 @@ from unshackle.ir import (
     RowFilter,
     Tile,
     VerifiedQuery,
+    join_todos,
     slugify,
     snake,
 )
@@ -553,7 +554,7 @@ class OmniSource(Source):
             todos.append(f"Omni table calculation(s) {labels} (Excel-style); rewrite as SQL window functions and check they are in the SQL")
         if not sql:
             todos.append("no generated SQL saved; re-run extract or write SQL from the semantic layer")
-        tile.todo = "; ".join(todos)
+        tile.todo = join_todos(todos)
         return tile
 
     def _documents(self, store: RawStore, bundle: Bundle, tables: dict[str, NTable]) -> None:

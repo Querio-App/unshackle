@@ -15,7 +15,7 @@ import keyword
 import os
 import re
 
-from unshackle.ir import Bundle, Dashboard, Encoding, Reference, Tile, slugify, snake
+from unshackle.ir import Bundle, Dashboard, Encoding, Reference, Tile, slugify, snake, todo_reasons
 from unshackle.target.files import one_line_comment, unique_rel
 from unshackle.target.layout import Layout
 
@@ -115,7 +115,7 @@ def _encode_args(encodings: dict[str, Encoding]) -> tuple[list[str], list[str]]:
 
 
 def _todos(notes: list[str]) -> list[str]:
-    return [f"# TODO(unshackle): {one_line_comment(t)}" for t in notes]
+    return [f"# TODO(unshackle): {r}" for t in notes for r in todo_reasons(t)]
 
 
 def _mark(tile: Tile, mark: str) -> str | None:

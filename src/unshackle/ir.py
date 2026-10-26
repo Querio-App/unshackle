@@ -8,7 +8,7 @@ structure. Resource ids used by permissions and row filters:
 
 Anything a source could not translate deterministically keeps its
 original expression in `source_expression` and sets `todo`, so the agent (or a
-person) can finish it.
+person) can finish it. A `todo` with several reasons separates them with a blank line (`join_todos`).
 """
 
 from __future__ import annotations
@@ -21,6 +21,17 @@ from typing import Any, Iterable, Literal, get_args, get_origin, get_type_hints
 
 Mark = Literal["bar", "line", "area", "point", "arc", "rect", "geoshape", "text", "table", "unknown"]
 FieldType = Literal["quantitative", "nominal", "temporal", "ordinal"]
+
+
+def join_todos(reasons: Iterable[str]) -> str:
+    """Several reasons for one `todo`, in order and without repeats, separated by a blank line (a reason may span lines,
+    e.g. SQL); writers render one TODO line per reason. A reason that is itself a joined `todo` adds each of its reasons."""
+    return "\n\n".join(dict.fromkeys(r.strip() for x in reasons if x for r in re.split(r"\n\s*\n", x) if r.strip()))
+
+
+def todo_reasons(todo: str) -> list[str]:
+    """The reasons in a `todo` (see `join_todos`), each on a single line."""
+    return [" ".join(r.split()) for r in re.split(r"\n\s*\n", str(todo or "")) if r.strip()]
 
 
 @dataclass
