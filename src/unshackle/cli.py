@@ -242,8 +242,21 @@ def todo(repo: Path) -> None:
 @main.command(name="verify")
 @REPO
 @click.option("--url", envvar="UNSHACKLE_WAREHOUSE_URL", default=None, help="SQLAlchemy URL of the warehouse.")
-def verify_cmd(repo: Path, url: str | None) -> None:
+@click.option("--init", "init_tool", type=click.Choice(sorted(TOOLS)), default=None,
+              help="Write a case for each saved view CSV of the tool that matches a tile, then stop.")
+def verify_cmd(repo: Path, url: str | None, init_tool: str | None) -> None:
     """Run migration/parity/*.yaml checks; passing ones become evals."""
+    if init_tool:
+        try:
+            written, skipped = verify.init_cases(repo, init_tool)
+        except FileNotFoundError as exc:
+            raise click.ClickException(str(exc)) from None
+        for path in written:
+            click.echo(f"wrote {path.relative_to(repo)}")
+        for reason in skipped:
+            click.echo(f"skipped {reason}")
+        click.echo(f"{len(written)} cases written; check keys and params, then run `unshackle verify`")
+        return
     results = verify.run_checks(repo, url)
     if not results:
         click.echo("no checks in migration/parity/*.yaml (see skills/verify)")
