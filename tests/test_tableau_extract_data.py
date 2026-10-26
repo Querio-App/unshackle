@@ -327,8 +327,8 @@ def test_notebooks_run_on_the_copies_from_their_own_folder(repo: Path, frames, m
     assert "data/tableau/tableau.duckdb" in report and "UNSHACKLE_WAREHOUSE_URL=duckdb:///" in report
     ((cmd, load),) = re.findall(r"`(uv run --no-project --with duckdb python -c \"(.+?)\")`",
                                 next(w.message for w in b.warnings if "tableau.duckdb" in w.message))
-    uv = shutil.which("uv") and subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
-    subprocess.run(cmd if uv else [sys.executable, "-c", load], shell=bool(uv), cwd=repo, check=True)  # without uv: its python part
+    assert cmd.startswith("uv run --no-project --with duckdb python -c")
+    subprocess.run([sys.executable, "-c", load], cwd=repo, check=True)  # its python part: uv would fetch duckdb, tests stay offline
     db = repo / "data" / "tableau" / "tableau.duckdb"
     assert db.exists()
 
