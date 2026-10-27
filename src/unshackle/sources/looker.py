@@ -29,7 +29,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from unshackle.http import Client, SourceError, env, missing_extra
+from unshackle.http import Client, SourceError, env
 from unshackle.ir import (
     Bundle,
     Column,
@@ -218,7 +218,6 @@ FAN_SAFE = ("count_distinct", "min", "max", "sum_distinct")  # same result howev
 class LookerSource(Source):
     name = "looker"
     label = "Looker"
-    extra = "looker"
     env_vars = ("LOOKER_BASE_URL", "LOOKER_CLIENT_ID", "LOOKER_CLIENT_SECRET", "LOOKER_LOOKML_DIR")
     required_env = ("LOOKER_BASE_URL", "LOOKER_CLIENT_ID", "LOOKER_CLIENT_SECRET")
     docs = "https://cloud.google.com/looker/docs/reference/looker-api/latest"
@@ -1066,10 +1065,8 @@ class _Parser:
     # ------------------------------------------------------------ loading
 
     def _load_lookml(self) -> None:
-        try:
-            import lkml
-        except ImportError as exc:  # pragma: no cover - exercised only without the extra
-            raise SourceError(missing_extra("looker", "parsing LookML")) from exc
+        import lkml
+
         docs: dict[str, dict[str, Any]] = {}  # path inside the project -> parsed file
         for rel in self.store.glob("lookml/**/*.lkml"):
             try:

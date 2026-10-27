@@ -1,7 +1,6 @@
 """Run generated notebooks against a warehouse, and read their parameters and tile SQL.
 
-Needs the `run` extra (altair, pandas, sqlalchemy, nbclient, ipykernel) and
-UNSHACKLE_WAREHOUSE_URL, e.g. snowflake://..., bigquery://..., postgresql://..., duckdb:///local.db
+Needs UNSHACKLE_WAREHOUSE_URL, e.g. snowflake://..., bigquery://..., postgresql://..., duckdb:///local.db
 (not needed for notebooks that read the DuckDB file `build` loads with data copied out of the tool).
 """
 

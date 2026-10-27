@@ -5,10 +5,8 @@ unshackle reads your Metabase questions, models, metrics, dashboards and permiss
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-Metabase needs no extra.
 
 ## Connect
 

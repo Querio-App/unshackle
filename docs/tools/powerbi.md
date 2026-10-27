@@ -5,10 +5,8 @@ unshackle reads your Power BI semantic models and reports and turns them into me
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-Power BI needs no extra.
 
 ## Connect
 

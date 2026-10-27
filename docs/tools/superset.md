@@ -5,10 +5,8 @@ unshackle reads Superset's datasets, metrics, charts, dashboards, roles and row-
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-Superset needs no extra.
 
 ## Connect
 

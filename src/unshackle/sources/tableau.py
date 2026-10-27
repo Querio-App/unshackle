@@ -210,7 +210,8 @@ query unshackleCustomSql($first: Int, $after: String) {
 class TableauSource(Source):
     name = "tableau"
     label = "Tableau"
-    extra = "tableau"
+    extra = "hyper"
+    extra_for = "copying .hyper extracts"
     env_vars = ("TABLEAU_SERVER_URL", "TABLEAU_SITE", "TABLEAU_PAT_NAME", "TABLEAU_PAT_SECRET", "TABLEAU_API_VERSION")
     docs = "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api.htm"
     manual_files = "Tableau workbooks (.twb, .twbx) and data sources (.tds, .tdsx), or folders of them"
@@ -356,7 +357,6 @@ class TableauSource(Source):
 
     def copy_data(self, store: RawStore) -> None:
         """`--with-data` after an extract without it: copy the data of what `data_only` lists (errors go to _errors.json)."""
-        tdata.check_installed()
         errors: list[dict[str, str]] = store.get_json("_errors.json") if store.exists("_errors.json") else []
         try:
             for kind, item, _ in self.data_only(store):
@@ -459,8 +459,6 @@ class TableauSource(Source):
             self._signout()
 
     def _extract(self, store: RawStore, only: set[str] | None, errors: list[dict[str, str]]) -> None:
-        if self.with_data:
-            tdata.check_installed()
         self.client()
         store.put_json("_site.json", {"server": self.server(), "site_id": self.site_id, "content_url": self.site_content_url, "api_version": self.version()})
         workbooks = self._list("/workbooks", "workbooks", "workbook", errors)
@@ -605,7 +603,6 @@ class TableauSource(Source):
     def import_data(self, store: RawStore, path: Path) -> dict[str, bytes]:
         """`import --with-data`: data packaged in .twbx/.tdsx files that lives only in Tableau (extracts, Excel, CSV) ->
         Parquet, as `extract --with-data` does, listed in extracts/<file name>.json next to the file's .twb/.tds."""
-        tdata.check_installed()
         out: dict[str, bytes] = {}
         for _, p in _manual.files_of(path):
             ext = {".twbx": ".twb", ".tdsx": ".tds"}.get(p.suffix.lower())

@@ -5,10 +5,8 @@ unshackle reads Omni's shared models, workbooks and dashboards and writes them a
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-Omni needs no extra.
 
 ## Connect
 

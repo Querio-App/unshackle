@@ -5,10 +5,8 @@ unshackle reads your QuickSight datasets, analyses, dashboards and security rule
 ## Install
 
 ```bash
-uv tool install "unshackle[run,quicksight]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-The `quicksight` extra adds boto3.
 
 ## Connect
 

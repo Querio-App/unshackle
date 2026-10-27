@@ -5,7 +5,10 @@
 - Docs: the README is rewritten around what you get and how to get started, with one page per tool under
   `docs/tools/` (install, credentials, what you get, what's left, checking the numbers). The per-tool guides in
   `skills/` describe the Ossie output.
-- Removed the unused `sql` extra: install `unshackle[run]` plus your tool's extra.
+- One install for every tool: `pip install unshackle` (or `uv tool install unshackle`). What the `run`, `looker`, `qlik`,
+  `quicksight` and `tableau` extras added is now installed by default. The only extra left is `hyper` (Tableau's Hyper
+  API, a large download), needed only to copy `.hyper` extracts with `--with-data`; Excel and CSV data copies without it.
+  The unused `sql` extra is gone.
 
 - Tableau hardening: generated SQL follows Tableau's semantics, and anything that can't be translated exactly stays a
   `TODO(unshackle)` instead of a wrong number.

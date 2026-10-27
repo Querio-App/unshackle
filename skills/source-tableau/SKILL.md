@@ -70,7 +70,7 @@ unshackle build tableau
   XML versions `8.2` to `10.x` and `18.1`, which every release since 2018.1 writes). The XML
   inside a packaged file is kept; images are dropped. Data that lives only in Tableau
   (extracts, Excel and CSV files) is dropped too, unless `--with-data` copies it to Parquet as
-  `extract --with-data` does (below; the `tableau` extra): `extracts/<file name>.json` lists
+  `extract --with-data` does (below; `.hyper` extracts need the `hyper` extra): `extracts/<file name>.json` lists
   the tables, and what could not be copied is in the report. A plain `.twb`/`.tds` holds no data.
 - Name each file after the workbook or data source (Tableau's downloads are): the file name
   becomes the workbook name (and notebook slug), and a data source's name when its XML has
@@ -635,8 +635,8 @@ in Tableau.
 file and application connectors (Salesforce, Google Analytics, Box, OneDrive, web data
 connectors...), and extracts with no connection behind them. `inventory` flags published ones
 (`data_only_in_tableau`, from the REST `type`) and the report lists each one. To migrate their
-data, install the `tableau` extra (`uv tool install --force "unshackle[run,tableau]"`: Tableau's Hyper API,
-openpyxl, DuckDB) and run `unshackle extract tableau --with-data`:
+data, run `unshackle extract tableau --with-data`. `.hyper` extracts also need the `hyper` extra
+(Tableau's Hyper API: `pip install "unshackle[hyper]"`); Excel and CSV data copies without it.
 
 - Those workbooks and data sources are downloaded again with `includeExtract=true`.
 - Each table becomes `data/tableau/<table>.parquet` (`[paths] data` in `unshackle.toml`) with

@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterator, Union
 
-from unshackle.http import SourceError, env, missing_extra
+from unshackle.http import SourceError, env
 from unshackle.ir import (
     Bundle,
     Dashboard,
@@ -1117,7 +1117,6 @@ AWS_HINTS = {  # AWS error codes from boto3, and its own exception names
 class QuickSightSource(Source):
     name = "quicksight"
     label = "Amazon QuickSight"
-    extra = "quicksight"
     env_vars = ("QUICKSIGHT_ACCOUNT_ID", "QUICKSIGHT_REGION", "QUICKSIGHT_NAMESPACE", "QUICKSIGHT_IDENTITY_REGION", "AWS_PROFILE",
                 "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
     docs = "https://docs.aws.amazon.com/quicksight/latest/APIReference/"
@@ -1143,10 +1142,8 @@ class QuickSightSource(Source):
 
     def client(self) -> Any:
         if self._client is None:
-            try:
-                import boto3
-            except ImportError as exc:
-                raise SourceError(missing_extra("quicksight", "QuickSight")) from exc
+            import boto3
+
             session = boto3.Session()
             region = env("QUICKSIGHT_REGION", required=False) or session.region_name
             if not region:

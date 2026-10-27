@@ -5,10 +5,8 @@ unshackle reads your LookML project, dashboards and Looks and turns them into me
 ## Install
 
 ```bash
-uv tool install "unshackle[run,looker]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-The `looker` extra parses LookML.
 
 ## Connect
 

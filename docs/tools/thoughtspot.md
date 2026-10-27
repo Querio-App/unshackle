@@ -5,10 +5,8 @@ unshackle takes your ThoughtSpot models, liveboards, saved answers, row and colu
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-ThoughtSpot needs no extra.
 
 ## Connect
 

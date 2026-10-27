@@ -18,8 +18,8 @@ class SourceError(RuntimeError):
 
 def missing_extra(extra: str, what: str) -> str:
     """The error for a feature whose optional dependencies aren't installed, naming the extra and how to add it."""
-    return (f'{what} needs the `{extra}` extra: uv tool install --force "unshackle[run,{extra}]" '
-            f"(from a checkout: uv pip install -e '.[{extra}]')")
+    return (f'{what} needs the `{extra}` extra: pip install "unshackle[{extra}]" '
+            f'(or uv tool install --force "unshackle[{extra}]"; from a checkout: uv pip install -e \'.[{extra}]\')')
 
 
 def env(name: str, required: bool = True, default: str = "") -> str:
