@@ -17,8 +17,6 @@ The parser reads only members that exist in botocore's QuickSight API model.
 
 ## Access
 
-Install the extra: `uv tool install "unshackle[run,quicksight]"` (adds boto3).
-
 | Variable | Value |
 | --- | --- |
 | AWS credentials | the standard boto3 chain: `AWS_PROFILE`, or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`, SSO, instance roles |

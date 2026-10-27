@@ -5,8 +5,11 @@ unshackle reads your Tableau workbooks and published data sources and turns them
 ## Install
 
 ```bash
-uv tool install "unshackle[run,tableau]"   # tableau: copies data that lives only in Tableau
+pip install unshackle      # or: uv tool install unshackle
 ```
+
+Copying data from Tableau `.hyper` extracts (`--with-data`) also needs Tableau's Hyper API, a large
+download: `pip install "unshackle[hyper]"`. Excel and CSV data copies without it.
 
 ## Connect
 

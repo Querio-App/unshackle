@@ -5,10 +5,8 @@ unshackle takes your Hex projects, apps and semantic models out of Hex and turns
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-Hex needs no extra.
 
 ## Connect
 

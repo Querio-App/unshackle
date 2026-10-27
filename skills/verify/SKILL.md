@@ -14,7 +14,7 @@ passing case to `evals/<id>.yaml`.
 UNSHACKLE_WAREHOUSE_URL=snowflake://user@account/db/schema?warehouse=wh unshackle verify
 ```
 
-(`unshackle verify --url ...` also works; needs the `run` extra plus the warehouse's
+(`unshackle verify --url ...` also works; needs the warehouse's
 SQLAlchemy driver. Never put the URL with a password in a tracked file.)
 
 ## Start from the source's own numbers

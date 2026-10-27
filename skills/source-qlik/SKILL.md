@@ -44,8 +44,6 @@ rebuild it in the warehouse (dbt or SQL models) first.
 
 ## Commands
 
-The engine API needs the `qlik` extra (websockets): `uv tool install "unshackle[run,qlik]"`.
-
 ```
 unshackle inventory qlik                 # apps, with space, item views, last reload, Section Access flag
 unshackle extract qlik [--only app:<id>]

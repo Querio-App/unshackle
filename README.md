@@ -26,10 +26,10 @@ original formula next to it. It doesn't guess.
 
 ## Get started
 
-You need [uv](https://docs.astral.sh/uv/) and access to your BI tool.
+You need Python 3.11 or later and access to your BI tool.
 
 ```bash
-uv tool install "unshackle[run]"      # some tools need more: see Install in Supported tools
+pip install unshackle                 # or: uv tool install unshackle
 cd your-analytics-repo
 unshackle check <tool> --prompt       # asks for credentials, saves them to .env (git-ignored)
 unshackle migrate <tool>
@@ -47,21 +47,21 @@ unshackle todo      # list what's left to finish
 
 ## Supported tools
 
-| Tool | Maturity | Install (`uv tool install "…"`) | Import files instead of the API |
-| --- | --- | --- | --- |
-| [Tableau](docs/tools/tableau.md) | Most complete | `unshackle[run,tableau]` | `.twb`, `.twbx`, `.tds`, `.tdsx` |
-| [Power BI](docs/tools/powerbi.md) | Real projects | `unshackle[run]` | Power BI project (`.pbip`, model as TMDL) |
-| [Looker](docs/tools/looker.md) | Real projects | `unshackle[run,looker]` | LookML project (Git checkout or `.zip`) |
-| [Qlik Sense](docs/tools/qlik.md) | Saved exports | `unshackle[run,qlik]` | `qlik app unbuild` folder per app |
-| [Amazon QuickSight](docs/tools/quicksight.md) | Saved exports | `unshackle[run,quicksight]` | `.qs` asset bundle |
-| [Metabase](docs/tools/metabase.md) | Saved exports | `unshackle[run]` | API only |
-| [Lightdash](docs/tools/lightdash.md) | Saved exports | `unshackle[run]` | dbt project folder |
-| [Apache Superset](docs/tools/superset.md) | Saved exports | `unshackle[run]` | export `.zip` |
-| [Redash](docs/tools/redash.md) | Saved exports | `unshackle[run]` | API only |
-| [Omni](docs/tools/omni.md) | Early | `unshackle[run]` | model YAML folder (Git sync) |
-| [Hex](docs/tools/hex.md) | Early | `unshackle[run]` | project YAML (Git export) |
-| [ThoughtSpot](docs/tools/thoughtspot.md) | Early | `unshackle[run]` | `.tml` files or Export TML `.zip` |
-| [Sigma](docs/tools/sigma.md) | Early | `unshackle[run]` | API only |
+| Tool | Maturity | Import files instead of the API |
+| --- | --- | --- |
+| [Tableau](docs/tools/tableau.md) | Most complete | `.twb`, `.twbx`, `.tds`, `.tdsx` |
+| [Power BI](docs/tools/powerbi.md) | Real projects | Power BI project (`.pbip`, model as TMDL) |
+| [Looker](docs/tools/looker.md) | Real projects | LookML project (Git checkout or `.zip`) |
+| [Qlik Sense](docs/tools/qlik.md) | Saved exports | `qlik app unbuild` folder per app |
+| [Amazon QuickSight](docs/tools/quicksight.md) | Saved exports | `.qs` asset bundle |
+| [Metabase](docs/tools/metabase.md) | Saved exports | API only |
+| [Lightdash](docs/tools/lightdash.md) | Saved exports | dbt project folder |
+| [Apache Superset](docs/tools/superset.md) | Saved exports | export `.zip` |
+| [Redash](docs/tools/redash.md) | Saved exports | API only |
+| [Omni](docs/tools/omni.md) | Early | model YAML folder (Git sync) |
+| [Hex](docs/tools/hex.md) | Early | project YAML (Git export) |
+| [ThoughtSpot](docs/tools/thoughtspot.md) | Early | `.tml` files or Export TML `.zip` |
+| [Sigma](docs/tools/sigma.md) | Early | API only |
 
 **Maturity:** *Most complete*: the most translated and tested. *Real projects*: also tested on
 open-source projects people built. *Saved exports*: tested on exports over a fictional dataset.
@@ -87,7 +87,8 @@ unshackle build <tool>
 
 Tableau extracts, Excel and CSV files have no warehouse behind them. `migrate` asks
 whether to copy that data to `data/` (git-ignored) so the notebooks can run on it
-locally.
+locally. Copying `.hyper` extracts needs Tableau's Hyper API, a large download:
+`pip install "unshackle[hyper]"`.
 
 ## Check the numbers
 

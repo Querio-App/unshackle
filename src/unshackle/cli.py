@@ -72,14 +72,14 @@ def _say(message: str, err: bool = False) -> None:
 @main.command()
 @click.argument("tool", required=False, type=click.Choice(sorted(TOOLS)))
 def tools(tool: str | None) -> None:
-    """List supported tools, the environment variables each needs, and the install extra beyond `run`.
+    """List supported tools, the environment variables each needs, and any optional extra.
     With TOOL: where to find each of its variables."""
     if tool:
         click.echo(_access(tool))
         return
     for name in TOOLS:
         cls = source_class(name)
-        extra = f"  (install unshackle[run,{cls.extra}])" if cls.extra else ""
+        extra = f"  ({cls.extra_for} needs unshackle[{cls.extra}])" if cls.extra else ""
         if not cls.required_env:
             click.echo(f"{name:12} {', '.join(cls.env_vars)}{extra}")
             continue

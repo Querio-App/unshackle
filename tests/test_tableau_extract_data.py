@@ -11,6 +11,7 @@ Tableau's rules: SUM and AVG skip NULLs, NULL is a mark of its own, an empty Exc
 import io
 import json
 import shutil
+import sys
 import zipfile
 from pathlib import Path
 
@@ -347,16 +348,21 @@ def test_unreadable_files_are_errors_not_guesses(tmp_path: Path, packages):
     assert errors == ["the download is not a packaged file: Tableau sent no extract or data file"]
 
 
-def test_with_data_needs_the_extra(monkeypatch, tmp_path: Path):
-    import importlib.util
-
-    from unshackle.http import SourceError
-
-    real = importlib.util.find_spec
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: None if name == "tableauhyperapi" else real(name, *a))
-    src = TableauSource(client=_client({}), server_url="https://tableau.example.com", site="example", with_data=True)
-    with pytest.raises(SourceError, match=r"--with-data needs the `tableau` extra.*missing: tableauhyperapi"):
-        src.extract(RawStore(tmp_path, "tableau"))
+def test_with_data_without_the_hyper_extra(monkeypatch, tmp_path: Path, packages):
+    """Only .hyper extracts need the `hyper` extra: without it, Excel and CSV data still copies and the extract's table
+    gets an error that names the extra."""
+    monkeypatch.setitem(sys.modules, "tableauhyperapi", None)
+    monkeypatch.setenv("TABLEAU_PAT_NAME", "unshackle")
+    monkeypatch.setenv("TABLEAU_PAT_SECRET", "s3cret")
+    src = TableauSource(client=_client(packages), server_url="https://tableau.example.com", site="example", with_data=True)
+    store = RawStore(tmp_path, "tableau")
+    store.begin()
+    src.extract(store)
+    store.save()
+    copied = {t["table"] for rel in store.glob("extracts/*.json") for t in store.get_json(rel)["tables"]}
+    assert copied == {"accounts", "products"}  # Excel and CSV; the other tables are .hyper extracts
+    errors = " ".join(str(e) for e in store.get_json("_errors.json"))
+    assert 'needs the `hyper` extra: pip install "unshackle[hyper]"' in errors
 
 
 def test_types_the_author_changed(tmp_path: Path):

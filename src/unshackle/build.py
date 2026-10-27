@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from unshackle.http import missing_extra
 from unshackle.ir import Bundle, Dashboard, todo_reasons
 from unshackle.target import files as tf
 from unshackle.target import notebooks, ossie, policies, semantic
@@ -214,11 +213,8 @@ def load_local_db(bundle: Bundle, repo: Path) -> str:
     """
     if not bundle.local_db:
         return ""
-    try:
-        import duckdb
-    except ImportError:
-        bundle.warn(bundle.local_db, missing_extra(bundle.tool, "loading the copied data into DuckDB"))
-        return ""
+    import duckdb
+
     path = repo / bundle.local_db
     path.parent.mkdir(parents=True, exist_ok=True)
     try:

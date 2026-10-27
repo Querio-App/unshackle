@@ -4,8 +4,8 @@
 write_tables() on the package: each table becomes <data>/tableau/<name>.parquet with the column types Tableau
 has, and extract records what it wrote in the raw file extracts/<id>.json, which parse() reads (no network, no
 Parquet). Extracts (.hyper) are read with Tableau's Hyper API, which writes the Parquet itself; Excel and CSV files
-are read as they are and cast to the types in the data source's metadata records. Needs the `tableau` extra
-(tableauhyperapi, openpyxl, duckdb).
+are read as they are and cast to the types in the data source's metadata records. Only .hyper extracts need the
+`hyper` extra (tableauhyperapi).
 """
 
 from __future__ import annotations
@@ -102,15 +102,6 @@ def tables_of(conn: ET.Element) -> list[dict[str, Any]]:
     return out
 
 
-def check_installed() -> None:
-    """SourceError unless the readers are installed."""
-    import importlib.util
-
-    missing = [m for m in ("tableauhyperapi", "openpyxl", "duckdb") if importlib.util.find_spec(m) is None]
-    if missing:
-        raise SourceError(f"{missing_extra('tableau', '--with-data')} (missing: {', '.join(missing)})")
-
-
 def write_tables(package: bytes, sources: list[tuple[str, ET.Element, ET.Element, str]], data_root: Path, rel_root: str,
                  taken: set[str]) -> tuple[list[dict[str, Any]], list[str]]:
     """Copy the tables of `sources` [(data source key, its XML, the <connection> holding the data, a name)] out of a
@@ -156,7 +147,7 @@ def _from_hyper(path: Path, parts: list[str], columns: list[tuple[int, str, str]
     try:
         from tableauhyperapi import Connection, HyperProcess, TableName, Telemetry, escape_string_literal
     except ImportError as exc:
-        raise ImportError(missing_extra("tableau", "reading a .hyper extract")) from exc
+        raise ImportError(missing_extra("hyper", "reading a .hyper extract")) from exc
     with HyperProcess(Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU, parameters={"log_dir": str(tmp)}) as hyper:
         with Connection(hyper.endpoint, str(path)) as con:
             names = [t for s in con.catalog.get_schema_names() for t in con.catalog.get_table_names(s)]
@@ -176,10 +167,7 @@ def _from_hyper(path: Path, parts: list[str], columns: list[tuple[int, str, str]
 def _retype(out: Path, columns: list[tuple[int, str, str]], tmp: Path) -> tuple[list[list[str]], list[str]]:
     """Cast the columns whose type in the file isn't the one Tableau shows (a type the author changed). A change
     unshackle can't repeat the way Tableau does (a number or date shown as text) keeps the file's type, with a note."""
-    try:
-        import duckdb
-    except ImportError as exc:
-        raise ImportError(missing_extra("tableau", "copying extracts")) from exc
+    import duckdb
     want = {name: typ for _, name, typ in columns}
     con = duckdb.connect()
     try:
@@ -207,10 +195,7 @@ def _retype(out: Path, columns: list[tuple[int, str, str]], tmp: Path) -> tuple[
 
 
 def _from_file(path: Path, t: dict[str, Any], columns: list[tuple[int, str, str]], out: Path, tmp: Path) -> tuple[int, list[list[str]]]:
-    try:
-        import duckdb
-    except ImportError as exc:
-        raise ImportError(missing_extra("tableau", "copying Excel and CSV data")) from exc
+    import duckdb
     if not columns:
         raise SourceError("no metadata records for this table, so its columns and types are unknown")
     text = path
@@ -240,10 +225,7 @@ def _from_file(path: Path, t: dict[str, Any], columns: list[tuple[int, str, str]
 
 def _excel_to_csv(path: Path, table: str, out: Path) -> None:
     """One sheet (`Orders$`) of an .xlsx as CSV text, header row first. Other Excel formats and named ranges: error."""
-    try:
-        import openpyxl
-    except ImportError as exc:
-        raise ImportError(missing_extra("tableau", "reading Excel data")) from exc
+    import openpyxl
     if path.suffix.lower() not in (".xlsx", ".xlsm"):
         raise SourceError(f"{path.suffix} workbooks are not read by unshackle (save the file as .xlsx and re-run)")
     if not table.endswith("$"):

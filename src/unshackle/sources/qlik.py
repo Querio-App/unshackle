@@ -62,7 +62,7 @@ from typing import Any, Callable, Union
 
 import yaml
 
-from unshackle.http import Client, SourceError, env, missing_extra
+from unshackle.http import Client, SourceError, env
 from unshackle.ir import (
     Bundle,
     Dashboard,
@@ -111,15 +111,13 @@ class Engine:
     """A minimal JSON-RPC client for the Qlik associative engine (QIX) over a WebSocket.
 
     Qlik ships no Python client, and the protocol is small: send {id, handle, method, params},
-    wait for the reply with that id, skip notifications. Needs the `qlik` extra (websockets).
+    wait for the reply with that id, skip notifications.
     """
 
     def __init__(self, url: str, token: str, timeout: float = 300):
-        try:
-            from websockets.exceptions import WebSocketException
-            from websockets.sync.client import connect
-        except ImportError as exc:  # pragma: no cover - depends on the environment
-            raise SourceError(missing_extra("qlik", "the Qlik engine API")) from exc
+        from websockets.exceptions import WebSocketException
+        from websockets.sync.client import connect
+
         self.timeout, self.errors = timeout, (WebSocketException, OSError, TimeoutError)
         try:
             self.ws = connect(url, additional_headers={"Authorization": f"Bearer {token}"}, max_size=None, open_timeout=60).__enter__()
@@ -1221,7 +1219,6 @@ def measure_base(node: Node, model: AppModel) -> str:
 class QlikSource(Source):
     name = "qlik"
     label = "Qlik Sense"
-    extra = "qlik"
     env_vars = ("QLIK_TENANT_URL", "QLIK_CLIENT_ID", "QLIK_CLIENT_SECRET", "QLIK_API_KEY")
     docs = "https://qlik.dev/apis/"
     manual_files = "a `qlik app unbuild` folder (script.qvs, measures.json, dimensions.json, variables.json, objects/), or a raw extract folder"

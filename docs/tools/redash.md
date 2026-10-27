@@ -5,10 +5,8 @@ unshackle reads your Redash queries, visualizations, dashboards and groups and w
 ## Install
 
 ```bash
-uv tool install "unshackle[run]"
+pip install unshackle      # or: uv tool install unshackle
 ```
-
-Redash needs no extra.
 
 ## Connect
 
