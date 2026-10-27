@@ -63,3 +63,8 @@ path = "README.md"
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
 pattern = 'src="assets/'
 replacement = 'src="https://raw.githubusercontent.com/Querio-App/unshackle/main/assets/'
+
+# relative Markdown links (docs/tools/*.md, CONTRIBUTING.md, ...) point at GitHub on the PyPI page
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\((?!https?://|#|mailto:)'
+replacement = '](https://github.com/Querio-App/unshackle/blob/main/'
