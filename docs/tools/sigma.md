@@ -5,7 +5,7 @@ unshackle takes your Sigma data models, workbooks, metrics, controls, column sec
 ## Install
 
 ```bash
-pip install unshackle      # or: uv tool install unshackle
+pip install unshackle      # in a virtual environment; or: uv tool install unshackle
 ```
 
 ## Connect

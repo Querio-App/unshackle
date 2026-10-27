@@ -5,7 +5,7 @@ unshackle reads your QuickSight datasets, analyses, dashboards and security rule
 ## Install
 
 ```bash
-pip install unshackle      # or: uv tool install unshackle
+pip install unshackle      # in a virtual environment; or: uv tool install unshackle
 ```
 
 ## Connect
