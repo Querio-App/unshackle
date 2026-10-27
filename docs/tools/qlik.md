@@ -5,7 +5,7 @@ unshackle reads your Qlik Cloud apps (load script, master items, sheets, Section
 ## Install
 
 ```bash
-pip install unshackle      # or: uv tool install unshackle
+pip install unshackle      # in a virtual environment; or: uv tool install unshackle
 ```
 
 ## Connect

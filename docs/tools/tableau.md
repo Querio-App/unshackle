@@ -5,7 +5,7 @@ unshackle reads your Tableau workbooks and published data sources and turns them
 ## Install
 
 ```bash
-pip install unshackle      # or: uv tool install unshackle
+pip install unshackle      # in a virtual environment; or: uv tool install unshackle
 ```
 
 Copying data from Tableau `.hyper` extracts (`--with-data`) also needs Tableau's Hyper API, a large

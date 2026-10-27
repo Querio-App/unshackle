@@ -5,7 +5,7 @@ unshackle reads Lightdash's explores, metrics, charts and dashboards and writes 
 ## Install
 
 ```bash
-pip install unshackle      # or: uv tool install unshackle
+pip install unshackle      # in a virtual environment; or: uv tool install unshackle
 ```
 
 ## Connect

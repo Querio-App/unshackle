@@ -26,7 +26,8 @@ original formula next to it. It doesn't guess.
 
 ## Get started
 
-You need Python 3.11 or later and access to your BI tool.
+You need Python 3.11+ and access to your BI tool. Use `pip` inside a virtual environment (system Python
+often refuses it outside one), or `uv tool install unshackle` for a global command.
 
 ```bash
 pip install unshackle                 # or: uv tool install unshackle
