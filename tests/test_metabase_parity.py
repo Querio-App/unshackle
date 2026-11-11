@@ -260,7 +260,11 @@ def test_invalid_exports_leave_no_baseline_or_case(tmp_path, monkeypatch, conten
     assert not list((tmp_path / "migration/parity").glob("*.yaml"))
 
 
-def test_export_failure_is_visible_and_other_cards_continue_with_one_client(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("status", "body", "error"), [
+    (403, "Download permission denied", "403: Download permission denied"),
+    (200, '"unterminated', "unexpected end of data"),
+])
+def test_export_failure_is_visible_and_other_cards_continue_with_one_client(tmp_path, monkeypatch, status, body, error):
     setup_repo(tmp_path, repeated=True)
     clients = []
     requests = []
@@ -268,7 +272,7 @@ def test_export_failure_is_visible_and_other_cards_continue_with_one_client(tmp_
     def handler(request):
         requests.append(request)
         if "/dashcard/10/" in request.url.path:
-            return httpx.Response(403, text="Download permission denied")
+            return httpx.Response(status, text=body)
         return httpx.Response(200, content=b"Total Amount\n10\n")
 
     client = Client("https://metabase.example.com", per_minute=0, max_retries=0, transport=httpx.MockTransport(handler))
@@ -280,7 +284,7 @@ def test_export_failure_is_visible_and_other_cards_continue_with_one_client(tmp_
     monkeypatch.setattr(MetabaseSource, "client", get_client)
     written, skipped = verify.init_cases(tmp_path, "metabase")
     assert len(written) == 1 and written[0].stem == "metabase-20-11"
-    assert any("403" in s and "Download permission denied" in s for s in skipped)
+    assert any(error in s for s in skipped)
     assert len(requests) == 2 and clients[0] is clients[1]
     assert not (tmp_path / "migration/parity/data/metabase-20-10.csv").exists()
 
