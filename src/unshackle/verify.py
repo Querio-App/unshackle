@@ -21,10 +21,12 @@ Passing cases are written to evals/<id or file name>.yaml so they keep running a
 from __future__ import annotations
 
 import ast
+import csv
+import io
 import json
 import math
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -324,7 +326,7 @@ def _tile_idents(nb: dict, tiles) -> dict[str, str]:
     return {t.id: by_sql[t.sql.strip()] for t in tiles if t.sql.strip() and t.sql.strip() in by_sql}
 
 
-def init_cases(repo: Path, tool: str) -> tuple[list[Path], list[str]]:
+def init_cases(repo: Path, tool: str, only: set[str] | None = None) -> tuple[list[Path], list[str]]:
     """Write migration/parity/<slug>.yaml for each tile whose source view data was saved as CSV.
 
     Any source can offer this: a tile whose `source_config` has `parity_csv` (a repo-relative
@@ -340,19 +342,59 @@ def init_cases(repo: Path, tool: str) -> tuple[list[Path], list[str]]:
     if not ir.exists():
         raise FileNotFoundError(f"{ir.relative_to(repo)} not found; run `unshackle build {tool}` first")
     bundle = Bundle.from_json(ir.read_text())
+    metabase = None
+    if tool == "metabase":
+        from unshackle.sources.metabase import MetabaseSource, _parity_id
+
+        metabase = MetabaseSource()  # client/credentials are lazy, and shared by all missing baselines
+    if only:
+        if tool != "metabase" or any(not re.fullmatch(r"dashboard:[1-9]\d*", item) for item in only):
+            raise ValueError("--only supports dashboard:<id> with --init metabase")
+        available = {d.source_ref.replace("metabase:dashboard/", "dashboard:") for d in bundle.dashboards}
+        if missing := only - available:
+            raise ValueError(f"dashboards not in the build: {', '.join(sorted(missing))}")
     case_dir = repo / "migration" / "parity"
     written: list[Path] = []
     skipped: list[str] = []
     seen: set[str] = set()
     taken: set[Path] = set()
     for d, nb_rel in zip(bundle.dashboards, notebook_files(bundle, Layout.load(repo))):
-        idents = _tile_idents(build_notebook(d, bundle.tool), d.tiles)
+        if only and d.source_ref.replace("metabase:dashboard/", "dashboard:") not in only:
+            continue
+        expected_nb = build_notebook(d, bundle.tool)
+        idents = _tile_idents(expected_nb, d.tiles) if tool != "metabase" else {}
         for t in d.tiles:
+            label = f"{d.name} / {t.title or t.id}"
+            if tool == "metabase":
+                if t.kind == "text":
+                    continue
+                context = t.source_config.get("metabase_parity")
+                if not context:
+                    skipped.append(f"{label}: missing parity metadata; re-run `unshackle build metabase`")
+                    continue
+                import httpx
+
+                from unshackle.http import SourceError
+
+                try:
+                    path = case_dir / f"{_parity_id(context)}.yaml"
+                    if path.resolve().parent != repo.resolve() / "migration/parity":
+                        raise ValueError("case path redirects outside migration/parity")
+                    if path.exists():
+                        skipped.append(f"{label}: {path.relative_to(repo)} exists, kept")
+                        continue
+                    case = _metabase_case(repo, d, t, nb_rel, metabase, expected_nb)
+                except (OSError, ValueError, KeyError, TypeError, SyntaxError, csv.Error, SourceError, httpx.HTTPError) as exc:
+                    skipped.append(f"{label}: {str(exc)[:300]}")
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(dump_yaml({"id": path.stem, **case}))
+                written.append(path)
+                continue
             csv_rel = t.source_config.get("parity_csv")
             if not csv_rel or csv_rel in seen:
                 continue
             seen.add(csv_rel)
-            label = f"{d.name} / {t.title or t.id}"
             if t.id not in idents:
                 skipped.append(f"{label}: the tile has no SQL yet")
                 continue
@@ -377,6 +419,121 @@ def init_cases(repo: Path, tool: str) -> tuple[list[Path], list[str]]:
             path.write_text(dump_yaml({"id": path.stem, **case}))
             written.append(path)
     return written, skipped
+
+
+def _metabase_case(repo: Path, dash: Dashboard, tile: Tile, nb_rel: str, source, expected_nb: dict) -> dict[str, Any]:
+    """Capture one Metabase baseline only when its source context and actual notebook agree."""
+    import pandas as pd
+
+    from unshackle.run import PARAM, notebook_queries
+    from unshackle.sources.metabase import _parity_id
+
+    context = tile.source_config["metabase_parity"]
+    if context["skip"]:
+        raise ValueError(context["skip"])
+    if not tile.sql.strip():
+        raise ValueError("the tile has no SQL yet")
+    nb_path = repo / nb_rel
+    nb = json.loads(nb_path.read_text())
+    if nb.get("metadata", {}).get("unshackle", {}).get("source") != dash.source_ref:
+        raise ValueError("notebook source identity does not match the dashboard")
+    cells = [c for c in nb.get("cells", []) if c.get("cell_type") == "code"
+             and c.get("metadata", {}).get("unshackle", {}).get("tile_id") == tile.id]
+    if len(cells) != 1:
+        raise ValueError("notebook tile identity missing or ambiguous; re-run `unshackle build metabase`")
+    cell = cells[0]
+    text = cell["source"] if isinstance(cell["source"], str) else "".join(cell["source"])
+    tree = ast.parse(text)
+    assignments = [n for n in tree.body if isinstance(n, ast.Assign) and len(n.targets) == 1
+                   and isinstance(n.targets[0], ast.Name) and n.targets[0].id.endswith("_sql")
+                   and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)]
+    if len(assignments) != 1:
+        raise ValueError("notebook tile needs one literal SQL assignment")
+    sql_name = assignments[0].targets[0].id
+    ident, sql = sql_name[:-4], assignments[0].value.value.strip()
+    _, sqls = notebook_queries(nb_path)
+    if sql != tile.sql.strip() or sqls.get(ident, "").strip() != sql:
+        raise ValueError("notebook SQL differs from the build; rebuild or write the parity case manually")
+    parameter_cells = [c for c in nb["cells"] if "parameters" in c.get("metadata", {}).get("tags", [])]
+    if len(parameter_cells) != 1:
+        raise ValueError("notebook needs one parameters cell with literal defaults")
+    declarations = {}
+    param_source = parameter_cells[0]["source"]
+    for node in ast.parse(param_source if isinstance(param_source, str) else "".join(param_source)).body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+            raise ValueError("notebook parameters cell must contain only literal assignments")
+        name = node.targets[0].id
+        if name in declarations:
+            raise ValueError("notebook parameter defaults have duplicate assignments")
+        declarations[name] = ast.literal_eval(node.value)
+    expected_cell = next(c for c in expected_nb["cells"] if c.get("metadata", {}).get("unshackle", {}).get("tile_id") == tile.id)
+    expected_tree = ast.parse(expected_cell["source"])
+    # Support the generated top-level SQL assignment and dataframe call, not arbitrary notebook execution.
+    if ast.dump(tree) != ast.dump(expected_tree):
+        raise ValueError("notebook SQL cell shape or parameter mapping differs from the build; write a case manually")
+    query_call = expected_tree.body[1].value
+    mapping = {ast.literal_eval(key): value.id for kw in query_call.keywords if kw.arg == "params"
+               for key, value in zip(kw.value.keys, kw.value.values)}
+    protected = {sql_name, ident, *mapping.values()}
+    for other in nb["cells"]:
+        if other is cell or other is parameter_cells[0] or other.get("cell_type") != "code":
+            continue
+        body = other["source"] if isinstance(other["source"], str) else "".join(other["source"])
+        if any(isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store) and n.id in protected
+               for n in ast.walk(ast.parse(body))):
+            raise ValueError("notebook reassigns tile SQL, dataframe or parameter inputs outside their generated cells")
+    bound = {key: declarations[var] for key, var in mapping.items()}
+    if set(PARAM.findall(sql)) != set(context["params"]) or bound != context["params"]:
+        raise ValueError("source defaults and notebook SQL binds/defaults differ; align them before capturing parity")
+
+    csv_rel = f"migration/parity/data/{_parity_id(context)}.csv"
+    if tile.source_config.get("parity_csv") != csv_rel:
+        raise ValueError("baseline path does not match its Metabase identity")
+    csv_path = repo / csv_rel
+    metadata_path = csv_path.with_suffix(".json")
+    if any(p.resolve().parent != repo.resolve() / "migration/parity/data" for p in (csv_path, metadata_path)):
+        raise ValueError("baseline path redirects outside migration/parity/data")
+    capture = {"context": context, "sql": sql}
+    existing = csv_path.exists()
+    if existing:
+        if not metadata_path.exists() or json.loads(metadata_path.read_text()) != capture:
+            raise ValueError(f"{csv_rel}: capture context missing or changed; existing CSV kept")
+        data = csv_path.read_bytes()
+    else:
+        if metadata_path.exists():
+            raise ValueError(f"{metadata_path.relative_to(repo)} exists without its CSV; kept")
+        data = source.export_parity(context)
+    rows = [r for r in csv.reader(io.StringIO(data.decode("utf-8-sig")), strict=True) if r]
+    if len(rows) < 2 or any(len(r) != len(rows[0]) for r in rows):
+        raise ValueError("export has no data rows or inconsistent CSV columns")
+    headers = rows[0]
+    columns = context["columns"]
+    aliases = [snake(c["alias"]) for c in columns]
+    if len(headers) != len(columns) or len(set(aliases)) != len(aliases) or len({snake(h) for h in headers}) != len(headers):
+        raise ValueError("CSV headers and result metadata must have complete, unique column coverage")
+    mapped = {}
+    for header in headers:
+        matches = [c for c in columns if snake(header) in {snake(c["alias"]), snake(c["name"]), snake(c["title"])}]
+        if len(matches) != 1 or matches[0]["alias"] in mapped:
+            raise ValueError(f"CSV header {header!r} has no unambiguous result column mapping")
+        mapped[matches[0]["alias"]] = header
+    src = pd.DataFrame(rows[1:], columns=headers)
+    matched_tile = replace(tile, source_config={**tile.source_config, "columns": mapped})
+    case = _case_for(f"{dash.name} / {tile.title or tile.id}", csv_rel, src, matched_tile, dash, nb_rel, ident)
+    if case is None:
+        raise ValueError("no matching result columns")
+    case["strict"] = True
+    case["target"]["params"] = context["params"]
+    # Compare the complete result, including table columns without chart encodings. Exports are unformatted.
+    case["keys"] = []
+    case.pop("formats", None)
+    if not existing:
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        with csv_path.open("xb") as output:
+            output.write(data)
+        with metadata_path.open("x") as output:
+            output.write(json.dumps(capture, indent=2) + "\n")
+    return case
 
 
 def _case_for(label: str, csv_rel: str, src, tile: Tile, dash: Dashboard, nb_rel: str, ident: str) -> dict[str, Any] | None:

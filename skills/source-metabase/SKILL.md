@@ -142,6 +142,32 @@ from `result_metadata` (`lib/desired-column-alias`).
 
 ## Parity
 
+After building with the current version:
+
+```
+unshackle verify --init metabase --only dashboard:2
+unshackle verify
+```
+
+Omit `--only` for all built dashboards, or repeat it. Initialization runs each supported
+dashcard through the existing API client with `format_rows=false`, `pivot_results=false`,
+and original parameter IDs, defaults, targets and options. Target binds use the shared
+parameter-ID mapping and date/range expansion. Unmapped native tags keep their card defaults.
+
+CSV baselines and capture context go to `migration/parity/data/metabase-<dashboard>-<dashcard>.csv`
+and `.json`; the matching YAML case is strict and checks all columns. Existing cases and CSVs
+are never replaced. A saved CSV needs matching capture context to scaffold without API access;
+an unknown or changed context is reported, not silently repinned to current defaults.
+
+Initialization checks the actual notebook's generated SQL cell and literal parameter defaults.
+It skips edited execution shapes, missing metadata, ambiguous headers/aliases, relative dates,
+unsupported multi-value defaults and unresolved tile TODOs. Joined result aliases are accepted
+when a simple outer SELECT proves the projected names; uncertain projections need a manual
+case. No query is executed during offline parsing. The export request contract is covered
+against Metabase v0.65.3 (`src/metabase/dashboards_rest/api.clj`).
+
+For cases that need manual work:
+
 Metabase's own results are the source side:
 
 ```

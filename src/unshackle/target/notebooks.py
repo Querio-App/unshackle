@@ -371,9 +371,9 @@ def build_notebook(d: Dashboard, tool: str, local_db: str = "") -> dict:
                 f"{ident} = pd.DataFrame()",
             ]
         if tile.kind == "table":
-            cells.append(_code(f"{ident}-sql", lines + [ident]))
+            cells.append(_code(f"{ident}-sql", lines + [ident], unshackle={"tile_id": tile.id}))
             continue
-        cells.append(_code(f"{ident}-sql", lines))
+        cells.append(_code(f"{ident}-sql", lines, unshackle={"tile_id": tile.id}))
         chart = _composed_chart(ident, tile) if tile.layers else _single_chart(ident, tile)
         cells.append(_code(f"{ident}-chart", _with_references(ident, tile, chart)))
     layout = [[idents[i] for i in row if i in idents] for row in d.layout or [[t.id] for t in d.tiles]]

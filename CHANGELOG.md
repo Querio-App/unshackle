@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `verify --init metabase` captures dashboard card CSV baselines and writes strict parity cases;
+  `--only dashboard:<id>` limits the capture. Cases pin source filter defaults to validated notebook
+  binds, preserve existing cases and baselines, and report unsupported or ambiguous cases as skips.
+
 - `verify` skips empty and comment-only parity YAML files. Malformed YAML and nonmapping
   cases are reported as `not checked`, and remaining valid cases still run and write evals.
 - Fix duplicate MetricFlow dimension labels within a semantic model, including joined Metabase model

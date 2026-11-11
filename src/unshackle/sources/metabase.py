@@ -236,6 +236,57 @@ def _parameter_names(params: dict[str, dict[str, Any]]) -> dict[str, str]:
     return names
 
 
+def _parity_id(context: dict[str, Any]) -> str:
+    """Validate source IDs before using them in any parity path or request."""
+    for key in ("dashboard_id", "dashcard_id", "card_id"):
+        if type(context.get(key)) is not int or context[key] <= 0:
+            raise ValueError(f"Metabase {key} must be a positive integer")
+    return f"metabase-{context['dashboard_id']}-{context['dashcard_id']}"
+
+
+def _parity_projection(sql: str) -> list[str] | None:
+    """Prove names in a simple outer SELECT; unsupported syntax stays a manual parity case.
+
+    The existing tokenizer handles ANSI quoted identifiers and literals, not comments or dialect escapes.
+    Only explicit AS aliases and bare column references are accepted; this does not infer expression names.
+    """
+    from unshackle.sources._dialect import _TOKEN
+
+    if any(mark in sql for mark in ("--", "/*", "\\", "`", "$", "[", "]")):
+        return None
+    tokens = [t for t in _TOKEN.findall(sql.strip().rstrip(";")) if not t.isspace()]
+    if not tokens or tokens.pop(0).lower() != "select":
+        return None
+    if tokens and tokens[0].lower() in ("distinct", "all"):
+        tokens.pop(0)
+    parts, depth = [[]], 0
+    for token in tokens:
+        if token.lower() == "select":
+            return None  # subquery projections need a real SQL parser
+        if depth == 0 and token.lower() in ("from", "where", "group", "having", "order", "limit", "union"):
+            break
+        depth += {"(": 1, ")": -1}.get(token, 0)
+        if depth < 0:
+            return None
+        if token == "," and depth == 0:
+            parts.append([])
+        else:
+            parts[-1].append(token)
+    if depth:
+        return None
+    identifier = r'(?:[A-Za-z_][A-Za-z0-9_]*|"(?:[^"]|"")+")'
+    names = []
+    for part in parts:
+        if len(part) >= 3 and part[-2].lower() == "as" and re.fullmatch(identifier, part[-1]):
+            name = part[-1]
+        elif re.fullmatch(rf'{identifier}(?:\.{identifier})*', "".join(part)):
+            name = part[-1]
+        else:
+            return None
+        names.append(name[1:-1].replace('""', '"') if name.startswith('"') else name)
+    return names
+
+
 def _range(col: str, lo: str, hi: str, cast: bool = False) -> str:
     """`col` between :lo and :hi (inclusive), either bound empty meaning open; `cast` compares the upper bound by day."""
     upper = f"CAST({col} AS date)" if cast else col
@@ -416,6 +467,15 @@ class MetabaseSource(Source):
 
     def _get(self, path: str, **kw: Any) -> Any:
         return self.client().get_json(path, **kw)
+
+    def export_parity(self, context: dict[str, Any]) -> bytes:
+        """Run one dashcard with its source defaults; CSVs are saved by verify, never by parse."""
+        _parity_id(context)
+        path = (f"/api/dashboard/{context['dashboard_id']}/dashcard/{context['dashcard_id']}"
+                f"/card/{context['card_id']}/query/csv")
+        return self.client().post(path, data={
+            "parameters": json.dumps(context["parameters"]), "format_rows": "false", "pivot_results": "false",
+        }).content
 
     def _search(self) -> list[dict[str, Any]]:
         res = self._get("/api/search", params={"models": ["card", "dataset", "metric", "dashboard"]})
@@ -902,12 +962,25 @@ class MetabaseSource(Source):
                 tid = _unique(snake(card.get("name") or f"card_{cid}"), used)
                 title = viz.get("card.title") or card.get("name") or ""
                 todos: list[str] = []
-                sql = self._dashcard_sql(d, dc, card, names, params, todos)
+                try:
+                    _parity_id({"dashboard_id": d.get("id"), "dashcard_id": dc.get("id"), "card_id": cid})
+                except ValueError as exc:
+                    sql = ""
+                    todos.append(str(exc))
+                else:
+                    sql = self._dashcard_sql(d, dc, card, names, params, todos)
                 merged = {**(card.get("visualization_settings") or {}), **viz}
                 tile = self._tile(card, merged, tid, title, sql, todos)
                 if dc.get("series"):
                     extra = ", ".join(str(s.get("name") or s.get("id")) for s in dc["series"])
                     tile.todo = join_todos(x for x in (tile.todo, f"overlays other cards ({extra}); add them as layers") if x)
+                tile.source_config["metabase_parity"] = self._parity_context(d, dc, card, tile, params, names)
+                try:
+                    parity_id = _parity_id(tile.source_config["metabase_parity"])
+                except ValueError:
+                    pass  # malformed source IDs stay visible in the tile TODO and parity skip
+                else:
+                    tile.source_config["parity_csv"] = f"migration/parity/data/{parity_id}.csv"
                 dash.tiles.append(tile)
                 grid.append((tid, float(dc.get("col") or 0), row))
                 for m in dc.get("parameter_mappings") or []:
@@ -920,6 +993,50 @@ class MetabaseSource(Source):
             dash.layout = grid_rows(grid)
             b.dashboards.append(dash)
         return on_dash
+
+    def _parity_context(self, d: dict, dc: dict, card: dict, tile: Tile, params: dict, names: dict) -> dict:
+        """Keep source parameter values distinct from the translated SQL binds, keyed by dashcard identity."""
+        source, target, problems = [], {}, []
+        for m in dc.get("parameter_mappings") or []:
+            if m.get("card_id", dc["card_id"]) != dc["card_id"]:
+                continue
+            pid = m.get("parameter_id")
+            if pid not in params or not m.get("target"):
+                problems.append(f"missing parameter metadata for {pid}")
+                continue
+            p = params[pid]
+            value, kind = p.get("default"), p.get("type", "")
+            source.append({"id": pid, "type": kind, "target": m["target"], "value": value,
+                           **({"options": p["options"]} if p.get("options") else {})})
+            if kind.startswith("date/") and value not in (None, []) and _date_bounds(value) is None:
+                problems.append(f"parameter {pid} has an unsupported relative date default")
+            elif kind == "number/between":
+                if value not in (None, []) and (not isinstance(value, list) or len(value) != 2):
+                    problems.append(f"parameter {pid} has an unsupported range default")
+            elif isinstance(value, list) and len(value) > 1:
+                problems.append(f"parameter {pid} has an unsupported multi-value default")
+            if kind not in (*TEXT_PARAMS, *STRING_OPS) and not kind.startswith(("number/", "date/")):
+                problems.append(f"parameter {pid} has unsupported type {kind}")
+            target.update({n: v for n, v, _ in _filter_binds(p, names[pid])})
+        columns = self._columns(card, tile.sql)
+        if not columns or len(columns) != len(card.get("result_metadata") or []):
+            problems.append("missing result column metadata")
+        # _columns uses quoted-name occurrence for chart aliases; that is not proof of an output projection.
+        metadata = card.get("result_metadata") or []
+        if any(c.get("lib/desired-column-alias") not in (None, c.get("name")) for c in metadata if isinstance(c, dict)):
+            projected = _parity_projection(tile.sql)
+            if projected is None or len(projected) != len(columns) or any(
+                name not in (c.get("name"), c.get("lib/desired-column-alias")) for name, c in zip(projected or [], metadata)
+            ):
+                problems.append("uncertain output projection: result names differ from desired aliases; map a case manually")
+            else:
+                columns = [{**c, "alias": name} for c, name in zip(columns, projected)]
+        if len({snake(c["alias"]) for c in columns}) != len(columns):
+            problems.append("result aliases collide after normalization")
+        if tile.todo:
+            problems.append(tile.todo)
+        return {"dashboard_id": d.get("id"), "dashcard_id": dc.get("id"), "card_id": dc["card_id"],
+                "parameters": source, "params": target, "columns": columns, "skip": "; ".join(problems)}
 
     def _dashcard_sql(self, d: dict[str, Any], dc: dict[str, Any], card: dict[str, Any], names: dict[str, str],
                       params: dict[str, dict[str, Any]], todos: list[str]) -> str:

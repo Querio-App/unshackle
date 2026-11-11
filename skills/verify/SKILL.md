@@ -29,8 +29,27 @@ the notebook tile as the target with the dashboard's default filter values pinne
 `params`, CSV headers mapped to the tile's columns, dimensions as `keys`, and a display
 format for each column the CSV shows formatted (`$1,234`, `11.9%`, `0.1M`). Existing case
 files are kept. Check each case's `keys` and `params` (the CSV holds the view as last
-saved, with its filters), then run `unshackle verify`. Other tools get the same once their
-parser records a `parity_csv` on the tile.
+saved, with its filters), then run `unshackle verify`. Other tools can offer saved CSVs through
+`parity_csv` on their tiles.
+
+For Metabase, build with the current version first, then run:
+
+```
+unshackle verify --init metabase [--only dashboard:<id>]
+```
+
+This runs dashboard card exports through the Metabase API with the original source parameter
+IDs, values and options, and unformatted, unpivoted results. `--only` is repeatable. Baselines
+and capture context are saved as `migration/parity/data/metabase-<dashboard>-<dashcard>.csv`
+and `.json`; cases use the same ID in `migration/parity/`. Existing files are kept.
+
+Cases use `strict: true`, compare all result columns, and pin translated SQL binds after
+checking the actual notebook's SQL, literal defaults and parameter mapping. The saved capture
+context must match before a CSV is reused without an API request. Unknown CSV provenance,
+changed context, incomplete or colliding columns, uncertain output aliases, unresolved tile
+TODOs, and unsupported relative-date or multi-value defaults are reported as skips. Write a
+manual case when automatic scaffolding cannot establish that both sides use the same query
+and filters. Initialization does not overwrite edited notebooks or cases.
 
 ## Case format
 
