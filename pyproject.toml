@@ -1,6 +1,6 @@
 [project]
 name = "unshackle"
-version = "0.1.0"
+version = "0.2.0"
 description = "Move your metrics, dashboards and permissions out of a BI tool and into files in a Git repository you own."
 dynamic = ["readme"]
 license = "Apache-2.0"

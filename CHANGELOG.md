@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 (2026-11-11)
+
 - `verify --init metabase` captures dashboard card CSV baselines and writes strict parity cases;
   `--only dashboard:<id>` limits the capture. Cases pin source filter defaults to validated notebook
   binds, preserve existing cases and baselines, and report unsupported or ambiguous cases as skips.
