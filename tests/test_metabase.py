@@ -285,6 +285,8 @@ def _mock(calls: list[httpx.Request]):
             return httpx.Response(200, json=j("permissions/graph.json"))
         if path == "/api/collection/graph":
             return httpx.Response(200, json=j("permissions/collections.json"))
+        if path == "/api/pulse":
+            return httpx.Response(200, json=[])
         return httpx.Response(404, json="API endpoint does not exist.")
 
     return handler

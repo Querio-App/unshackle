@@ -214,6 +214,36 @@ class Dashboard:
 
 
 @dataclass
+class ScheduleChannel:
+    type: str
+    source_ref: str = ""
+    enabled: bool | None = None
+    cadence: dict[str, Any] = field(default_factory=dict)
+    timezone: str | None = None
+    recipients: list[dict[str, Any]] | None = None  # None: not returned; []: explicitly empty
+    details: dict[str, Any] = field(default_factory=dict)
+    source_config: dict[str, Any] = field(default_factory=dict)
+    todo: str = ""
+
+
+@dataclass
+class Schedule:
+    """Exported delivery intent, not a runnable scheduler configuration."""
+
+    name: str
+    source_ref: str
+    dashboard_ref: str = ""
+    archived: bool | None = None
+    skip_if_empty: bool | None = None
+    parameters: dict[str, Any] = field(default_factory=dict)  # filter binds; writer maps to Python notebook names
+    parameter_bindings: list[dict[str, Any]] = field(default_factory=list)
+    cards: list[dict[str, Any]] | None = None
+    channels: list[ScheduleChannel] = field(default_factory=list)
+    source_config: dict[str, Any] = field(default_factory=dict)
+    todo: str = ""
+
+
+@dataclass
 class VerifiedQuery:
     name: str
     sql: str
@@ -310,6 +340,7 @@ class Bundle:
     semantic_models: list[SemanticModel] = field(default_factory=list)
     metrics: list[Metric] = field(default_factory=list)
     dashboards: list[Dashboard] = field(default_factory=list)
+    schedules: list[Schedule] = field(default_factory=list)
     queries: list[VerifiedQuery] = field(default_factory=list)
     knowledge: list[KnowledgeItem] = field(default_factory=list)
     permissions: list[Permission] = field(default_factory=list)

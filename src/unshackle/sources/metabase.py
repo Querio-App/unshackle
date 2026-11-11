@@ -20,6 +20,8 @@ Raw layout under migration/raw/metabase/:
   permissions/collections.json   GET /api/collection/graph    (read / write per group and collection)
   permissions/gtap.json          GET /api/mt/gtap   row and column security; paid plans only
   paid_features.json             paid-only endpoints that were not available, with the reason
+  pulses/<id>.json               safe subscription projection from GET /api/pulse (active and archived)
+  _pulses.json                   default visibility scope, request outcomes and retained stale IDs
   _errors.json                   items that failed to extract; parse() turns them into warnings
 
 Fingerprints, creator/editor details and database connection details are dropped at extract.
@@ -33,6 +35,9 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
+
+import httpx
 
 from unshackle.http import Client, SourceError, env
 from unshackle.ir import (
@@ -48,6 +53,8 @@ from unshackle.ir import (
     Metric,
     Permission,
     RowFilter,
+    Schedule,
+    ScheduleChannel,
     SemanticModel,
     Table,
     Tile,
@@ -600,6 +607,7 @@ class MetabaseSource(Source):
         except SourceError as exc:
             paid["row_and_column_security"] = str(exc)[:200]
         store.put_json("paid_features.json", paid)
+        _extract_pulses(self._get, store, None if only is None else dash_ids, errors)
         store.put_json("_errors.json", errors)
 
     def _compile(self, dq: dict[str, Any], errors: list[dict[str, str]], item: str) -> str:
@@ -646,6 +654,7 @@ class MetabaseSource(Source):
             b.warn(feature.replace("_", " "), f"paid Metabase feature not available on this instance, skipped ({why})", "info")
         for e in _list(store.get_json("_errors.json") if store.exists("_errors.json") else []):
             b.warn(e.get("item", "?"), f"extract failed: {e.get('error', '')}")
+        _parse_pulses(b, store)
         return b.settle_time_dimensions()
 
     def _ref(self, kind: str, id: Any) -> str:
@@ -1267,3 +1276,248 @@ def _unique(base: str, used: set[str]) -> str:
         tid, n = f"{base}_{n}", n + 1
     used.add(tid)
     return tid
+
+
+# ------------------------------------------------------------ dashboard subscriptions (GET only)
+
+_PULSE_FIELDS = set("id name dashboard_id archived skip_if_empty disable_links parameters cards channels can_write".split())
+_PULSE_CARD_FIELDS = set("id dashboard_card_id include_csv include_xls format_rows pivot_results parameter_mappings download_perms".split())
+_PULSE_CHANNEL_FIELDS = set("id channel_type channel_id enabled schedule_type schedule_day schedule_hour schedule_frame recipients details".split())
+_PULSE_DETAILS = set("attachment_only include_pdf subject channel channels channel_id emails".split())
+_PULSE_SECRET = re.compile(r"password|secret|token|api.?key|authorization|cookie|credential|connection|^auth$|headers|webhook", re.I)
+_PULSE_SETTING = re.compile(r"schedule|timezone|format|attachment|parameter|skip_|disable_|include_|delivery", re.I)
+
+
+def _pulse_safe(value: Any, todos: list[str], path: str) -> Any:
+    """Keep business values; omit transport secrets and credential-bearing URLs."""
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if _PULSE_SECRET.search(key):
+                todos.append(f"{path}.{key}: credential/configuration field omitted")
+            else:
+                out[key] = _pulse_safe(item, todos, f"{path}.{key}")
+        return out
+    if isinstance(value, list):
+        return [_pulse_safe(v, todos, f"{path}[{i}]") for i, v in enumerate(value)]
+    if isinstance(value, str):
+        for match in re.finditer(r"[a-z][a-z0-9+.-]*://[^\s]+", value, re.I):
+            try:
+                url = urlsplit(match[0])
+                secret = url.username is not None or any(_PULSE_SECRET.search(k) for k, _ in parse_qsl(url.query))
+            except ValueError:
+                secret = True
+            destination = ".details." in path and path.rsplit(".", 1)[-1] != "subject"
+            if secret or destination:
+                todos.append(f"{path}: credential-bearing URL or transport destination omitted")
+                return "[redacted URL]"
+    return value
+
+
+def _pulse_project(obj: dict[str, Any], fields: set[str], todos: list[str], path: str) -> dict[str, Any]:
+    selected = {}
+    for key, value in obj.items():
+        if key in fields or _PULSE_SETTING.search(key):
+            selected[key] = value
+            if key not in fields:
+                todos.append(f"{path}.{key}: unsupported source setting retained")
+    return _pulse_safe(selected, todos, path)
+
+
+def _pulse_projection(pulse: dict[str, Any]) -> dict[str, Any]:
+    todos = list(pulse.get("_projection_todos") or [])
+    unsupported = dict(pulse.get("_unsupported") or {})
+
+    def records(value: Any, path: str) -> list[dict[str, Any]] | None:
+        if value is None:
+            return None
+        if not isinstance(value, list) or any(not isinstance(v, dict) for v in value):
+            todos.append(f"{path}: malformed records retained as unsupported; contents are unknown")
+            unsupported[path] = _pulse_safe(value, todos, path)
+            return None
+        return value
+
+    out = _pulse_project(pulse, _PULSE_FIELDS - {"cards", "channels"}, todos, "pulse")
+    if "cards" in pulse:
+        cards = records(pulse["cards"], "cards")
+        out["cards"] = [_pulse_project(c, _PULSE_CARD_FIELDS, todos, f"cards[{i}]")
+                        for i, c in enumerate(cards)] if cards is not None else None
+    if "channels" in pulse:
+        channels = []
+        for i, c in enumerate(records(pulse["channels"], "channels") or []):
+            item = _pulse_project(c, _PULSE_CHANNEL_FIELDS - {"recipients", "details"}, todos, f"channels[{i}]")
+            if "recipients" in c:
+                recipients = records(c["recipients"], f"channels[{i}].recipients")
+                item["recipients"] = [_pulse_project(r, {"id", "email", "common_name", "first_name", "last_name"}, todos, "recipient")
+                                      for r in recipients] if recipients is not None else None
+            if "details" in c:
+                item["details"] = _pulse_safe(c["details"], todos, f"channels[{i}].details")
+            channels.append(item)
+        out["channels"] = channels
+    if todos:
+        out["_projection_todos"] = list(dict.fromkeys(todos))
+    if unsupported:
+        out["_unsupported"] = _pulse_safe(unsupported, todos, "unsupported")
+    return out
+
+
+def _extract_pulses(get, store: RawStore, dashboard_ids: list[int] | None, errors: list[dict[str, str]]) -> None:
+    """Default API visibility only. Missing from a visible list is not evidence of deletion."""
+    fetched = set()
+    status: dict[str, Any] = {"visibility": "default", "completeness": "unknown", "requests": [], "retained_ids": []}
+    for did in [None] if dashboard_ids is None else dashboard_ids:
+        for archived in (False, True):
+            params = {"archived": str(archived).lower(), **({"dashboard_id": did} if did is not None else {})}
+            request = {"params": params, "status": "ok"}
+            try:
+                pulses = get("/api/pulse", params=params)
+                if not isinstance(pulses, list):
+                    raise ValueError("expected a list")
+                for pulse in pulses:
+                    if not isinstance(pulse, dict) or type(pulse.get("id")) is not int or pulse["id"] <= 0:
+                        raise ValueError("invalid subscription identity")
+                    store.put_json(f"pulses/{pulse['id']}.json", _pulse_projection(pulse))
+                    fetched.add(pulse["id"])
+            except (SourceError, httpx.RequestError, ValueError) as exc:
+                # Response bodies can contain addresses or credentials; record only the failure class/status.
+                reason = f"GET /api/pulse failed ({getattr(exc, 'status', None) or type(exc).__name__})"
+                errors.append({"item": "dashboard subscriptions", "error": reason})
+                request["status"] = reason
+            status["requests"].append(request)
+    for rel in store.glob("pulses/*.json"):
+        if int(Path(rel).stem) not in fetched:
+            store.put_json(rel, _pulse_projection(store.get_json(rel)))
+            status["retained_ids"].append(int(Path(rel).stem))
+    status["fetched_ids"] = sorted(fetched)
+    store.put_json("_pulses.json", status)
+
+
+def _pulse_parameters(schedule: Schedule, dashboard: dict[str, Any], pulse: dict[str, Any]) -> None:
+    raw_params = dashboard.get("parameters") or []
+    params = {p["id"]: p for p in raw_params if isinstance(p, dict) and isinstance(p.get("id"), str)}
+    names = _parameter_names(params)
+    overrides = pulse.get("parameters")
+    if overrides is None:
+        return
+    if not isinstance(overrides, list):
+        schedule.todo = join_todos([schedule.todo, "invalid parameters container retained; expected a list of parameter overrides"])
+        return
+    for index, override in enumerate(overrides):
+        if not isinstance(override, dict):
+            schedule.todo = join_todos([schedule.todo, "invalid source parameter retained; resolve before execution"])
+            continue
+        pid = override.get("id")
+        binding = {"source_id": pid, "source": override, "filter_names": [], "status": "unresolved"}
+        if "value" in override:
+            binding["value"] = override["value"]
+        reason = ""
+        if not isinstance(pid, str) or not pid:
+            reason = "invalid source parameter ID; expected a nonempty string"
+        elif any(t.startswith(f"pulse.parameters[{index}]") for t in pulse.get("_projection_todos", [])):
+            reason = "source parameter contained omitted credentials; supply a safe value explicitly"
+        elif pid not in params:
+            reason = "no matching dashboard parameter ID"
+        elif sum(p.get("id") == pid for p in raw_params if isinstance(p, dict)) != 1 or sum(p.get("id") == pid for p in overrides if isinstance(p, dict)) != 1:
+            reason = "duplicate source parameter ID"
+        else:
+            p = params[pid]
+            typ = p.get("type", "")
+            binding["type"] = typ
+            binding["filter_names"] = [n for n, _, _ in _filter_binds(p, names[pid])]
+            value = override.get("value", p.get("default"))
+            if override.get("type", typ) != typ or set(override) - {"id", "type", "value"}:
+                reason = "unsupported parameter type/options; original settings retained"
+            elif typ == "temporal-unit":
+                reason = "time grouping is fixed in the migrated SQL"
+            elif typ.startswith("date/"):
+                try:
+                    bounds = _date_bounds(value)
+                    if value not in (None, []) and not bounds:
+                        reason = "relative or unsupported date filter"
+                    if bounds:
+                        for bound in bounds:
+                            if bound:
+                                date.fromisoformat(bound)
+                except (ValueError, OverflowError):
+                    reason = "invalid date filter"
+            elif typ == "number/between":
+                if value not in (None, []) and (not isinstance(value, list) or len(value) != 2 or
+                        any(v is not None and type(v) not in (int, float) for v in value)):
+                    reason = "unsupported numeric range"
+            elif isinstance(value, list) and len(value) > 1:
+                reason = "multi-value filter is not represented by a scalar notebook bind"
+            elif typ not in (*TEXT_PARAMS, *STRING_OPS, "number/=", "number/!=", "number/<", "number/>", "number/<=", "number/>="):
+                reason = "unsupported filter type"
+            elif isinstance(value, dict) or (isinstance(value, list) and any(isinstance(v, (dict, list)) for v in value)):
+                reason = "unsupported structured filter value"
+            if not reason:
+                binding["status"] = "translated" if "value" in override else "default"
+                if "value" in override:
+                    for name, val, _ in _filter_binds({**p, "default": None if value == [] else value}, names[pid]):
+                        schedule.parameters[name] = val
+        if reason:
+            binding["todo"] = reason
+            schedule.todo = join_todos([schedule.todo, f"parameter {pid}: {reason}"])
+        schedule.parameter_bindings.append(binding)
+
+
+def _parse_pulses(bundle: Bundle, store: RawStore) -> None:
+    status = store.get_json("_pulses.json") if store.exists("_pulses.json") else {}
+    if status:
+        bundle.warn("dashboard subscriptions", "default API visibility only; subscription and recipient completeness is unknown", "info")
+    for rel in store.glob("pulses/*.json"):
+        pulse = _pulse_projection(store.get_json(rel))
+        pid, did = pulse.get("id"), pulse.get("dashboard_id")
+        schedule = Schedule(
+            name=pulse.get("name") or f"Subscription {pid}", source_ref=f"metabase:pulse/{pid}",
+            dashboard_ref=f"metabase:dashboard/{did}" if did is not None else "",
+            archived=pulse.get("archived"), skip_if_empty=pulse.get("skip_if_empty"), cards=pulse.get("cards"),
+            source_config={k: v for k, v in pulse.items() if k not in {"channels", "cards"}},
+            todo=join_todos(["default API visibility: subscription and recipient completeness is unknown; verify before delivery",
+                             *(pulse.get("_projection_todos") or [])]),
+        )
+        schedule.source_config["completeness"] = "unknown"
+        schedule.source_config["visibility"] = "default"
+        if pid in status.get("retained_ids", []):
+            schedule.todo = join_todos([schedule.todo, "not returned in the latest extraction; retained source settings may be stale"])
+        if schedule.cards is None:
+            schedule.todo = join_todos([schedule.todo, "cards were not returned; subscription contents are unknown"])
+        for card in schedule.cards or []:
+            if card.get("download_perms") in {"limited", "none"}:
+                schedule.todo = join_todos([schedule.todo, f"card {card.get('id')}: download permissions are {card['download_perms']}; verify attachment coverage"])
+        dashboard = store.get_json(f"dashboards/{did}.json") if type(did) is int and store.exists(f"dashboards/{did}.json") else {}
+        _pulse_parameters(schedule, dashboard, pulse)
+        for i, c in enumerate(pulse.get("channels") or []):
+            details = c.get("details") if isinstance(c.get("details"), dict) else {}
+            reasons = ["scheduling timezone is not verified in this export; configure before delivery"]
+            if c.get("recipients") is None:
+                reasons.append("recipients were not returned; do not treat this as an empty delivery list")
+            if c.get("enabled") is None:
+                reasons.append("channel enabled state is unknown")
+            if c.get("details") is not None and not isinstance(c["details"], dict):
+                reasons.append("unsupported channel details shape retained")
+            if c.get("channel_type") != "email":
+                reasons.append("unsupported delivery channel; configure destination in the external orchestrator")
+            cadence_type, frame, day = c.get("schedule_type"), c.get("schedule_frame"), c.get("schedule_day")
+            if not isinstance(cadence_type, str) or cadence_type not in {"hourly", "daily", "weekly", "monthly"}:
+                reasons.append("unsupported cadence retained; translate before delivery")
+            if frame is not None and (not isinstance(frame, str) or frame not in {"first", "mid", "last"}):
+                reasons.append("unsupported schedule frame retained")
+            if day is not None and (not isinstance(day, str) or day not in {"sun", "mon", "tue", "wed", "thu", "fri", "sat"}):
+                reasons.append("unsupported schedule day retained")
+            hour = c.get("schedule_hour")
+            if hour is not None and (type(hour) is not int or not 0 <= hour <= 23):
+                reasons.append("unsupported schedule hour retained")
+            reasons += [f"details.{key}: unsupported source setting retained" for key in sorted(details.keys() - _PULSE_DETAILS)]
+            channel = ScheduleChannel(
+                type=c.get("channel_type") or "unknown", source_ref=f"metabase:pulse-channel/{c['id']}" if c.get("id") else f"metabase:pulse/{pid}/channel/{i + 1}",
+                enabled=c.get("enabled"), cadence={k.removeprefix("schedule_"): c[k] for k in ("schedule_type", "schedule_day", "schedule_hour", "schedule_frame") if k in c},
+                recipients=c.get("recipients"), details=details,
+                source_config={k: v for k, v in c.items() if k not in {"recipients", "details"}}, todo=join_todos(reasons),
+            )
+            schedule.channels.append(channel)
+            if c.get("details") is not None and not isinstance(c["details"], dict):
+                channel.source_config["unsupported_details"] = c["details"]
+        if not schedule.channels:
+            schedule.todo = join_todos([schedule.todo, "no channels returned; delivery configuration is unknown"])
+        bundle.schedules.append(schedule)

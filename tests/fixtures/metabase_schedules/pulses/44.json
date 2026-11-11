@@ -1,0 +1,26 @@
+{
+  "id": 44,
+  "name": "Archived unsupported cadence example",
+  "dashboard_id": 2,
+  "archived": true,
+  "skip_if_empty": false,
+  "parameters": [],
+  "cards": [],
+  "channels": [
+    {
+      "id": 11,
+      "channel_type": "http",
+      "channel_id": 13,
+      "enabled": false,
+      "schedule_type": "business-days",
+      "schedule_hour": 9,
+      "schedule_frame": "custom",
+      "schedule_calendar": "example-calendar",
+      "recipients": [],
+      "details": {
+        "include_pdf": false,
+        "delivery_window_minutes": 15
+      }
+    }
+  ]
+}

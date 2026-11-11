@@ -320,14 +320,21 @@ def _setup(local_db: str) -> list[str]:
     ]
 
 
-def build_notebook(d: Dashboard, tool: str, local_db: str = "") -> dict:
-    """The notebook as an nbformat 4 dict, cell sources as plain strings. `local_db`: see _setup."""
+def parameter_names(d: Dashboard) -> dict[str, str]:
+    """SQL filter bind -> Python parameter name, shared with delivery specifications."""
     used = set(RESERVED)
     params: dict[str, str] = {}  # filter name (the :bind in SQL) -> Python variable in the parameters cell
     for f in d.filters:
         ok = f.name.isidentifier() and not keyword.iskeyword(f.name) and f.name not in used
         params[f.name] = f.name if ok else _ident(f.name, used)
         used.add(params[f.name])
+    return params
+
+
+def build_notebook(d: Dashboard, tool: str, local_db: str = "") -> dict:
+    """The notebook as an nbformat 4 dict, cell sources as plain strings. `local_db`: see _setup."""
+    params = parameter_names(d)
+    used = set(RESERVED) | set(params.values())
     lines = ["# Dashboard filters, bound as :name in the tile SQL."]
     for f in d.filters:
         if f.default is not None and not any(re.search(rf"(?<!:):{re.escape(f.name)}\b", t.sql or "") for t in d.tiles):

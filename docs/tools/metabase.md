@@ -40,6 +40,7 @@ Reads everything through the API and writes the repo. Nothing changes in Metabas
 | Models | `queries/` plus a semantic model |
 | Dashboards | Notebooks, one tile per card (`notebooks/`) |
 | Dashboard filters | Notebook parameters |
+| Dashboard subscriptions | Delivery specifications (`schedules/`), one YAML file per subscription |
 | Groups, data and collection permissions | Cedar policies (`policies/`) |
 | Collections | Where each item lived (`knowledge/`) |
 
@@ -47,6 +48,32 @@ In dbt projects, duplicate dimension labels within a MetricFlow semantic model a
 the first keeps its label, and later duplicates gain the dimension name, such as `User ID (name)`.
 Existing labels and unlabelled dimensions' names are reserved; a numeric suffix is added if needed.
 Dimension names, SQL and source metadata are preserved.
+
+## Dashboard subscriptions
+
+Extraction reads active and archived subscriptions through `GET /api/pulse`, using the endpoint's
+default visibility scope. With `--only dashboard:<id>` or a collection selection, requests are limited
+to the selected dashboards. A card-only selection does not request all subscriptions.
+
+Each `schedules/metabase-pulse-<id>.yml` references the migrated notebook and preserves independent
+channel schedules, enabled states, visible recipients, PDF/email settings, and each card's CSV/XLS
+attachment and formatting flags. Filter overrides map by Metabase parameter ID to the notebook's
+unique Python parameter names, including reserved names (`engine` becomes `tile_engine`) and date/numeric
+ranges. Original parameter IDs and SQL filter names remain alongside them.
+`[paths].schedules` and `[paths].notebooks` control output locations; reruns preserve hand edits.
+If a notebook is kept because it was edited or is unmanaged, schedule bindings remain unresolved
+until you reconcile its parameter names and defaults. Original override values remain in the YAML.
+
+These files describe delivery intent. An external orchestrator must execute notebooks, render attachments,
+apply `skip_if_empty`, and deliver results. unshackle does not create jobs or send messages. Unknown
+timezone, unsupported filters/channels/settings, missing notebook references, and restricted attachment
+permissions remain `TODO(unshackle)` items. No timezone or cron expression is guessed.
+
+Recipient lists contain only what the API returns. Non-admin, sandboxed or tenant-scoped callers may see
+fewer subscriptions or recipients; omitted lists remain unknown, not empty. Completeness is explicitly
+unknown even after a successful empty response. Previously exported subscriptions absent from a later
+visible list are retained with a stale-data TODO. Review them before using an external scheduler.
+The export keeps destination addresses but excludes connection credentials and delivery URLs.
 
 ## What needs finishing
 

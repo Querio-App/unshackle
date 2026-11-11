@@ -8,6 +8,11 @@
 
 - `verify` skips empty and comment-only parity YAML files. Malformed YAML and nonmapping
   cases are reported as `not checked`, and remaining valid cases still run and write evals.
+- Export Metabase dashboard subscriptions to `schedules/` YAML, preserving each channel's cadence,
+  enabled state, visible recipients and delivery details, card attachment flags, and parameter IDs.
+  Unresolved filters, timezone and visibility limits stay explicit TODOs. This exports delivery intent;
+  it does not install a scheduler or send messages.
+
 - Fix duplicate MetricFlow dimension labels within a semantic model, including joined Metabase model
   fields. Conflicting labels gain the dimension name and, when needed, a numeric suffix so dbt parse
   accepts them without changing dimension names, SQL or source metadata.

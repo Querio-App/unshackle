@@ -1,0 +1,97 @@
+{
+  "id": 2,
+  "name": "Client reporting",
+  "parameters": [
+    {
+      "id": "region-a",
+      "name": "Client region",
+      "slug": "Client region",
+      "type": "category",
+      "default": [
+        "West"
+      ]
+    },
+    {
+      "id": "region-b",
+      "name": "Client-region",
+      "slug": "Client-region",
+      "type": "category",
+      "default": [
+        "East"
+      ]
+    },
+    {
+      "id": "dates",
+      "name": "Ordered",
+      "slug": "ordered",
+      "type": "date/all-options",
+      "default": "2026-01"
+    },
+    {
+      "id": "date-name-clash",
+      "name": "Ordered from",
+      "slug": "ordered_from",
+      "type": "category",
+      "default": [
+        "source"
+      ]
+    },
+    {
+      "id": "quantity",
+      "name": "Quantity",
+      "slug": "quantity",
+      "type": "number/between",
+      "default": [
+        1,
+        20
+      ]
+    },
+    {
+      "id": "range-name-clash",
+      "name": "Quantity min",
+      "slug": "quantity_min",
+      "type": "number/=",
+      "default": [
+        0
+      ]
+    }
+  ],
+  "dashcards": [
+    {
+      "id": 100,
+      "card_id": 10,
+      "parameter_mappings": [
+        {
+          "parameter_id": "region-a",
+          "card_id": 10,
+          "target": [
+            "dimension",
+            [
+              "field",
+              20,
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "card_id": 10,
+      "parameter_mappings": [
+        {
+          "parameter_id": "region-b",
+          "card_id": 10,
+          "target": [
+            "dimension",
+            [
+              "field",
+              20,
+              null
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

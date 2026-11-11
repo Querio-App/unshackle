@@ -56,9 +56,30 @@ Raw files under `migration/raw/metabase/`:
 | `permissions/groups.json`, `graph.json`, `collections.json` | `GET /api/permissions/group`, `/api/permissions/graph`, `/api/collection/graph` |
 | `permissions/gtap.json` | `GET /api/mt/gtap` (paid plans only) |
 | `paid_features.json` | paid endpoints that weren't available, with the HTTP error |
+| `pulses/<id>.json` | safe subscription projection from `GET /api/pulse` for active and archived subscriptions; channel details and per-card attachment flags retained |
+| `_pulses.json` | request scope/status, unknown completeness, fetched IDs and retained potentially stale IDs |
 | `_errors.json` | failures (a card Metabase can't compile, for example) |
 
 Fingerprints, creator/editor details and database connection details are dropped.
+Subscriptions use a separate safe projection because the generic cleaner drops `details`.
+
+## Subscription delivery specifications
+
+`schedules/metabase-pulse-<id>.yml` keeps one subscription with all its channels. Each channel retains
+its own cadence, enabled state, visible recipients and details; cards retain CSV/XLS, formatted-row
+and pivot flags. Parameter overrides use the shared parameter ID-to-name mapping and range expansion.
+Unsupported overrides retain their original values and TODOs instead of becoming executable parameters.
+
+Only the default Pulse visibility scope is requested. There is no recipient-union query or permission
+discovery subsystem. API failures do not stop the rest of the migration. Earlier subscriptions missing
+from a later visible list are retained and marked potentially stale; an empty or limited response is
+never proof that no subscriptions or recipients exist. Missing lists remain unknown, distinct from `[]`.
+
+Timezone is not inferred from report settings or the machine running the migration. Unverified timezone,
+unsupported delivery types/settings, limited attachments and missing notebook references remain TODOs.
+Configure an external orchestrator to execute notebooks, apply empty-result behavior, render attachments
+and deliver results. This feature adds GET reads only: never invoke Pulse send/test endpoints or create jobs.
+Destination addresses are preserved intentionally; credentials and delivery URLs are omitted.
 
 Dashboard filters are identified by Metabase parameter ID. Bind names start from the normalized slug;
 collisions get deterministic numeric suffixes, including collisions with expanded `_from` / `_to` and
