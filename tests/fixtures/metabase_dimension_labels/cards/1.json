@@ -1,0 +1,20 @@
+{
+  "id": 1,
+  "name": "Orders model",
+  "type": "model",
+  "metabase_version": "v0.65.3",
+  "dataset_query": {
+    "type": "native",
+    "native": {
+      "query": "SELECT o.id, o.user_id, o.product_id, o.created_at, p.name, pr.title FROM orders o LEFT JOIN people p ON o.user_id = p.id LEFT JOIN products pr ON o.product_id = pr.id"
+    }
+  },
+  "result_metadata": [
+    {"name": "id", "display_name": "ID", "base_type": "type/Integer", "semantic_type": "type/PK"},
+    {"name": "user_id", "display_name": "User ID", "base_type": "type/Integer", "description": "The user who made this order."},
+    {"name": "product_id", "display_name": "Product ID", "base_type": "type/Integer"},
+    {"name": "created_at", "display_name": "Created At", "base_type": "type/DateTime"},
+    {"name": "name", "display_name": "User ID", "base_type": "type/Text", "description": "The name of the user who owns an account."},
+    {"name": "title", "display_name": "Product ID", "base_type": "type/Text", "description": "The name of the product as displayed to customers."}
+  ]
+}

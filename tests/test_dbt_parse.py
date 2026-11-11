@@ -8,11 +8,14 @@ import os
 import re
 import shutil
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
+import yaml
 
 from unshackle import build
+from unshackle.ir import Measure, Metric
 from unshackle.raw import RawStore
 from unshackle.sources import TOOLS, get_source
 
@@ -56,6 +59,26 @@ def test_dbt_parse(tool: str, tmp_path: Path):
 @needs_dbt
 def test_dbt_parse_two_tools_one_repo(tmp_path: Path):
     _parse(_dbt_repo(tmp_path, "multi", ["lightdash", "looker", "tableau"]))
+
+
+@needs_dbt
+def test_dbt_parse_metabase_duplicate_dimension_labels(tmp_path: Path):
+    repo = _dbt_repo(tmp_path, "dimension_labels", [])
+    shutil.copytree(FIXTURES / "metabase_dimension_labels", repo / "migration/raw/metabase")
+    bundle = get_source("metabase").parse(RawStore(repo, "metabase"))
+    # dbt skips semantic validation entirely when a project has no metrics.
+    bundle.semantic_models[0].measures.append(Measure("order_count", "count", "id"))
+    bundle.metrics.append(Metric("order_count", measure="order_count", semantic_model="orders_model"))
+    original = deepcopy(bundle)
+    build.apply(bundle, repo)
+    assert bundle.semantic_models == original.semantic_models
+    assert bundle.queries == original.queries
+    _parse(repo)
+    model = yaml.safe_load((repo / "models/semantic/orders_model.yml").read_text())["semantic_models"][0]
+    assert {d["name"]: d["label"] for d in model["dimensions"]} == {
+        "id": "ID", "user_id": "User ID", "product_id": "Product ID", "created_at": "Created At",
+        "name": "User ID (name)", "title": "Product ID (title)",
+    }
 
 
 @needs_dbt

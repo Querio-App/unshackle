@@ -42,6 +42,11 @@ Reads everything through the API and writes the repo. Nothing changes in Metabas
 | Groups, data and collection permissions | Cedar policies (`policies/`) |
 | Collections | Where each item lived (`knowledge/`) |
 
+In dbt projects, duplicate dimension labels within a MetricFlow semantic model are disambiguated:
+the first keeps its label, and later duplicates gain the dimension name, such as `User ID (name)`.
+Existing labels and unlabelled dimensions' names are reserved; a numeric suffix is added if needed.
+Dimension names, SQL and source metadata are preserved.
+
 ## What needs finishing
 
 - **Custom-expression metrics** (`sum(a) / sum(b)`, `count-where`, cumulative): split into simple measures and a ratio.

@@ -4,6 +4,9 @@
 
 - `verify` skips empty and comment-only parity YAML files. Malformed YAML and nonmapping
   cases are reported as `not checked`, and remaining valid cases still run and write evals.
+- Fix duplicate MetricFlow dimension labels within a semantic model, including joined Metabase model
+  fields. Conflicting labels gain the dimension name and, when needed, a numeric suffix so dbt parse
+  accepts them without changing dimension names, SQL or source metadata.
 
 ## 0.1.0 (2026-10-27)
 
