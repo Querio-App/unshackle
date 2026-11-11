@@ -49,7 +49,8 @@ Raw files under `migration/raw/metabase/`:
 | `cards/<id>.json` | `GET /api/card/{id}` - `type` (question / model / metric), `display`, `dataset_query`, `visualization_settings`, `result_metadata`, `view_count` |
 | `cards/<id>.sql` | `POST /api/dataset/native` (pretty) for query-builder cards |
 | `dashboards/<id>.json` | `GET /api/dashboard/{id}` - dashcards (24-column grid), `parameters`, `tabs`, `view_count` |
-| `dashboards/<id>/<dashcard>.sql` | the card compiled with the dashboard's filters set to sentinels: text `'unshackle__<slug>'`, numbers `-901234.5` (+ the filter's position; `between` also `901234.5`), dates `1901-02-03~1901-04-05` (year 1901 + position); the time-grouping filter with its default |
+| `dashboards/<id>/parameter-names.json` | Metabase parameter ID -> unique probe name; shared allocation for extract and build, including date/range suffixes |
+| `dashboards/<id>/<dashcard>.sql` | the card compiled with the dashboard's filters set to sentinels: text `'unshackle__<unique name>'`, numbers `-901234.5` (+ the filter's position; `between` also `901234.5`), dates `1901-02-03~1901-04-05` (year 1901 + position); the time-grouping filter with its default |
 | `databases/<id>.json` | `GET /api/database/{id}/metadata` (connection details removed) |
 | `snippets.json` | `GET /api/native-query-snippet` |
 | `permissions/groups.json`, `graph.json`, `collections.json` | `GET /api/permissions/group`, `/api/permissions/graph`, `/api/collection/graph` |
@@ -58,6 +59,13 @@ Raw files under `migration/raw/metabase/`:
 | `_errors.json` | failures (a card Metabase can't compile, for example) |
 
 Fingerprints, creator/editor details and database connection details are dropped.
+
+Dashboard filters are identified by Metabase parameter ID. Bind names start from the normalized slug;
+collisions get deterministic numeric suffixes, including collisions with expanded `_from` / `_to` and
+`_min` / `_max` names. Defaults and tile mappings follow the ID. Older exports without
+`parameter-names.json` still build when the sentinels are unambiguous on each tile. If several mapped
+parameters share an old text sentinel, the tile keeps its SQL and a TODO: re-run
+`unshackle extract metabase --only dashboard:<id>`, then `unshackle build metabase`.
 
 ## What is deterministic
 

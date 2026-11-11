@@ -352,6 +352,10 @@ COMPILED = {
 def test_dashboard_filters_bind_what_metabase_compiles():
     for case, (t, i, compiled, bound) in COMPILED.items():
         assert _bind_filter(f"WHERE {compiled}", t, "p", i) == (f"WHERE {bound}", "bound"), case
+        # Older exports can retain the original probe name after collision-safe output names change.
+        assert _bind_filter(f"WHERE {compiled}", t, "p_2", i, probe_bind="p") == (
+            f"WHERE {bound.replace(':p', ':p_2')}", "bound",
+        ), case
     # timestamptz compiles in the report time zone; CAST(... AS date) would use the session's, so it stays a TODO
     tz = '"o"."t" >= timestamp with time zone \'1901-02-03 00:00:00.000 +00:00\' AND "o"."t" < timestamp with time zone \'1901-04-06 00:00:00.000 +00:00\''
     assert _bind_filter(tz, "date/range", "p", 0) == (tz, "unbound")

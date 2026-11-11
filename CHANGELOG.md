@@ -7,6 +7,9 @@
 - Fix duplicate MetricFlow dimension labels within a semantic model, including joined Metabase model
   fields. Conflicting labels gain the dimension name and, when needed, a numeric suffix so dbt parse
   accepts them without changing dimension names, SQL or source metadata.
+- Metabase dashboard filters with duplicate or normalized-colliding slugs keep distinct parameter IDs,
+  defaults and SQL binds, including date/range expansions and existing numeric suffixes. Older exports
+  with ambiguous text sentinels retain a TODO to re-extract instead of guessing the bindings.
 
 ## 0.1.0 (2026-10-27)
 

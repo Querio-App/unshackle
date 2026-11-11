@@ -8,9 +8,10 @@ Raw layout under migration/raw/metabase/:
                                  MBQL 5 `stages` since v0.57, MBQL 4 `query`/`native` before; both are read)
   cards/<id>.sql                 POST /api/dataset/native (pretty) for query-builder cards: the SQL Metabase runs
   dashboards/<id>.json           GET /api/dashboard/{id}   dashcards (24-column grid), parameters, tabs, view_count
+  dashboards/<id>/parameter-names.json  parameter ID -> unique probe name (absent in older exports)
   dashboards/<id>/<dashcard>.sql the card's query compiled with the dashboard's filters set to sentinels
-                                 ('unshackle__<slug>', -901234.5, 1901-02-03~1901-04-05; see _probe), so parse()
-                                 can bind them as :<slug> (:<slug>_from / _to, _min / _max)
+                                 ('unshackle__<unique name>', -901234.5, 1901-02-03~1901-04-05; see _probe), so parse()
+                                 can bind them as :<name> (:<name>_from / _to, _min / _max)
   databases/<id>.json            GET /api/database/{id}/metadata (connection details removed): tables, fields,
                                  PK/FK semantic types, display names, descriptions
   snippets.json                  GET /api/native-query-snippet
@@ -148,7 +149,7 @@ def _bind(name: str) -> str:
 def _probe(p: dict[str, Any], i: int, bind: str) -> Any:
     """The value extract compiles dashboard filter number `i` with, so parse() can find it in the SQL (None: not bound).
 
-    Text gets 'unshackle__<slug>', numbers -(901234.5 + i) (and +(901234.5 + i) as the upper bound of `between`),
+    Text gets 'unshackle__<unique name>', numbers -(901234.5 + i) (and +(901234.5 + i) as the upper bound of `between`),
     dates the range {1901 + i}-02-03~{1901 + i}-04-05. The time-grouping filter compiles with its default unit.
     """
     t = str(p.get("type") or "")
@@ -211,20 +212,46 @@ def _filter_binds(p: dict[str, Any], bind: str) -> list[tuple[str, Any, str]]:
     return [(bind, default, kind)]
 
 
+def _parameter_names(params: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Parameter ID -> unique bind base, shared by extract and offline parse.
+
+    Allocate in dashboard parameter order, reserving both bases and expanded date/range binds.
+    Generated suffixes also avoid original names, so a duplicate `country` cannot take `country_2`.
+    `_filter_binds(params[pid], names[pid])` gives the emitted names and defaults for each ID.
+    """
+    bases = {pid: _bind(p.get("slug") or p.get("name") or pid) for pid, p in params.items()}
+
+    def occupied(pid: str, base: str) -> set[str]:
+        return {base, *(n for n, _, _ in _filter_binds(params[pid], base))}
+
+    reserved = {n for pid, base in bases.items() for n in occupied(pid, base)}
+    used: set[str] = set()
+    names = {}
+    for pid, base in bases.items():
+        name, suffix = base, 2
+        while occupied(pid, name) & used or (name != base and occupied(pid, name) & reserved):
+            name, suffix = f"{base}_{suffix}", suffix + 1
+        names[pid] = name
+        used.update(occupied(pid, name))
+    return names
+
+
 def _range(col: str, lo: str, hi: str, cast: bool = False) -> str:
     """`col` between :lo and :hi (inclusive), either bound empty meaning open; `cast` compares the upper bound by day."""
     upper = f"CAST({col} AS date)" if cast else col
     return f"(({col} >= {lo} OR {lo} IS NULL) AND ({upper} <= {hi} OR {hi} IS NULL))"
 
 
-def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
+def _bind_filter(sql: str, t: str, bind: str, i: int, probe_bind: str | None = None) -> tuple[str, str]:
     """Replace the predicate Metabase compiled for dashboard filter number `i` (see _probe) with :binds.
 
     Returns (sql, status): "bound", "unbound" (the sentinel is there in a shape unshackle doesn't know) or
     "absent". An empty parameter means no filter, as in Metabase. Each :bind is used in a comparison before
-    `:bind IS NULL`, so Postgres can tell its type.
+    `:bind IS NULL`, so Postgres can tell its type. `probe_bind` is the extracted text sentinel's name;
+    older exports used normalized slugs, which can differ from the unique output bind.
     """
     b = f":{bind}"
+    probe_bind = bind if probe_bind is None else probe_bind
     if t.startswith("date/"):
         y = PROBE_YEAR + i
         f, to = f"{y}-02-03", f"{y}-04-05"
@@ -246,10 +273,10 @@ def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
         else:
             out = _bind_compare(sql, t.split("/", 1)[1], lit, b, r"(?![\d.])")
     elif t in TEXT_PARAMS or t == "string/!=":
-        marker = f"'{SENTINEL}{bind}'"
+        marker = f"'{SENTINEL}{probe_bind}'"
         out = _bind_compare(sql, "=" if t != "string/!=" else "!=", re.escape(marker), b, "")
     elif t in STRING_OPS:  # Metabase writes LIKE with _ and % escaped; POSITION / RIGHT match the text exactly
-        marker = f"{SENTINEL}{bind}".replace("_", "\\_")
+        marker = f"{SENTINEL}{probe_bind}".replace("_", "\\_")
         like = re.escape(marker)
         pattern = {"string/contains": f"%{like}%", "string/does-not-contain": f"%{like}%",
                    "string/starts-with": f"{like}%", "string/ends-with": f"%{like}"}[t]
@@ -267,7 +294,9 @@ def _bind_filter(sql: str, t: str, bind: str, i: int) -> tuple[str, str]:
             out = pat.sub(lambda m: f"({test(m)} OR {b} IS NULL)", sql)
     else:
         return sql, "absent"
-    return (out, "bound") if out != sql else (sql, "unbound" if marker in sql else "absent")
+    if marker in out:
+        return out, "unbound"  # another mapping of the same parameter may still have an unsupported predicate
+    return out, "bound" if out != sql else "absent"
 
 
 def _bind_compare(sql: str, op: str, lit: str, b: str, end: str) -> str:
@@ -474,6 +503,8 @@ class MetabaseSource(Source):
 
         for did, d in dashboards.items():
             params = {p.get("id"): p for p in d.get("parameters") or []}
+            names = _parameter_names(params)
+            store.put_json(f"dashboards/{did}/parameter-names.json", names)
             for dc in d.get("dashcards") or []:
                 card = cards.get(dc.get("card_id")) or {}
                 dq = card.get("dataset_query") or {}
@@ -483,7 +514,7 @@ class MetabaseSource(Source):
                 for m in dc.get("parameter_mappings") or []:
                     pid = m.get("parameter_id")
                     p = params.get(pid, {})
-                    value = _probe(p, list(params).index(pid), _bind(p.get("slug") or p.get("name", ""))) if pid in params else None
+                    value = _probe(p, list(params).index(pid), names[pid]) if pid in params else None
                     if value is not None and _clause(m.get("target"))[0] == "dimension":
                         bound.append({"type": p["type"], "target": m["target"], "value": value,
                                       **({"options": p["options"]} if p.get("options") else {})})
@@ -832,7 +863,7 @@ class MetabaseSource(Source):
                              description=d.get("description") or "", datasource=b.datasource, source_ref=self._ref("dashboard", did),
                              url=f"{base}/dashboard/{did}" if base else "", views=d.get("view_count"))
             params = {p.get("id"): p for p in d.get("parameters") or []}
-            names = {pid: _bind(p.get("slug") or p.get("name") or pid) for pid, p in params.items()}
+            names = _parameter_names(params)
             base_of: dict[str, str] = {}  # notebook parameter -> the filter's slug
             for pid, p in params.items():
                 for name, default, kind in _filter_binds(p, names[pid]):
@@ -912,16 +943,36 @@ class MetabaseSource(Source):
             return sql.strip()  # notes (optional clauses left out) match what Metabase runs with these filters
         rel = f"dashboards/{d.get('id')}/{dc.get('id')}.sql"
         sql = self.store.get_text(rel) if self.store.exists(rel) else self._card_sql(dc["card_id"])
+        names_rel = f"dashboards/{d.get('id')}/parameter-names.json"
+        probe_names = self.store.get_json(names_rel) if self.store.exists(names_rel) else None
+        legacy_names = {pid: _bind(p.get("slug") or p.get("name", "")) for pid, p in params.items()}
+        # Old text probes were not unique. Only mappings on this tile can have contributed its sentinels.
+        legacy_ids: dict[str, set[str]] = {}
+        if probe_names is None:
+            for m in mappings:
+                pid = m.get("parameter_id")
+                t = params.get(pid, {}).get("type")
+                if t in TEXT_PARAMS or t in STRING_OPS:
+                    legacy_ids.setdefault(legacy_names[pid], set()).add(pid)
+        seen: set[str] = set()
         for m in mappings:
             pid = m.get("parameter_id")
+            if pid in seen:
+                continue  # _bind_filter replaces every occurrence, including mappings to several fields
+            seen.add(pid)
             p = params.get(pid, {})
             t, bind = str(p.get("type") or ""), names.get(pid, "")
             binds = ", ".join(f":{n}" for n, _, _ in _filter_binds(p, bind))
+            probe_name = (probe_names if probe_names is not None else legacy_names).get(pid, "")
+            if probe_names is None and len(legacy_ids.get(probe_name, set())) > 1 and (t in TEXT_PARAMS or t in STRING_OPS):
+                todos.append(f"dashboard filter {bind} (parameter ID {pid}) has an ambiguous sentinel in this older export; "
+                             "re-run extract with the current unshackle to recover distinct parameter bindings")
+                continue
             if t == "temporal-unit":
                 unit = p.get("default") or "the card's own unit"
                 todos.append(f"dashboard filter {bind} (time grouping) is fixed at {unit} in the SQL; Metabase lets viewers change the unit")
                 continue
-            sql, status = _bind_filter(sql, t, bind, list(params).index(pid) if pid in params else -1)
+            sql, status = _bind_filter(sql, t, bind, list(params).index(pid) if pid in params else -1, probe_name)
             if status == "bound" and t.startswith("date/") and p.get("default") not in (None, []) and not _date_bounds(p["default"]):
                 todos.append(f"dashboard filter {bind} defaults to {p['default']!r} in Metabase, which isn't a fixed range of days "
                              f"(relative dates are computed when the dashboard loads); set {binds}")
