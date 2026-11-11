@@ -1,0 +1,42 @@
+{
+  "id": 17,
+  "name": "Filter collisions",
+  "parameters": [
+    {"id": "origin", "slug": "country", "type": "string/=", "default": ["USA"]},
+    {"id": "destination", "slug": "country", "type": "string/=", "default": ["MEX"]},
+    {"id": "suffixed", "slug": "country_2", "type": "string/=", "default": ["CAN"]},
+    {"id": "normalized", "slug": "Country", "type": "string/=", "default": ["FRA"]},
+    {"id": "date", "slug": "purchased", "type": "date/range", "default": "2025-01-01~2025-01-31"},
+    {"id": "date_from", "slug": "purchased_from", "type": "string/=", "default": ["custom"]},
+    {"id": "range", "slug": "quantity", "type": "number/between", "default": [5, 15]},
+    {"id": "range_min", "slug": "quantity_min", "type": "string/=", "default": ["small"]},
+    {"id": "other_date", "slug": "purchased", "type": "date/range", "default": "2026-02-01~2026-02-28"},
+    {"id": "other_range", "slug": "quantity", "type": "number/between", "default": [20, 30]},
+    {"id": "unused", "slug": "unmapped", "type": "string/=", "default": ["keep this TODO"]}
+  ],
+  "dashcards": [
+    {"id": 101, "card_id": 1, "parameter_mappings": [
+      {"parameter_id": "origin", "target": ["variable", ["template-tag", "origin"]]},
+      {"parameter_id": "destination", "target": ["variable", ["template-tag", "destination"]]},
+      {"parameter_id": "suffixed", "target": ["variable", ["template-tag", "suffixed"]]},
+      {"parameter_id": "normalized", "target": ["variable", ["template-tag", "normalized"]]}
+    ]},
+    {"id": 102, "card_id": 2, "parameter_mappings": [
+      {"parameter_id": "origin", "target": ["dimension", ["field", 1, null]]},
+      {"parameter_id": "destination", "target": ["dimension", ["field", 2, null]]},
+      {"parameter_id": "suffixed", "target": ["dimension", ["field", 3, null]]},
+      {"parameter_id": "normalized", "target": ["dimension", ["field", 4, null]]},
+      {"parameter_id": "date", "target": ["dimension", ["field", 5, null]]},
+      {"parameter_id": "date_from", "target": ["dimension", ["field", 6, null]]},
+      {"parameter_id": "range", "target": ["dimension", ["field", 7, null]]},
+      {"parameter_id": "range_min", "target": ["dimension", ["field", 8, null]]},
+      {"parameter_id": "other_date", "target": ["dimension", ["field", 9, null]]},
+      {"parameter_id": "other_range", "target": ["dimension", ["field", 10, null]]}
+    ]},
+    {"id": 103, "card_id": 2, "parameter_mappings": [
+      {"parameter_id": "destination", "target": ["dimension", ["field", 2, null]]},
+      {"parameter_id": "other_date", "target": ["dimension", ["field", 9, null]]},
+      {"parameter_id": "other_range", "target": ["dimension", ["field", 10, null]]}
+    ]}
+  ]
+}
