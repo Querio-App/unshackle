@@ -1396,7 +1396,12 @@ def _pulse_parameters(schedule: Schedule, dashboard: dict[str, Any], pulse: dict
     raw_params = dashboard.get("parameters") or []
     params = {p["id"]: p for p in raw_params if isinstance(p, dict) and isinstance(p.get("id"), str)}
     names = _parameter_names(params)
-    overrides = pulse.get("parameters") or []
+    overrides = pulse.get("parameters")
+    if overrides is None:
+        return
+    if not isinstance(overrides, list):
+        schedule.todo = join_todos([schedule.todo, "invalid parameters container retained; expected a list of parameter overrides"])
+        return
     for index, override in enumerate(overrides):
         if not isinstance(override, dict):
             schedule.todo = join_todos([schedule.todo, "invalid source parameter retained; resolve before execution"])
@@ -1406,7 +1411,9 @@ def _pulse_parameters(schedule: Schedule, dashboard: dict[str, Any], pulse: dict
         if "value" in override:
             binding["value"] = override["value"]
         reason = ""
-        if any(t.startswith(f"pulse.parameters[{index}]") for t in pulse.get("_projection_todos", [])):
+        if not isinstance(pid, str) or not pid:
+            reason = "invalid source parameter ID; expected a nonempty string"
+        elif any(t.startswith(f"pulse.parameters[{index}]") for t in pulse.get("_projection_todos", [])):
             reason = "source parameter contained omitted credentials; supply a safe value explicitly"
         elif pid not in params:
             reason = "no matching dashboard parameter ID"
@@ -1491,11 +1498,12 @@ def _parse_pulses(bundle: Bundle, store: RawStore) -> None:
                 reasons.append("unsupported channel details shape retained")
             if c.get("channel_type") != "email":
                 reasons.append("unsupported delivery channel; configure destination in the external orchestrator")
-            if c.get("schedule_type") not in {"hourly", "daily", "weekly", "monthly"}:
+            cadence_type, frame, day = c.get("schedule_type"), c.get("schedule_frame"), c.get("schedule_day")
+            if not isinstance(cadence_type, str) or cadence_type not in {"hourly", "daily", "weekly", "monthly"}:
                 reasons.append("unsupported cadence retained; translate before delivery")
-            if c.get("schedule_frame") not in {None, "first", "mid", "last"}:
+            if frame is not None and (not isinstance(frame, str) or frame not in {"first", "mid", "last"}):
                 reasons.append("unsupported schedule frame retained")
-            if c.get("schedule_day") not in {None, "sun", "mon", "tue", "wed", "thu", "fri", "sat"}:
+            if day is not None and (not isinstance(day, str) or day not in {"sun", "mon", "tue", "wed", "thu", "fri", "sat"}):
                 reasons.append("unsupported schedule day retained")
             hour = c.get("schedule_hour")
             if hour is not None and (type(hour) is not int or not 0 <= hour <= 23):

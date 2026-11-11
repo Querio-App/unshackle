@@ -66,17 +66,24 @@ def render_all(bundle: Bundle, target: Target) -> dict[str, tuple[str, bool]]:
         out[rel] = (content, True)
     notebook_docs = notebooks.notebook_files(bundle, layout)
     notebook_paths = {}
+    kept_notebooks = set()
     for dashboard, (rel, content) in zip(bundle.dashboards, notebook_docs.items()):
         owner = target.lock.owners.get(rel)
         notebook_paths[dashboard.source_ref] = (
             target._rename_for_tool(rel) if owner and owner != bundle.tool and target.read(rel) != content else rel
         )
+        actual_rel = notebook_paths[dashboard.source_ref]
+        current = target.read(actual_rel)
+        if current is not None and current != content and (
+            target.lock.is_hand_edited(actual_rel, current) or actual_rel not in target.lock.files
+        ):
+            kept_notebooks.add(actual_rel)
     for group in (
         tf.knowledge_files(bundle, layout),
         tf.query_files(bundle, layout),
         notebook_docs,
         policies.policy_files(bundle, layout),
-        schedules.render(bundle, layout, notebook_paths),
+        schedules.render(bundle, layout, notebook_paths, kept_notebooks),
     ):
         for rel, content in group.items():
             out[rel] = (content, False)

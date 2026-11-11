@@ -9,7 +9,7 @@ from unshackle.target.notebooks import parameter_names
 from unshackle.target.semantic import dump_yaml
 
 
-def render(bundle: Bundle, layout: Layout, notebook_paths: dict[str, str]) -> dict[str, str]:
+def render(bundle: Bundle, layout: Layout, notebook_paths: dict[str, str], kept_notebooks: set[str]) -> dict[str, str]:
     files = {}
     for schedule in bundle.schedules:
         doc = asdict(schedule)
@@ -20,6 +20,14 @@ def render(bundle: Bundle, layout: Layout, notebook_paths: dict[str, str]) -> di
         doc["parameters"] = {names[k]: v for k, v in schedule.parameters.items() if k in names}
         for binding in doc["parameter_bindings"]:
             binding["notebook_names"] = [names[n] for n in binding["filter_names"] if n in names]
+        if doc["notebook"] in kept_notebooks:
+            reason = "kept notebook has hand edits or unmanaged content; reconcile parameter names and defaults before delivery"
+            doc["todo"] = join_todos([doc["todo"], reason])
+            doc["parameters"] = {}
+            for binding in doc["parameter_bindings"]:
+                binding["status"] = "unresolved"
+                binding["notebook_names"] = []
+                binding["todo"] = join_todos([binding.get("todo", ""), reason])
         if not doc["notebook"]:
             doc["todo"] = join_todos([doc["todo"], "source dashboard has no migrated notebook; resolve its reference"])
         reasons = todo_reasons(doc["todo"])

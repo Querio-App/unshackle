@@ -61,6 +61,8 @@ attachment and formatting flags. Filter overrides map by Metabase parameter ID t
 unique Python parameter names, including reserved names (`engine` becomes `tile_engine`) and date/numeric
 ranges. Original parameter IDs and SQL filter names remain alongside them.
 `[paths].schedules` and `[paths].notebooks` control output locations; reruns preserve hand edits.
+If a notebook is kept because it was edited or is unmanaged, schedule bindings remain unresolved
+until you reconcile its parameter names and defaults. Original override values remain in the YAML.
 
 These files describe delivery intent. An external orchestrator must execute notebooks, render attachments,
 apply `skip_if_empty`, and deliver results. unshackle does not create jobs or send messages. Unknown

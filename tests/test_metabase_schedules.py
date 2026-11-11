@@ -258,3 +258,85 @@ def test_schedule_comments_are_single_line_even_with_source_newlines(tmp_path):
     build.apply(bundle, tmp_path)
     doc = yaml.safe_load((tmp_path / "schedules/metabase-pulse-42.yml").read_text())
     assert doc["channels"][0]["source_ref"] == "channel\ninvalid: ["
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
+    store, _ = parse(tmp_path)
+    raw = store.get_json("dashboards/2.json")
+    raw["parameters"] = [{"id": "region-a", "slug": "engine", "type": "category", "default": ["West"]}]
+    store.put_json("dashboards/2.json", raw)
+    pulse = store.get_json("pulses/42.json")
+    pulse["parameters"] = [{"id": "region-a", "value": ["West"]}]
+    store.put_json("pulses/42.json", pulse)
+    bundle = MetabaseSource().parse(store)
+    bundle.dashboards[0].tiles = [Tile("result", kind="table", sql="SELECT :engine AS region")]
+    build.apply(bundle, tmp_path)
+    notebook = tmp_path / "notebooks/client-reporting.ipynb"
+    manual = notebook.read_text().replace("tile_engine", "manual_engine")
+    notebook.write_text(manual)
+    pulse["parameters"][0]["value"] = ["East"]
+    store.put_json("pulses/42.json", pulse)
+    bundle = MetabaseSource().parse(store)
+    bundle.dashboards[0].tiles = [Tile("result", kind="table", sql="SELECT :engine AS region")]
+    result = build.apply(bundle, tmp_path, dry_run=dry_run)
+    assert "notebooks/client-reporting.ipynb" in result.writes.kept_hand_edits
+    assert notebook.read_text() == manual
+    if dry_run:
+        from unshackle.build import render_all
+        from unshackle.target.writer import Target
+
+        content = render_all(bundle, Target(tmp_path, dry_run=True, tool="metabase"))["schedules/metabase-pulse-42.yml"][0]
+    else:
+        content = (tmp_path / "schedules/metabase-pulse-42.yml").read_text()
+    doc = yaml.safe_load(content)
+    assert doc["parameters"] == {}
+    binding, = doc["parameter_bindings"]
+    assert binding["status"] == "unresolved" and binding["notebook_names"] == []
+    assert binding["value"] == ["East"] and binding["filter_names"] == ["engine"]
+    assert "kept notebook" in doc["todo"] and "reconcile" in binding["todo"]
+
+
+@pytest.mark.parametrize("value", [7, {}, "region-a", False])
+def test_malformed_parameters_container_is_retained_without_aborting_parse(tmp_path, value):
+    store, _ = parse(tmp_path)
+    pulse = store.get_json("pulses/42.json")
+    pulse["parameters"] = value
+    store.put_json("pulses/42.json", pulse)
+    bundle = MetabaseSource().parse(store)
+    first, limited, archived = bundle.schedules
+    assert first.parameters == {} and first.source_config["parameters"] == value
+    assert "parameters container" in first.todo
+    assert limited.source_ref == "metabase:pulse/43" and archived.source_ref == "metabase:pulse/44"
+
+
+@pytest.mark.parametrize("value", [["region-a"], {"id": "region-a"}, 7, None, ""])
+def test_malformed_parameter_id_is_retained_without_aborting_parse(tmp_path, value):
+    store, _ = parse(tmp_path)
+    pulse = store.get_json("pulses/42.json")
+    pulse["parameters"] = [{"id": value, "value": ["West"]}]
+    store.put_json("pulses/42.json", pulse)
+    bundle = MetabaseSource().parse(store)
+    first = bundle.schedules[0]
+    assert len(bundle.schedules) == 3 and first.parameters == {}
+    binding, = first.parameter_bindings
+    assert binding["source_id"] == value and binding["status"] == "unresolved"
+    assert "invalid source parameter ID" in binding["todo"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("schedule_day", ["mon"]), ("schedule_type", {"type": "daily"}),
+    ("schedule_frame", ["last"]), ("schedule_hour", {"hour": 9}),
+])
+def test_malformed_cadence_scalar_is_retained_without_aborting_parse(tmp_path, field, value):
+    store, _ = parse(tmp_path)
+    pulse = store.get_json("pulses/42.json")
+    pulse["channels"][0][field] = value
+    store.put_json("pulses/42.json", pulse)
+    bundle = MetabaseSource().parse(store)
+    assert len(bundle.schedules) == 3
+    channel = bundle.schedules[0].channels[0]
+    assert channel.cadence[field.removeprefix("schedule_")] == value
+    assert channel.source_config[field] == value and "unsupported" in channel.todo
+    build.apply(bundle, tmp_path)
+    assert (tmp_path / "schedules/metabase-pulse-44.yml").exists()
