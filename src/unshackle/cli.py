@@ -336,13 +336,17 @@ def todo(repo: Path) -> None:
 @REPO
 @click.option("--url", envvar="UNSHACKLE_WAREHOUSE_URL", default=None, help="SQLAlchemy URL of the warehouse.")
 @click.option("--init", "init_tool", type=click.Choice(sorted(TOOLS)), default=None,
-              help="Write a case for each saved view CSV of the tool that matches a tile, then stop.")
-def verify_cmd(repo: Path, url: str | None, init_tool: str | None) -> None:
+              help="Write parity cases from saved CSVs; Metabase captures missing dashboard baselines through its API.")
+@click.option("--only", multiple=True, help="Limit --init metabase to dashboard:<id> (repeatable).")
+def verify_cmd(repo: Path, url: str | None, init_tool: str | None, only: tuple[str, ...]) -> None:
     """Run migration/parity/*.yaml checks; passing ones become evals."""
+    if only and init_tool != "metabase":
+        raise click.UsageError("--only supports dashboard:<id> with --init metabase")
     if init_tool:
+        envfile.load(repo)
         try:
-            written, skipped = verify.init_cases(repo, init_tool)
-        except FileNotFoundError as exc:
+            written, skipped = verify.init_cases(repo, init_tool, only=set(only) or None)
+        except (FileNotFoundError, ValueError) as exc:
             raise click.ClickException(str(exc)) from None
         for path in written:
             click.echo(f"wrote {path.relative_to(repo)}")

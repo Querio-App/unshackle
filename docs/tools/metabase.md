@@ -17,7 +17,8 @@ pip install unshackle      # in a virtual environment; or: uv tool install unsha
 
 - Put the key in the **Administrators** group. In another group it only sees what that group sees, and permissions need admin.
 - API keys exist since Metabase v0.49. On older versions, upgrade first.
-- unshackle never runs queries on your warehouse. Metabase compiles each query-builder question to SQL.
+- Extraction asks Metabase to compile query-builder questions to SQL without running them.
+  Parity capture runs saved questions through Metabase to get baseline results.
 
 `unshackle check metabase --prompt` asks for these and saves them to `.env` (git-ignored); `unshackle check metabase` tests the connection.
 
@@ -65,7 +66,22 @@ Metabase is API only: there is no file import.
 
 ## Check the numbers
 
-Metabase's own results are the source side: download a question's or dashboard tile's results as CSV through the API (with filter values if needed), save it under `migration/parity/data/` and write a case in `migration/parity/`. Map display-name headers with `columns:`. Then run `unshackle verify`. See the [verify guide](../../skills/verify/SKILL.md).
+```bash
+unshackle build metabase
+unshackle verify --init metabase --only dashboard:2
+unshackle verify
+```
+
+Omit `--only` to capture all built dashboards, or repeat it for several dashboards.
+Initialization uses your Metabase credentials to export each supported card with its dashboard
+defaults. It saves CSVs and capture context under `migration/parity/data/`, then writes strict
+cases with display headers mapped to SQL columns and target filter values pinned.
+
+Existing cases and baselines are kept. A CSV can be reused without API access when its saved
+context still matches. Missing metadata, ambiguous headers, unsupported filter defaults, and
+notebooks whose SQL or parameter mapping differs from the build are reported as skips.
+For those cases, export the source results and write a case manually using the
+[verify guide](../../skills/verify/SKILL.md). `verify` needs your target warehouse connection.
 
 ## More
 
