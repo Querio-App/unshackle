@@ -247,9 +247,15 @@ def run_checks(repo: Path, url: str | None = None) -> list[ParityResult]:
     results: list[ParityResult] = []
     case_dir = repo / "migration" / "parity"
     for path in sorted(case_dir.glob("*.yaml")):
-        case = yaml.safe_load(path.read_text())
-        name = case.get("name", path.stem)
+        name = path.stem
         try:
+            text = path.read_text()
+            if all(not line.strip() or line.lstrip().startswith("#") for line in text.splitlines()):
+                continue
+            case = yaml.safe_load(text)
+            if not isinstance(case, dict):
+                raise ValueError("parity case must be a YAML mapping")
+            name = case.get("name", path.stem)
             src = _load_side(case["source"], repo, url)
             tgt = _load_side(case["target"], repo, url)
             status, gap, note = compare(

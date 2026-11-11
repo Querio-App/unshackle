@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `verify` skips empty and comment-only parity YAML files. Malformed YAML and nonmapping
+  cases are reported as `not checked`, and remaining valid cases still run and write evals.
+
 ## 0.1.0 (2026-10-27)
 
 First release.

@@ -1,5 +1,6 @@
 """verify: display formats, extra source columns, eval names and `verify --init`."""
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -94,6 +95,45 @@ def test_eval_files_are_named_by_id_or_case_file(tmp_path: Path):
     assert sorted(p.name for p in (tmp_path / "evals").iterdir()) == ["q3-margin.yaml", "revenue.yaml"]
     assert yaml.safe_load((tmp_path / "evals/revenue.yaml").read_text())["id"] == "revenue"
     assert verify.eval_id({"name": long_name}) == "executive-overview-monthly-revenue-by-re"
+
+
+@pytest.mark.parametrize(("invalid", "error"), [
+    (None, None),
+    ("source: [", "expected"),
+    ("- source\n- target\n", "mapping"),
+    ("a scalar", "mapping"),
+    ("null", "mapping"),
+    ("false", "mapping"),
+    ("0", "mapping"),
+    ("[]", "mapping"),
+    ("{}", "source"),
+])
+def test_run_checks_skips_empty_files_and_reports_invalid_cases(tmp_path: Path, invalid, error):
+    parity = tmp_path / "migration/parity"
+    parity.mkdir(parents=True)
+    for name, content in {"empty": "", "whitespace": " \n\t\n", "comments": "# placeholder\n  # another comment\n\n"}.items():
+        (parity / f"{name}.yaml").write_text(content)
+    if invalid is not None:
+        (parity / "invalid.yaml").write_text(invalid)
+    (tmp_path / "a.csv").write_text("k,v\na,1\n")
+    (parity / "valid.yaml").write_text(yaml.safe_dump({
+        "name": "Valid case", "source": {"csv": "a.csv"}, "target": {"csv": "a.csv"}, "keys": ["k"],
+    }))
+
+    results = verify.run_checks(tmp_path)
+
+    expected = [("Valid case", "pass")]
+    if invalid is not None:
+        expected.insert(0, ("invalid", "not checked"))
+        assert error in results[0].note
+        assert not (tmp_path / "evals/invalid.yaml").exists()
+    assert [(r.name, r.status) for r in results] == expected
+    saved = json.loads((parity / "results.json").read_text())
+    assert [(r["name"], r["status"]) for r in saved] == expected
+    if invalid is not None:
+        assert error in saved[0]["note"]
+    evaluation = yaml.safe_load((tmp_path / "evals/valid.yaml").read_text())
+    assert evaluation["expected"] == {"rows": 1, "sample": [{"k": "a", "v": "1"}]}
 
 
 def _bundle() -> Bundle:
