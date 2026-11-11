@@ -10,7 +10,7 @@ finished is never emitted as YAML. It goes into a commented-out block under a
 
 Other rules: reserved dimension names (month, year, metric_time...) are
 prefixed with the model name, models without a primary entity get
-`primary_entity`, and duplicate metric labels are made unique.
+`primary_entity`, and duplicate metric and per-model dimension labels are made unique.
 """
 
 from __future__ import annotations
@@ -199,7 +199,7 @@ def _render_model(model: SemanticModel, layout: Layout, fd: _FileDoc, names: _Na
             {
                 "name": dname,
                 "type": d.type,
-                "label": _text(d.label),
+                "label": d.label,
                 "description": _text(d.description),
                 "expr": expr or None,
             }
@@ -208,11 +208,31 @@ def _render_model(model: SemanticModel, layout: Layout, fd: _FileDoc, names: _Na
             item["type_params"] = {"time_granularity": d.time_granularity or "day"}
         if d.todo or _has_jinja(d.expr):
             reason = d.todo or "expression still has template code"
+            if "label" in item:
+                item["label"] = _text(item["label"])
             fd.pending.append(_Pending("dimension", f"{name}.{dname}", _reason(reason, d.source_language, d.source_expression or d.expr), item))
             continue
         dims.append(item)
         if d.type == "time":
             time_dims.append(dname)
+
+    # Reserve every original label (including name fallbacks) before generating
+    # replacements, so later dimensions keep their existing display text.
+    reserved_labels = {d.get("label", d["name"]) for d in dims}
+    seen_labels = {d["name"] for d in dims if "label" not in d}
+    for d in dims:
+        if "label" not in d:
+            continue
+        label = d["label"]
+        if label in seen_labels:
+            base = f"{label} ({d['name']})"
+            replacement, n = base, 2
+            while replacement in reserved_labels:
+                replacement, n = f"{base} ({n})", n + 1
+            d["label"] = replacement
+            reserved_labels.add(replacement)
+        seen_labels.add(label)
+        d["label"] = _text(d["label"])
 
     # the source's declared default, or the only time dimension; never a guess among several
     agg_time = default_dim if default_dim in time_dims else (time_dims[0] if len(time_dims) == 1 else "")
