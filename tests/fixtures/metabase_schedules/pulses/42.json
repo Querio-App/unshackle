@@ -1,0 +1,114 @@
+{
+  "id": 42,
+  "name": "Client weekly report",
+  "dashboard_id": 2,
+  "archived": false,
+  "skip_if_empty": true,
+  "parameters": [
+    {
+      "id": "region-a",
+      "value": [
+        "West"
+      ]
+    },
+    {
+      "id": "region-b",
+      "value": [
+        "East",
+        "North"
+      ]
+    },
+    {
+      "id": "dates",
+      "value": "2026-01-01~2026-01-31"
+    },
+    {
+      "id": "quantity",
+      "value": [
+        0,
+        10
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "id": 10,
+      "dashboard_card_id": 100,
+      "include_csv": true,
+      "include_xls": false,
+      "format_rows": false,
+      "pivot_results": true,
+      "download_perms": "full"
+    },
+    {
+      "id": 10,
+      "dashboard_card_id": 101,
+      "include_csv": false,
+      "include_xls": true,
+      "format_rows": true,
+      "pivot_results": false,
+      "download_perms": "limited"
+    }
+  ],
+  "channels": [
+    {
+      "id": 7,
+      "channel_type": "email",
+      "enabled": true,
+      "schedule_type": "hourly",
+      "schedule_hour": 0,
+      "schedule_day": null,
+      "schedule_frame": null,
+      "recipients": [
+        {
+          "id": 11,
+          "email": "analyst@example.com",
+          "common_name": "Example Analyst"
+        }
+      ],
+      "details": {
+        "include_pdf": false,
+        "attachment_only": true,
+        "emails": [
+          "external@example.com"
+        ],
+        "subject": "Hourly report"
+      }
+    },
+    {
+      "id": 8,
+      "channel_type": "email",
+      "enabled": false,
+      "schedule_type": "weekly",
+      "schedule_day": "mon",
+      "schedule_hour": 9,
+      "schedule_frame": null,
+      "recipients": [
+        {
+          "email": "weekly@example.com"
+        }
+      ],
+      "details": {
+        "include_pdf": true,
+        "attachment_only": false,
+        "subject": "Weekly report"
+      }
+    },
+    {
+      "id": 9,
+      "channel_type": "slack",
+      "channel_id": 12,
+      "enabled": true,
+      "schedule_type": "monthly",
+      "schedule_frame": "last",
+      "schedule_day": "fri",
+      "schedule_hour": 16,
+      "recipients": [],
+      "details": {
+        "channel": "#example-reports",
+        "channels": "#example-reports",
+        "channel_id": "example-slack-channel"
+      }
+    }
+  ]
+}

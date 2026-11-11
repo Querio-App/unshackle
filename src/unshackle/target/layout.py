@@ -12,6 +12,7 @@ DEFAULT_PATHS = {
     "knowledge": "knowledge",
     "queries": "queries",
     "notebooks": "notebooks",
+    "schedules": "schedules",
     "policies": "policies",
     "evals": "evals",
     "sql_models": "queries/models",

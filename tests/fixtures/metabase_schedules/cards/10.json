@@ -1,0 +1,12 @@
+{
+  "id": 10,
+  "name": "Orders",
+  "type": "question",
+  "display": "table",
+  "dataset_query": {
+    "type": "query",
+    "query": {
+      "source-table": 1
+    }
+  }
+}

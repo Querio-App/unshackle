@@ -9,7 +9,7 @@ from pathlib import Path
 
 from unshackle.ir import Bundle, Dashboard, todo_reasons
 from unshackle.target import files as tf
-from unshackle.target import notebooks, ossie, policies, semantic
+from unshackle.target import notebooks, ossie, policies, schedules, semantic
 from unshackle.target.writer import Target, UnsafePath, WriteResult, load_last_result
 
 TODO_RE = re.compile(r"TODO\(unshackle\):?\s*(.*)")
@@ -64,11 +64,19 @@ def render_all(bundle: Bundle, target: Target) -> dict[str, tuple[str, bool]]:
         out[".dbtignore"] = (ignore, True)
     for rel, content in tf.catalog_files(bundle, layout, target.read).items():
         out[rel] = (content, True)
+    notebook_docs = notebooks.notebook_files(bundle, layout)
+    notebook_paths = {}
+    for dashboard, (rel, content) in zip(bundle.dashboards, notebook_docs.items()):
+        owner = target.lock.owners.get(rel)
+        notebook_paths[dashboard.source_ref] = (
+            target._rename_for_tool(rel) if owner and owner != bundle.tool and target.read(rel) != content else rel
+        )
     for group in (
         tf.knowledge_files(bundle, layout),
         tf.query_files(bundle, layout),
-        notebooks.notebook_files(bundle, layout),
+        notebook_docs,
         policies.policy_files(bundle, layout),
+        schedules.render(bundle, layout, notebook_paths),
     ):
         for rel, content in group.items():
             out[rel] = (content, False)
