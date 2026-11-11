@@ -261,7 +261,9 @@ def test_computed_sort_orders_by_the_aggregate(con, rows, tiles):
     got = _run(con, tiles["Computed Hidden"])
     assert [r[0] for r in got] == list(orders.label)
     quantity = _marks(rows, "paper_type", PAPER, col="quantity")
-    assert sorted(got) == pytest.approx(sorted(zip(quantity.label, quantity.value)))
+    expected = sorted(zip(quantity.label, quantity.value))
+    assert [r[0] for r in sorted(got)] == [r[0] for r in expected]
+    assert [r[1] for r in sorted(got)] == pytest.approx([r[1] for r in expected])
     # an aggregated LOD the sheet shows: avg({FIXED [paper_type] : SUM(revenue)}) per paper type is the type's revenue
     got = _run(con, tiles["Paper Revenue Share"])
     assert [r[0] for r in got] == want and [r[1] for r in got] == pytest.approx(sorted(marks.value, reverse=True))
@@ -427,5 +429,6 @@ def test_totals_group_on_values_and_follow_the_sort(con, rows, tmp_path: Path):
     assert "grouping sets" in totals
     got = [tuple(float(v) if type(v).__name__ == "Decimal" else v for v in r) for r in con.sql(totals).fetchall()]
     marks = _marks(rows, "paper_type", PAPER).sort_values("value", ascending=False, kind="stable")
-    assert [r[:2] for r in got[:-1]] == pytest.approx(list(zip(marks.label, marks.value)))
+    assert [r[0] for r in got[:-1]] == list(marks.label)
+    assert [r[1] for r in got[:-1]] == pytest.approx(list(marks.value))
     assert got[-1][0] is None and got[-1][1] == pytest.approx(float(rows.post_discount_revenue.sum())) and got[-1][2] == 1
