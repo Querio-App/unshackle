@@ -16,6 +16,8 @@ def render(bundle: Bundle, layout: Layout, notebook_paths: dict[str, str], kept_
         doc["source"] = doc.pop("source_ref")
         doc["notebook"] = notebook_paths.get(schedule.dashboard_ref)
         dashboard = next((d for d in bundle.dashboards if d.source_ref == schedule.dashboard_ref), None)
+        doc["dashboard_name"] = dashboard.name if dashboard else None
+        doc["dashboard_url"] = dashboard.url if dashboard else None
         names = parameter_names(dashboard) if dashboard else {}
         doc["parameters"] = {names[k]: v for k, v in schedule.parameters.items() if k in names}
         for binding in doc["parameter_bindings"]:

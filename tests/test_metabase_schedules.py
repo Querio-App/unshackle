@@ -32,11 +32,14 @@ def test_pulses_keep_independent_channels_and_card_flags(tmp_path):
         ("email", True, "hourly"), ("email", False, "weekly"), ("slack", True, "monthly")]
     assert weekly.channels[0].cadence["hour"] == 0
     assert weekly.channels[0].details["emails"] == ["external@example.com"]
+    assert weekly.channels[0].details["recipient_emails"] == ["external@example.com", "analyst@example.com"]
     assert weekly.channels[0].details["attachment_only"] is True
     assert weekly.channels[1].details["include_pdf"] is True
+    assert weekly.channels[1].details["recipient_emails"] == ["weekly@example.com"]
     assert weekly.channels[2].cadence["frame"] == "last"
     assert weekly.cards == store.get_json("pulses/42.json")["cards"]
-    assert all(c.timezone is None and "timezone" in c.todo for c in weekly.channels)
+    assert all("timezone" in c.todo for c in weekly.channels)
+    assert all(c.timezone is None for c in weekly.channels)
     assert limited.cards is None and limited.channels[0].recipients is None
     assert "recipients" in limited.channels[0].todo and "completeness" in limited.todo
     assert archived.archived is True and archived.cards == [] and archived.channels[0].recipients == []
@@ -76,6 +79,8 @@ def test_schedule_writer_uses_layout_and_preserves_hand_edits(tmp_path):
     build.apply(bundle, tmp_path)
     doc = yaml.safe_load(path.read_text())
     assert doc["notebook"] == "reports/renamed-report.ipynb"
+    assert doc["dashboard_name"] == "Client reporting"
+    assert doc["dashboard_url"] == ""
     assert doc["source"] == "metabase:pulse/42" and doc["channels"][1]["enabled"] is False
     assert "TODO(unshackle)" in path.read_text()
     assert doc["source_config"]["completeness"] == "unknown"
@@ -162,7 +167,7 @@ def test_secret_projection_and_malformed_metadata_survive_offline_build(tmp_path
     assert first.cards is None and first.channels[0].recipients is None
     assert first.source_config["_unsupported"]["cards"] == [10]
     assert first.channels[1].source_config["unsupported_details"] == "unexpected shape"
-    assert first.channels[2].timezone is None and first.channels[2].source_config["timezone"] == "Europe/Bucharest"
+    assert first.channels[2].timezone == "Europe/Bucharest" and first.channels[2].source_config["timezone"] == "Europe/Bucharest"
     assert "example-secret" not in bundle.to_json()
     build.apply(bundle, tmp_path)
     output = (tmp_path / "schedules/metabase-pulse-42.yml").read_text()
@@ -258,6 +263,15 @@ def test_schedule_comments_are_single_line_even_with_source_newlines(tmp_path):
     build.apply(bundle, tmp_path)
     doc = yaml.safe_load((tmp_path / "schedules/metabase-pulse-42.yml").read_text())
     assert doc["channels"][0]["source_ref"] == "channel\ninvalid: ["
+
+
+def test_report_includes_subscription_readiness_summary(tmp_path):
+    _, bundle = parse(tmp_path)
+    build.apply(bundle, tmp_path)
+    report = (tmp_path / "migration/report.md").read_text()
+    assert "## Subscription readiness (3)" in report
+    assert "| metabase | Client weekly report | Client reporting | 3 | 2 | 3 | 0 | 1 |" in report
+    assert "| metabase | Limited visibility example | Client reporting | 1 | 1 | 0 | 1 | 2 |" in report
 
 
 @pytest.mark.parametrize("dry_run", [False, True])

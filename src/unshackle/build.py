@@ -368,6 +368,41 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
         lines += [f"## Not migrated from dashboards ({len(gaps)})", ""]
         for tool, d in gaps:
             lines += [f"### {d.name} ({tool})", "", *[f"- {x}" for x in d.not_migrated], ""]
+    subscriptions = []
+    for b in stored.values():
+        dash_names = {d.source_ref: d.name for d in b.dashboards}
+        for s in b.schedules:
+            email_channels = [c for c in s.channels if c.type == "email"]
+            contacts = sum(len(c.details.get("recipient_emails") or []) for c in email_channels)
+            unknown_recipients = sum(1 for c in s.channels if c.recipients is None)
+            unresolved = sum(1 for p in s.parameter_bindings if p.get("status") == "unresolved")
+            subscriptions.append((
+                b.tool,
+                s.name,
+                dash_names.get(s.dashboard_ref) or s.dashboard_ref or "(unknown)",
+                len(s.channels),
+                len(email_channels),
+                contacts,
+                unknown_recipients,
+                unresolved,
+            ))
+    if subscriptions:
+        lines += [
+            f"## Subscription readiness ({len(subscriptions)})",
+            "",
+            "| Tool | Subscription | Dashboard | Channels | Email channels | Contacts found | Unknown recipient lists | Unresolved params |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        lines += [
+            f"| {tool} | {name.replace('|', '/')} | {dash.replace('|', '/')} | {channels} | {emails} | {contacts} | {unknown} | {unresolved} |"
+            for tool, name, dash, channels, emails, contacts, unknown, unresolved in subscriptions
+        ]
+        lines += [
+            "",
+            "Contacts found: deduped email targets extracted from each email channel's recipient_emails field.",
+            "Unknown recipient lists: channels where recipients were not returned by the source API.",
+            "",
+        ]
     todos = scan_todos(repo, all_generated(repo)) if not dry_run else []
     lines += [f"## Still to translate ({len(todos)})", ""]
     if todos:

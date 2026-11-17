@@ -1509,9 +1509,21 @@ def _parse_pulses(bundle: Bundle, store: RawStore) -> None:
             if hour is not None and (type(hour) is not int or not 0 <= hour <= 23):
                 reasons.append("unsupported schedule hour retained")
             reasons += [f"details.{key}: unsupported source setting retained" for key in sorted(details.keys() - _PULSE_DETAILS)]
+            recipient_emails = []
+            for email in _list(details.get("emails")):
+                if isinstance(email, str) and email:
+                    recipient_emails.append(email)
+            for recipient in c.get("recipients") or []:
+                if isinstance(recipient, dict):
+                    email = recipient.get("email")
+                    if isinstance(email, str) and email:
+                        recipient_emails.append(email)
+            if recipient_emails:
+                details["recipient_emails"] = list(dict.fromkeys(recipient_emails))
             channel = ScheduleChannel(
                 type=c.get("channel_type") or "unknown", source_ref=f"metabase:pulse-channel/{c['id']}" if c.get("id") else f"metabase:pulse/{pid}/channel/{i + 1}",
                 enabled=c.get("enabled"), cadence={k.removeprefix("schedule_"): c[k] for k in ("schedule_type", "schedule_day", "schedule_hour", "schedule_frame") if k in c},
+                timezone=c.get("timezone") if isinstance(c.get("timezone"), str) and c.get("timezone") else None,
                 recipients=c.get("recipients"), details=details,
                 source_config={k: v for k, v in c.items() if k not in {"recipients", "details"}}, todo=join_todos(reasons),
             )
