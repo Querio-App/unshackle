@@ -76,7 +76,12 @@ def query(sql: str, params: dict[str, Any], url: str | None = None, *,
                 # Limit at the database as well as the cursor. Fetch one extra row to
                 # distinguish exact-limit results from truncation without a COUNT query.
                 bounded_sql = f"SELECT * FROM ({sql.strip().rstrip(';')}) AS unshackle_result LIMIT {limit + 1}" if limit is not None else sql
-                with conn.execution_options(stream_results=dialect == "postgresql", max_row_buffer=(limit or 1000) + 1).execute(text(bounded_sql), used) as result:
+                bounded = conn.execution_options(stream_results=dialect == "postgresql", max_row_buffer=(limit or 1000) + 1,
+                                                 no_parameters=not used)
+                # Literal SQL from MCP has no binds. SQLAlchemy text() otherwise
+                # mistakes colons inside JSON/string literals for bind parameters.
+                cursor = bounded.execute(text(bounded_sql), used) if used else bounded.exec_driver_sql(bounded_sql)
+                with cursor as result:
                     rows = result.fetchmany(limit + 1) if limit is not None else result.fetchall()
                     frame = pd.DataFrame(rows[:limit] if limit is not None else rows, columns=result.keys())
                     frame.attrs['truncated'] = limit is not None and len(rows) > limit
