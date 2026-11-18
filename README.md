@@ -26,7 +26,7 @@ original formula next to it. It doesn't guess.
 
 ## Get started
 
-You need Python 3.11+ and access to your BI tool. Use `pip` inside a virtual environment (system Python
+You need Python 3.11+ and access to your BI tool or warehouse. Use `pip` inside a virtual environment (system Python
 often refuses it outside one), or `uv tool install unshackle` for a global command.
 
 ```bash
@@ -84,6 +84,25 @@ unshackle import <tool> <files or folder>
 unshackle build <tool>
 ```
 
+## Start from warehouse, dbt or SQL
+
+Without a BI export, import the sources you have. Each command writes usable
+context immediately; dbt and SQL imports are offline.
+
+```bash
+# Set UNSHACKLE_WAREHOUSE_URL for warehouse access.
+unshackle import warehouse
+unshackle import dbt ./inputs/dbt-project
+unshackle import sql ./inputs/queries ./inputs/analysis.py
+```
+
+[Warehouse metadata](docs/import-warehouse.md) becomes catalog entries;
+[plain dbt projects](docs/import-dbt.md) contribute documentation, reference SQL
+and supported metrics; [SQL and Python SQL literals](docs/import-sql.md) become
+notebooks. Unresolved expressions retain their source and TODOs. Use the
+[scheduled drift template](docs/drift.md) to propose schema and context updates
+in a pull request.
+
 ## Data that lives only in your BI tool
 
 Tableau extracts, Excel and CSV files have no warehouse behind them. `migrate` asks
@@ -103,7 +122,7 @@ see the [verify guide](skills/verify/SKILL.md).
 - **Against numbers, not snapshots.** Most tests build a migration from a saved export, run the
   generated SQL in DuckDB on a fictional dataset, and compare the result with the same numbers
   computed independently, following the source tool's own rules.
-- About 1,270 tests run offline: `uv pip install -e ".[dev]" && pytest`.
+- Fixture, import and MCP protocol tests run offline: `uv pip install -e ".[dev]" && pytest`.
 - `unshackle verify` does the same on your data: migrated SQL against your tool's own numbers.
 
 unshackle is built with [Claude Code](https://claude.com/claude-code); every change goes through
@@ -114,6 +133,31 @@ those tests.
 unshackle runs fine on its own. If you use a coding agent (Claude Code, Codex,
 Cursor), point it at the repo: `AGENTS.md` explains the layout, and the guides in
 `migration/skills/` walk it through finishing each kind of TODO.
+
+To expose the repo through MCP, install the extra and start the local server:
+
+```bash
+pip install "unshackle[mcp]"
+unshackle mcp --repo .
+```
+
+The BI flow is `migrate` → `verify` → `mcp`; the non-BI flow is `import` → `mcp`.
+The server provides `overview`, `search`, `read` and bounded `run_query` tools,
+plus file resources. It reuses `UNSHACKLE_WAREHOUSE_URL`. See the
+[Claude Code, Cursor and Codex configurations](docs/mcp.md),
+[hosting setup](docs/deploy/README.md), and deployment guides for
+[Railway](docs/deploy/railway.md), [AWS](docs/deploy/aws.md) and
+[Cloud Run](docs/deploy/cloud-run.md).
+
+Use one read-only warehouse role per server, preferably against a production
+read replica. Anyone holding the hosted bearer token can query that role's data.
+Policies are agent context and are not enforced by `run_query`; the token provides
+deployment access rather than per-user authorization. Files from other connections
+need that connection, and git-ignored local data is unavailable to Git-pulled hosts.
+
+The [synthetic MCP example and acceptance record](docs/mcp-acceptance.md) distinguish
+offline checks, real client runs and hosted results. Deployment guides alone do not
+establish Railway acceptance.
 
 ## Try it without a BI tool
 

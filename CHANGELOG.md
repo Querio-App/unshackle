@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Serve migrated repository context through MCP: `overview`, `search`, confined `read`,
+  file resources and bounded read-only `run_query`, with local stdio client configurations.
+- Import warehouse metadata, plain dbt projects, SQL files and static Python SQL literals.
+  Imports write usable context immediately; unsupported expressions retain source and TODOs.
+- Provide bearer-authenticated Streamable HTTP hosting, Git refresh and deployment guides
+  for Railway, AWS and Cloud Run. One warehouse role serves all token holders; policies
+  remain context, and git-ignored local data is unavailable to Git-pulled hosts.
+- Add an inactive scheduled drift workflow example that updates one PR with schema changes
+  and missing-column references, and closes obsolete PRs when drift disappears. Renames
+  are reported as removed + added columns; uncertain SQL references stay explicit.
+- Add a synthetic MCP example with five hand-derived answers and offline protocol checks.
+  Live client and hosted acceptance are tracked separately; deployment configuration does
+  not imply Railway acceptance.
+
 ## 0.2.0 (2026-11-11)
 
 - `verify --init metabase` captures dashboard card CSV baselines and writes strict parity cases;

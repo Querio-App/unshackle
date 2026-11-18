@@ -15,7 +15,11 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv venv --python ${{ matrix.python }} && uv pip install -e ".[dev]"
       - run: uv venv /tmp/dbt && uv pip install --python /tmp/dbt/bin/python "dbt-core>=1.9" dbt-duckdb
-      - run: .venv/bin/pytest -q
+      - name: Offline regression suite and dbt parse
+        run: .venv/bin/pytest -q --ignore=tests/test_mcp_acceptance.py
         env:
           UNSHACKLE_DBT: /tmp/dbt/bin/dbt
-      - run: ./examples/tableau-demo/run.sh /tmp/acme
+      - name: Offline MCP acceptance (five questions over real stdio protocol)
+        run: .venv/bin/pytest -q tests/test_mcp_acceptance.py -k 'not real_postgres'
+      - name: Tableau demo and parity
+        run: ./examples/tableau-demo/run.sh /tmp/acme
