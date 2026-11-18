@@ -36,10 +36,12 @@ Enable “Allow GitHub Actions to create and approve pull requests” in reposit
 Actions settings. The template grants its built-in `GITHUB_TOKEN` contents and
 pull-request write permissions. Its fixed branch updates one PR across repeated
 runs; no new PR is created when generated artifacts are unchanged. Only exact
-changed artifact paths are passed to the PR action. Per-run migration reports and
+changed artifact paths are passed to the PR action. On unchanged runs it receives
+only the existing snapshot path, never an empty or broad file selection. Per-run migration reports and
 last-build summaries are restored, and the PR body is written outside the checkout,
-so these cannot cause report-only churn. A stale open drift PR whose changes have
-since disappeared needs manual closure. The default token does not trigger further
+so these cannot cause report-only churn. The action runs after every successful refresh, so an open drift PR whose changes
+have disappeared is closed and its automation branch deleted, using the action's
+[documented no-diff behavior](https://github.com/peter-evans/create-pull-request#action-behaviour). The default token does not trigger further
 PR workflows; consult the [create-pull-request token documentation](https://github.com/peter-evans/create-pull-request#token)
 if those checks must run. Pin action versions to reviewed SHAs under your repository's
 normal dependency policy.

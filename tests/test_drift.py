@@ -164,8 +164,9 @@ def test_workflow_is_inactive_and_uses_one_branch_and_precise_paths():
     steps = workflow["jobs"]["drift"]["steps"]
     action = next(s for s in steps if "create-pull-request" in s.get("uses", ""))
     assert action["with"]["branch"] == "automation/unshackle-drift"
-    assert action["with"]["add-paths"] == "${{ steps.refresh.outputs.paths }}"
-    assert action["if"] == "steps.refresh.outputs.changed == 'true'"
+    assert action["with"]["add-paths"] == "${{ steps.refresh.outputs.paths || 'migration/warehouse-schema.json' }}"
+    assert "if" not in action
+    assert action["with"]["delete-branch"] is True
     assert "branch-suffix" not in action["with"]
 
 
@@ -203,3 +204,27 @@ def test_plain_sql_other_datasource_header_is_uncertain(tmp_path, monkeypatch):
 def test_invalid_alias_scope_does_not_abort_report():
     findings = query_references("select o.amount from orders o join orders o on true", AFTER)
     assert findings and all(f["kind"] == "uncertain" for f in findings)
+
+
+def test_return_to_committed_baseline_has_no_diff_and_narrow_cleanup_path(tmp_path, monkeypatch):
+    repo, db, config = setup_repo(tmp_path, monkeypatch)
+    refresh(repo, config)
+    # Scheduled runs start from the default branch, not the open PR branch.
+    baseline = {p.relative_to(repo): p.read_bytes() for p in repo.rglob("*") if p.is_file()}
+    with sqlite3.connect(db) as conn:
+        conn.execute("alter table orders rename column amount to revenue")
+    assert refresh(repo, config)["changed"]
+    for path in repo.rglob("*"):
+        if path.is_file() and path.relative_to(repo) not in baseline:
+            path.unlink()
+    for path, content in baseline.items():
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_bytes(content)
+    with sqlite3.connect(db) as conn:
+        conn.execute("alter table orders rename column revenue to amount")
+    (repo / ".env").write_text("EXAMPLE_SECRET=not-a-real-secret\n")
+    result = refresh(repo, config)
+    assert not result["changed"] and result["paths"] == []
+    assert (repo / "migration/warehouse-schema.json").is_file()
+    # The template's explicit fallback stages only this unchanged snapshot, so
+    # create-pull-request receives no diff and can close its stale branch PR.
