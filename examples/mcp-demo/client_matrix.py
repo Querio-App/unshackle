@@ -38,12 +38,18 @@ def main():
     parser.add_argument("--executable", type=Path, required=True, help="Absolute unshackle executable")
     parser.add_argument("--output", type=Path, required=True, help="Private evidence directory outside source repo")
     parser.add_argument("--timeout", type=int, default=360)
+    parser.add_argument("--http-url", help="Use authenticated HTTP instead of stdio; token comes from UNSHACKLE_MCP_TOKEN")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     text = prompt()
     (out / "prompt.txt").write_text(text)
     server = {"command": str(args.executable.resolve()), "args": ["mcp", "--repo", str(args.repo.resolve())]}
+    if args.http_url:
+        token = os.environ.get("UNSHACKLE_MCP_TOKEN")
+        if not token:
+            parser.error("HTTP requires UNSHACKLE_MCP_TOKEN in the environment")
+        server = {"type": "http", "url": args.http_url, "headers": {"Authorization": "Bearer " + token}}
     env = dict(os.environ)
     # MCP reads only the fixture's .env, not a caller's unrelated warehouse.
     env.pop("UNSHACKLE_WAREHOUSE_URL", None)
@@ -60,7 +66,11 @@ def main():
                        "--no-session-persistence", "--disable-slash-commands", "--tools", "",
                        "--allowedTools", "mcp__unshackle__overview,mcp__unshackle__search,mcp__unshackle__read,mcp__unshackle__run_query"]
         elif args.client == "codex":
-            config = "mcp_servers.unshackle=" + "{command=" + json.dumps(server["command"]) + ",args=" + json.dumps(server["args"]) + "}"
+            config = ""
+            if not args.http_url:
+                config = "mcp_servers.unshackle=" + "{command=" + json.dumps(server["command"]) + ",args=" + json.dumps(server["args"]) + "}"
+            if args.http_url:
+                config = "mcp_servers.unshackle={url=" + json.dumps(args.http_url) + ',bearer_token_env_var="UNSHACKLE_MCP_TOKEN"}'
             command = [executable, "exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check",
                        "--sandbox", "read-only", "--json", "-c", config,
                        "-c", 'mcp_servers.unshackle.default_tools_approval_mode="approve"', text]
@@ -82,7 +92,10 @@ def main():
             command = [executable, "-p", text, "--output-format", "stream-json",
                        "--approve-mcps", "--trust", "--workspace", str(workspace)]
         metadata = {"client": args.client, "version": version, "source_commit": source_commit,
-                    "transport": "stdio", "config": "temporary, no persistent user configuration writes"}
+                    "transport": "http" if args.http_url else "stdio", "config": "temporary, no persistent user configuration writes"}
+        if args.http_url:
+            from urllib.parse import urlsplit
+            metadata["endpoint_scope"] = "local" if urlsplit(args.http_url).hostname in {"127.0.0.1", "localhost", "::1"} else "remote"
         with (out / "stdout.jsonl").open("w") as stdout, (out / "stderr.txt").open("w") as stderr:
             try:
                 result = subprocess.run(command, cwd=workspace, env=env, stdout=stdout, stderr=stderr, timeout=args.timeout)

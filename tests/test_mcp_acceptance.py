@@ -148,3 +148,29 @@ def test_real_postgres_import_role_and_stdio(tmp_path):
                 con.exec_driver_sql("DELETE FROM orders")
     finally:
         engine.dispose()
+
+
+def test_rename_drift_reports_missing_columns_and_dynamic_uncertainty(tmp_path, monkeypatch):
+    import shutil
+    import sqlite3
+    from unshackle.drift import refresh
+    path = tmp_path / "example.sqlite"
+    sqlite_fixture(path)
+    repo = tmp_path / "context"
+    repo.mkdir()
+    shutil.copytree(DEMO / "dbt", repo / "inputs/dbt")
+    shutil.copytree(DEMO / "inputs", repo / "inputs/queries")
+    config = {"imports": [{"source": "warehouse"}, {"source": "dbt", "paths": ["inputs/dbt"]},
+                          {"source": "sql", "paths": ["inputs/queries"]}], "dialect": "sqlite"}
+    monkeypatch.setenv("UNSHACKLE_WAREHOUSE_URL", f"sqlite:///{path}")
+    refresh(repo, config)
+    assert not refresh(repo, config)["changed"]
+    with sqlite3.connect(path) as con:
+        con.execute("ALTER TABLE orders RENAME COLUMN amount TO net_amount")
+    report = refresh(repo, config)
+    kinds = {(c["kind"], c.get("column")) for c in report["changes"]}
+    assert ("column_removed", "amount") in kinds
+    assert ("column_added", "net_amount") in kinds
+    assert any(r["kind"] == "missing_column" and r["column"] == "amount" for r in report["references"])
+    assert any(r["kind"] == "uncertain" for r in report["references"])
+    assert not refresh(repo, config)["changed"]
