@@ -181,3 +181,46 @@ def test_supported_metric_of_unsupported_measure_stays_pending(tmp_path):
     rendered = yaml.safe_load(text)
     assert not any(m.get("name") == "revenue" for m in rendered.get("metrics", []))
     assert "TODO(unshackle)" in text and "custom_aggregate" in text
+
+
+@pytest.mark.parametrize("config", [
+    {"models": {"dunder_example": {"orders": {"+alias": "fct_orders", "+schema": "reporting"}}}},
+    {"models": {"+materialized": "ephemeral"}},
+])
+def test_project_relation_config_keeps_source_and_semantics_pending(tmp_path, config):
+    root = project(tmp_path)
+    p = root / "dbt_project.yml"
+    doc = yaml.safe_load(p.read_text())
+    doc.update(config)
+    p.write_text(yaml.safe_dump(doc))
+    (root / "transforms/orders.sql").write_text("select 1 as order_id, 10 as amount")
+    bundle = parse(root)
+    assert "configuration is unresolved" in bundle.semantic_models[0].todo
+    assert "TODO(unshackle)" in bundle.tables[0].description
+    assert any("dbt_project.yml" in item.body for item in bundle.knowledge)
+    out = tmp_path / "output"
+    build.apply(bundle, out)
+    text = (out / "semantic/orders_semantic.ossie.yaml").read_text()
+    assert "TODO(unshackle)" in text
+    assert "configuration is unresolved" in text
+
+
+def test_nested_project_config_applies_only_to_matching_scope(tmp_path):
+    root = project(tmp_path)
+    p = root / "dbt_project.yml"
+    doc = yaml.safe_load(p.read_text())
+    doc["models"] = {"dunder_example": {"other": {"+schema": "elsewhere"}}}
+    p.write_text(yaml.safe_dump(doc))
+    assert not parse(root).semantic_models[0].todo
+
+
+def test_inline_config_marks_relation_pending_even_with_compiled_sql_file(tmp_path):
+    root = project(tmp_path)
+    (root / "transforms/orders.sql").write_text("{{ config(alias='fct_orders', materialized='ephemeral') }}\nselect 1 as order_id")
+    compiled = root / "target/compiled/dunder_example/transforms/orders.sql"
+    compiled.parent.mkdir(parents=True)
+    compiled.write_text("select 1 as order_id")
+    bundle = parse(root)
+    assert "configuration is unresolved" in bundle.semantic_models[0].todo
+    assert "configuration is unresolved" in bundle.queries[0].todo
+    assert any("fct_orders" in item.body and "ephemeral" in item.body for item in bundle.knowledge)
