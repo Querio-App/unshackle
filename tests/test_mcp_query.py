@@ -56,3 +56,24 @@ def test_errors_do_not_expose_credentials(monkeypatch):
 def test_trailing_comments(monkeypatch, sql):
     monkeypatch.setenv('UNSHACKLE_WAREHOUSE_URL', 'duckdb://')
     assert run_query(sql)['rows'] == [[1]]
+
+
+@pytest.mark.parametrize('url', ['duckdb://', 'sqlite://'])
+def test_literal_json_colons_and_percent_are_not_bind_parameters(url):
+    frame = query("select '{\"a\":1}' as doc, '100%' as percent", {}, url, limit=1, timeout=1)
+    assert frame.iloc[0].tolist() == ['{"a":1}', '100%']
+
+
+def test_postgres_dialect_preserved_at_execution_boundary(monkeypatch):
+    import pandas as pd
+    monkeypatch.setenv('UNSHACKLE_WAREHOUSE_URL', 'postgresql+psycopg://reader:example@example.invalid/db')
+    sqls = []
+    def capture(sql, params, **kwargs):
+        sqls.append(sql)
+        return pd.DataFrame({'answer': [1]})
+    monkeypatch.setattr('unshackle.run.query', capture)
+    run_query("select CURRENT_TIMESTAMP::date, '{\"a\":1}'::jsonb ->> 'a', ARRAY[1,2]")
+    assert 'CURRENT_TIMESTAMP()' not in sqls[0]
+    assert 'JSON_EXTRACT' not in sqls[0]
+    assert 'ARRAY[1, 2]' in sqls[0]
+    assert "->> 'a'" in sqls[0]
