@@ -19,7 +19,10 @@ is not reproduced.
 Only a single parseable SELECT/WITH query becomes executable notebook SQL. Dynamic
 f-strings, formatting, variable references, transformations, malformed Python,
 unbound query parameters, unsupported SQL and multiple statements produce a
-line-specific `TODO(unshackle)`. Their original source appears in notebook Markdown
+line-specific `TODO(unshackle)`. Malformed Python retains only its source path and
+error line: query boundaries are unknown, so neither the whole file nor the failing
+line is copied, avoiding unrelated credentials. For other unsupported expressions,
+their original source appears in notebook Markdown
 and `source_config.source_expression` in the saved intermediate representation;
 the corresponding tile has no executable SQL. Translation never guesses a dynamic
 value. Python variable flow, custom wrappers without SQL literals, and runtime

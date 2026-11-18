@@ -62,13 +62,34 @@ def test_unsupported_sql_keeps_source_and_todo(tmp_path, source):
     assert "TODO(unshackle)" in notebook.read_text()
 
 
-def test_syntax_error_keeps_whole_python_source(tmp_path):
+def test_syntax_error_keeps_location_without_copying_unrelated_source(tmp_path):
     path = tmp_path / "broken.py"
-    source = 'q = "SELECT 1"\nif (\n'
+    source = 'WAREHOUSE_PASSWORD = "example-secret-must-not-export"\nq = "SELECT 1"\nif (\n'
     path.write_text(source)
     tile, = tiles(parse([path]))
-    assert "broken.py:2" in tile.todo and "syntax error" in tile.todo
-    assert tile.source_config["source_expression"] == source
+    assert "broken.py:3" in tile.todo and "syntax error" in tile.todo
+    assert tile.source_config["source_expression"] == ""
+    assert tile.source_config["source_path"] == "broken.py"
+    bundle = parse([path])
+    assert "example-secret-must-not-export" not in bundle.to_json()
+    assert "WAREHOUSE_PASSWORD" not in bundle.to_json()
+    build.apply(bundle, tmp_path / "out")
+    notebook, = (tmp_path / "out/notebooks").glob("*.ipynb")
+    assert "example-secret-must-not-export" not in notebook.read_text()
+    assert "WAREHOUSE_PASSWORD" not in notebook.read_text()
+    assert "broken.py:3" in notebook.read_text()
+
+
+@pytest.mark.parametrize("source", [
+    'WAREHOUSE_PASSWORD = "example-secret-must-not-export',
+    'if (\n    PASSWORD = "example-secret-must-not-export"',
+])
+def test_syntax_error_never_copies_even_the_offending_line(tmp_path, source):
+    path = tmp_path / "broken.py"
+    path.write_text(source)
+    bundle = parse([path])
+    assert tiles(bundle)[0].todo
+    assert "example-secret-must-not-export" not in bundle.to_json()
 
 
 def test_same_names_paths_reruns_hand_edits_and_layout(tmp_path):
