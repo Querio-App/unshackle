@@ -12,10 +12,6 @@ primary_key:
 - order_id
 source: warehouse:public.orders
 columns:
-- description: Order amount in USD; include only paid orders when calculating recognized revenue.
-  name: amount
-  nullable: false
-  type: NUMERIC(12, 2)
 - name: customer_id
   nullable: false
   type: INTEGER
@@ -28,3 +24,7 @@ columns:
 - name: status
   nullable: false
   type: TEXT
+- description: Order amount in USD; include only paid orders when calculating recognized revenue.
+  name: net_amount
+  nullable: false
+  type: NUMERIC(12, 2)
