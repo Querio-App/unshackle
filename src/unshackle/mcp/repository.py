@@ -29,12 +29,19 @@ def _pending_sql(nb: dict, sqls: dict[str, str]) -> dict[str, dict]:
         if cell.get('cell_type') != 'code':
             continue
         source = _source(cell)
-        literals = {}
+        literals, sources = {}, {}
         try:
             tree = ast.parse(source)
             writes = Counter(node.id for node in ast.walk(tree)
                              if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del))
                              and node.id.endswith('_sql'))
+            for node in ast.walk(tree):
+                targets = (node.targets if isinstance(node, ast.Assign) else [node.target]
+                           if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) else [])
+                for target in targets:
+                    for name in ast.walk(target):
+                        if isinstance(name, ast.Name) and name.id in writes:
+                            sources.setdefault(name.id, []).append(ast.get_source_segment(source, node) or name.id)
             for node in tree.body:
                 target = (node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1
                           else node.target if isinstance(node, ast.AnnAssign) else None)
@@ -47,9 +54,11 @@ def _pending_sql(nb: dict, sqls: dict[str, str]) -> dict[str, dict]:
                 if writes[target.id] == 1 and isinstance(value, str) and value.strip():
                     literals[target.id] = value
         except SyntaxError:
-            # Invalid Python can still contain a recognizable SQL variable. Preserve
-            # the complete cell instead of silently dropping its intended query.
+            # Preserve only lines naming SQL variables, not unrelated setup or
+            # credential assignments elsewhere in a malformed cell.
             writes = dict.fromkeys(re.findall(r'\b([A-Za-z_]\w*_sql)\b', source))
+            for name in writes:
+                sources[name] = [line for line in source.splitlines() if re.search(rf'\b{re.escape(name)}\b', line)]
         for name in writes:
             ident = name[:-4]
             if name in literals:
@@ -59,7 +68,8 @@ def _pending_sql(nb: dict, sqls: dict[str, str]) -> dict[str, dict]:
                 'source_expression': '',
                 'todo': 'TODO(unshackle): notebook SQL cannot be recovered as one unconditional literal; inspect source_expression',
             })
-            item['source_expression'] += ('\n\n' if item['source_expression'] else '') + source
+            expression = '\n'.join(sources.get(name, [name]))
+            item['source_expression'] += ('\n\n' if item['source_expression'] else '') + expression
     for ident in pending:
         sqls[ident] = ''
     return pending

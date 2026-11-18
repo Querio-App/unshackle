@@ -94,7 +94,7 @@ def test_unresolved_notebook_sql_keeps_source_and_todo(tmp_path, source):
     assert result['has_todo']
     tile, = result['tiles']
     assert tile['id'] == 'tile' and tile['sql'] == ''
-    assert source in tile['source_expression']
+    assert source.splitlines()[-1].strip() in tile['source_expression']
     assert 'TODO(unshackle)' in tile['todo']
     assert repo.search('tile_sql')[0]['has_todo']
 
@@ -110,3 +110,16 @@ def test_pending_notebook_sql_never_executes_python(tmp_path):
     assert result['tiles'][0]['source_expression'] == source
     assert result['has_todo']
     assert not marker.exists()
+
+
+@pytest.mark.parametrize('sql_line', ['tile_sql = f"select {column} from orders"', 'tile_sql = f"select {column from orders"'])
+def test_pending_sql_does_not_copy_unrelated_cell_assignments(tmp_path, sql_line):
+    (tmp_path / 'notebooks').mkdir()
+    source = 'unrelated_configuration = "example-synthetic-sensitive-value"\n' + sql_line
+    (tmp_path / 'notebooks/dynamic.ipynb').write_text(json.dumps({'cells': [
+        {'cell_type': 'code', 'source': source, 'metadata': {}}
+    ]}))
+    result = Repository(tmp_path).read('notebooks/dynamic.ipynb')
+    assert result['has_todo']
+    assert sql_line in result['tiles'][0]['source_expression']
+    assert 'example-synthetic-sensitive-value' not in json.dumps(result)
