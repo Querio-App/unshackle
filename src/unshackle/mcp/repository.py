@@ -1,6 +1,8 @@
 """One confined view shared by MCP tools and resources."""
 from __future__ import annotations
 
+import ast
+from collections import Counter
 import json
 import os
 import re
@@ -14,6 +16,53 @@ from unshackle.target.layout import Layout
 KINDS = ('semantic', 'catalog', 'notebooks', 'knowledge', 'policies', 'queries', 'sql_models')
 SUFFIXES = {'.yml', '.yaml', '.md', '.sql', '.py', '.cedar', '.ipynb', '.json'}
 MAX_FILE_BYTES = 2_000_000
+
+
+def _pending_sql(nb: dict, sqls: dict[str, str]) -> dict[str, dict]:
+    """Retain SQL assignments the literal reader cannot resolve, never execute code.
+
+    Any unresolved write invalidates a previously recovered literal for that tile:
+    notebook execution order and runtime branches cannot be inferred statically.
+    """
+    pending = {}
+    for cell in nb.get('cells', []):
+        if cell.get('cell_type') != 'code':
+            continue
+        source = _source(cell)
+        literals = {}
+        try:
+            tree = ast.parse(source)
+            writes = Counter(node.id for node in ast.walk(tree)
+                             if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del))
+                             and node.id.endswith('_sql'))
+            for node in tree.body:
+                target = (node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1
+                          else node.target if isinstance(node, ast.AnnAssign) else None)
+                if not isinstance(target, ast.Name) or target.id not in writes:
+                    continue
+                try:
+                    value = ast.literal_eval(node.value)
+                except (ValueError, TypeError, SyntaxError):
+                    continue
+                if writes[target.id] == 1 and isinstance(value, str) and value.strip():
+                    literals[target.id] = value
+        except SyntaxError:
+            # Invalid Python can still contain a recognizable SQL variable. Preserve
+            # the complete cell instead of silently dropping its intended query.
+            writes = dict.fromkeys(re.findall(r'\b([A-Za-z_]\w*_sql)\b', source))
+        for name in writes:
+            ident = name[:-4]
+            if name in literals:
+                sqls[ident] = literals[name]
+                continue
+            item = pending.setdefault(ident, {
+                'source_expression': '',
+                'todo': 'TODO(unshackle): notebook SQL cannot be recovered as one unconditional literal; inspect source_expression',
+            })
+            item['source_expression'] += ('\n\n' if item['source_expression'] else '') + source
+    for ident in pending:
+        sqls[ident] = ''
+    return pending
 
 
 class Repository:
@@ -73,6 +122,7 @@ class Repository:
         if actual.suffix == '.ipynb':
             nb = json.loads(content)
             params, sqls = notebook_queries(actual)
+            pending = _pending_sql(nb, sqls)
             tiles = []
             for ident, sql in sqls.items():
                 chart = None
@@ -85,7 +135,7 @@ class Repository:
                     if chart is None:
                         chart = chart_spec_from_source(src, ident)
                     break
-                tiles.append({'id': ident, 'sql': sql, 'chart_spec': chart})
+                tiles.append({'id': ident, 'sql': sql, 'chart_spec': chart, **pending.get(ident, {})})
             result = {'path': path, 'parameters': params, 'tiles': tiles,
                       'has_todo': result['has_todo'] or 'TODO(unshackle)' in json.dumps(tiles)}
             result['datasource'] = nb.get('metadata', {}).get('unshackle', {}).get('datasource', '')

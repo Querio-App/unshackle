@@ -72,6 +72,8 @@ Client references: [Claude Code](https://code.claude.com/docs/en/mcp),
 - `read(path)` returns context files. Notebooks return parameters, tile SQL and
   declarative chart specs. Neither notebook nor imported Python code is executed.
   Unsupported chart syntax retains `source_expression` and an explicit TODO.
+  Dynamic, conditional or invalid notebook SQL assignments likewise retain their
+  source with a TODO and return empty SQL, rather than a stale literal or no tile.
 - `run_query(sql, limit=1000)` accepts one parsed SELECT/WITH/UNION query, with at most
   10,000 rows and a 30-second execution deadline. `--max-rows` and `--timeout` configure
   these server limits. The deadline starts after connection establishment; configure
