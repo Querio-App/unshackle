@@ -63,6 +63,8 @@ missing columns. Static checks do not execute queries or establish parity.
 References to ambiguous or absent tables, derived/CTE projections, unresolved Jinja,
 Python reference files, another datasource, or source TODOs receive explicit
 uncertainty. Missing columns inside statically resolved CTE bodies are still checked.
+JOIN USING keys, whole-row relation references and PostgreSQL system columns are
+also marked uncertain when ordinary catalog columns cannot establish their meaning.
 This is conservative scope checking, not complete SQL lineage. Supply a dialect for
 warehouse-specific syntax. One warehouse snapshot cannot validate another connection.
 
