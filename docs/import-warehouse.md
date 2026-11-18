@@ -39,3 +39,9 @@ credentials. Database comments themselves are copied verbatim; review them befor
 publishing. Do not point the same catalog at a different warehouse and treat that
 as a refresh. Missing the snapshot makes the first refresh conservative: existing
 catalog content is retained. Other imports keep their existing merge behavior.
+
+Tested adapters include SQLite and PostgreSQL with psycopg. In the acceptance
+machine's installed DuckDB/SQLAlchemy driver combination, reflection fails while
+querying missing `pg_collation` metadata. Import correctly aborts without partial
+output. DuckDB query execution is separately tested; DuckDB warehouse introspection
+is not currently validated. Use Postgres for the synthetic live acceptance fixture.
