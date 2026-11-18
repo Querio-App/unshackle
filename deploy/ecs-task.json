@@ -1,0 +1,33 @@
+{
+  "family": "unshackle-mcp",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+  "runtimePlatform": {"cpuArchitecture": "X86_64", "operatingSystemFamily": "LINUX"},
+  "volumes": [{"name": "scratch"}],
+  "containerDefinitions": [{
+    "name": "mcp",
+    "image": "${IMAGE}",
+    "essential": true,
+    "user": "10001:10001",
+    "readonlyRootFilesystem": true,
+    "linuxParameters": {"capabilities": {"drop": ["ALL"]}},
+    "portMappings": [{"containerPort": 8000, "protocol": "tcp"}],
+    "mountPoints": [{"sourceVolume": "scratch", "containerPath": "/tmp", "readOnly": false}],
+    "environment": [
+      {"name": "UNSHACKLE_REPO_URL", "value": "${CONTEXT_REPO_URL}"},
+      {"name": "UNSHACKLE_REPO_REF", "value": "main"},
+      {"name": "UNSHACKLE_POLL_INTERVAL", "value": "60"}
+    ],
+    "secrets": [
+      {"name": "UNSHACKLE_WAREHOUSE_URL", "valueFrom": "${WAREHOUSE_SECRET_ARN}"},
+      {"name": "UNSHACKLE_MCP_TOKEN", "valueFrom": "${TOKEN_SECRET_ARN}"}
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {"awslogs-group": "/ecs/unshackle-mcp", "awslogs-region": "${AWS_REGION}", "awslogs-stream-prefix": "mcp"}
+    }
+  }]
+}

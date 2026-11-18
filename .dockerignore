@@ -1,0 +1,16 @@
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+!src/**
+!skills/
+!skills/**
+!spec/
+!spec/**
+!deploy/
+!deploy/entrypoint.sh
+**/__pycache__
+**/*.pyc
+**/.env*
+**/.git
