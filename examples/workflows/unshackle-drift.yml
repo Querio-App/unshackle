@@ -34,13 +34,16 @@ jobs:
           python -m unshackle.drift --repo . --config migration/imports.json
           --report "$RUNNER_TEMP/unshackle-drift.md" --github-output "$GITHUB_OUTPUT"
       - name: Create or update drift pull request
-        if: steps.refresh.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/unshackle-drift
+          delete-branch: true
           title: 'Refresh warehouse schema and imported context'
           commit-message: 'Refresh warehouse schema and imported context'
           signoff: true
           body-path: ${{ runner.temp }}/unshackle-drift.md
-          add-paths: ${{ steps.refresh.outputs.paths }}
+          # Always run so a return to baseline closes the existing automation PR.
+          # An empty add-paths means "all files" to this action: use the unchanged
+          # snapshot as a narrow, nonempty fallback on no-diff runs.
+          add-paths: ${{ steps.refresh.outputs.paths || 'migration/warehouse-schema.json' }}
