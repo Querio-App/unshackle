@@ -139,7 +139,11 @@ def parse(paths: Sequence[Path]) -> Bundle:
             try:
                 expressions = _python_expressions(source)
             except SyntaxError as error:
-                add(error.lineno or 1, source, None, "Python syntax error; repair source before extracting SQL")
+                # The parser cannot identify SQL boundaries in a malformed module.
+                # Copying the whole module (or even the offending line) could expose
+                # unrelated credentials. Retain location only for local repair.
+                add(error.lineno or 1, "", None,
+                    "Python syntax error; source not copied because query boundaries are unknown; inspect the original file locally")
             else:
                 for expression in expressions:
                     add(expression.lineno, ast.get_source_segment(source, expression) or "", _literal(expression))
