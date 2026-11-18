@@ -174,3 +174,28 @@ def test_rename_drift_reports_missing_columns_and_dynamic_uncertainty(tmp_path, 
     assert any(r["kind"] == "missing_column" and r["column"] == "amount" for r in report["references"])
     assert any(r["kind"] == "uncertain" for r in report["references"])
     assert not refresh(repo, config)["changed"]
+
+
+def test_offline_http_protocol_five_questions(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+    from unshackle.mcp.http import create_app
+    path = tmp_path / "example.sqlite"
+    sqlite_fixture(path)
+    repo = tmp_path / "context"
+    url = f"sqlite:///{path}"
+    import_all(repo, url)
+    monkeypatch.setenv("UNSHACKLE_WAREHOUSE_URL", url)
+    token = "example-local-acceptance-token-not-a-secret"
+    monkeypatch.setenv("UNSHACKLE_MCP_TOKEN", token)
+    with TestClient(create_app(repo), base_url="http://localhost:8000") as client:
+        assert client.post("/mcp").status_code == 401
+        headers = {"Authorization": "Bearer " + token, "Accept": "application/json, text/event-stream"}
+        for index, question in enumerate(QUESTIONS, 1):
+            response = client.post("/mcp", headers=headers, json={
+                "jsonrpc": "2.0", "id": index, "method": "tools/call",
+                "params": {"name": "run_query", "arguments": {"sql": question["sql"]}},
+            })
+            assert response.status_code == 200
+            result = response.json()["result"]
+            assert not result.get("isError")
+            assert normalize(result["structuredContent"]["rows"]) == normalize(question["expected"])
