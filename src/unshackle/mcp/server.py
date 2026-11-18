@@ -10,7 +10,7 @@ from typing import Callable, Any
 from urllib.parse import quote, unquote, urlsplit
 
 from mcp.server.fastmcp import FastMCP
-from mcp.types import Resource
+from mcp.types import Resource, ToolAnnotations
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 
 from .query import DEFAULT_LIMIT, DEFAULT_TIMEOUT, MAX_LIMIT, run_query as execute
@@ -40,17 +40,17 @@ def create_server(repo: Path | Callable[[], Path], *, max_rows: int = MAX_LIMIT,
     server = Server('unshackle', instructions='Read repository context; TODO(unshackle) marks incomplete conversion. '
                     'Queries use one read-only warehouse role. Policies are context only.', **settings)
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False))
     def overview() -> dict[str, Any]:
         """Summarize models, metrics, notebooks, tables, TODOs and warehouse configuration."""
         return repository().overview()
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False))
     def search(query: str) -> list[dict[str, Any]]:
         """Search allowed context files for literal text; return paths, snippets and TODO flags."""
         return repository().search(query)
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False))
     def read(path: str) -> dict[str, Any]:
         """Read a confined context file or notebook SQL and static chart specifications."""
         return repository().read(path)
