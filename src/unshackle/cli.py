@@ -179,14 +179,28 @@ def extract(tool: str, repo: Path, only: tuple[str, ...], with_data: bool = Fals
 
 
 @main.command(name="import")
-@TOOL
-@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.argument("tool", type=click.Choice(sorted((*TOOLS, "warehouse", "dbt", "sql"))))
+@click.argument("paths", nargs=-1, required=False, type=click.Path(exists=True, path_type=Path))
 @REPO
 @click.option("--with-data", is_flag=True, help="Also copy data packaged in the files (Tableau .twbx/.tdsx extracts, Excel, CSV) to Parquet.")
 def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path, with_data: bool = False) -> None:
     """Use files downloaded from TOOL by hand (no API access) as migration/raw/<tool>/. Replaces earlier raw files."""
     from unshackle.sources._manual import run as import_files
 
+    if tool in {"warehouse", "dbt", "sql"}:
+        from unshackle.imports import parse
+        if with_data:
+            raise click.ClickException("--with-data applies only to BI exports")
+        envfile.load(repo)
+        try:
+            bundle = parse(tool, paths, url=os.environ.get("UNSHACKLE_WAREHOUSE_URL"))
+            result = build.apply(bundle, repo)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        _say(f"{len(result.writes.written)} written; report: {result.report_path}")
+        return
+    if not paths:
+        raise click.ClickException("BI import needs at least one path")
     src = get_source(tool)
     if with_data:
         if not hasattr(src, "import_data"):
