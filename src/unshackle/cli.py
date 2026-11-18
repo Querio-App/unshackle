@@ -441,5 +441,26 @@ def _run(fn):
         raise click.ClickException(f"network error{host}: {exc} (a 403 here can come from a proxy, not the BI tool)") from exc
 
 
-if __name__ == "__main__":
-    main()
+
+
+@main.command(name="mcp")
+@REPO
+@click.option("--transport", type=click.Choice(["stdio", "http"]), default="stdio", show_default=True)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=click.IntRange(1, 65535), default=8000, show_default=True)
+@click.option("--max-rows", type=click.IntRange(1, 10000), default=10000, show_default=True)
+@click.option("--timeout", type=click.FloatRange(min=0, min_open=True), default=30., show_default=True)
+def mcp_cmd(repo: Path, transport: str, host: str, port: int, max_rows: int, timeout: float) -> None:
+    """Serve repository context and bounded read-only warehouse queries to MCP clients."""
+    envfile.load(repo)
+    try:
+        if transport == "http":
+            from unshackle.mcp.http import serve
+            serve(repo, host=host, port=port, max_rows=max_rows, timeout=timeout)
+        else:
+            from unshackle.mcp.server import create_server
+            create_server(repo, max_rows=max_rows, timeout=timeout).run(transport="stdio")
+    except ImportError as exc:
+        raise click.ClickException("Install unshackle[mcp] for this transport") from exc
+    except (ValueError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
