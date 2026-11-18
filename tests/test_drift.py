@@ -228,3 +228,47 @@ def test_return_to_committed_baseline_has_no_diff_and_narrow_cleanup_path(tmp_pa
     assert (repo / "migration/warehouse-schema.json").is_file()
     # The template's explicit fallback stages only this unchanged snapshot, so
     # create-pull-request receives no diff and can close its stale branch PR.
+
+
+def test_join_using_key_is_explicitly_uncertain_before_and_after_rename():
+    import duckdb
+
+    conn = duckdb.connect()
+    try:
+        conn.execute("create table orders(order_id int, amount int)")
+        conn.execute("create table customers(order_id int, amount int)")
+        conn.execute("insert into orders values (1, 10)")
+        conn.execute("insert into customers values (1, 10)")
+        sql = "select * from orders join customers using (amount)"
+        assert conn.execute(sql).fetchall() == [(1, 10, 1)]
+        before = json.loads(json.dumps(BEFORE))
+        before["tables"]["catalog/warehouse/main/customers.yml"] = BEFORE["tables"][TABLE] | {"name": "customers"}
+        assert any("JOIN USING" in f.get("reason", "") for f in query_references(sql, before, dialect="duckdb"))
+        conn.execute("alter table orders rename column amount to revenue")
+        with pytest.raises(duckdb.BinderException):
+            conn.execute(sql)
+        after = json.loads(json.dumps(before))
+        after["tables"][TABLE] = AFTER["tables"][TABLE]
+        findings = query_references(sql, after, dialect="duckdb")
+        assert any(f["kind"] == "uncertain" and "JOIN USING" in f["reason"] for f in findings)
+    finally:
+        conn.close()
+
+
+def test_valid_whole_row_projection_is_uncertain_not_missing():
+    import duckdb
+
+    with duckdb.connect() as conn:
+        conn.execute("create table orders(order_id int, revenue int)")
+        conn.execute("insert into orders values (1, 10)")
+        assert conn.execute("select o from orders o").fetchall() == [({"order_id": 1, "revenue": 10},)]
+    findings = query_references("select o from orders o", AFTER, dialect="duckdb")
+    assert findings and all(f["kind"] == "uncertain" for f in findings)
+    assert "whole-row" in findings[0]["reason"]
+
+
+@pytest.mark.parametrize("column", ["ctid", "tableoid", "xmin", "cmin", "xmax", "cmax"])
+def test_postgres_implicit_system_columns_are_not_claimed_missing(column):
+    findings = query_references(f"select o.{column} from orders o", AFTER, dialect="postgres")
+    assert findings and all(f["kind"] == "uncertain" for f in findings)
+    assert "system column" in findings[0]["reason"]

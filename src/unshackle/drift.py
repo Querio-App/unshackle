@@ -56,6 +56,8 @@ def _query_references(sql: str, snapshot: dict, *, dialect: str | None = None) -
         return [{"kind": "uncertain", "reason": "SQL could not be parsed for this dialect"}]
     tables = snapshot.get("tables", {})
     findings = []
+    if any(join.args.get("using") for join in expressions[0].find_all(exp.Join)):
+        findings.append({"kind": "uncertain", "reason": "JOIN USING keys require join-side lineage; validate each key against both inputs"})
     for scope in scopes:
         sources = {}
         for alias, (_, source) in scope.selected_sources.items():
@@ -81,6 +83,12 @@ def _query_references(sql: str, snapshot: dict, *, dialect: str | None = None) -
                 findings.append({"kind": "uncertain", "reason": f"column {column.sql()} uses an unresolved or derived scope"})
                 continue
             if not any(column.name in columns for _, columns in candidates):
+                if not column.table and column.name in sources:
+                    findings.append({"kind": "uncertain", "reason": f"{column.name} may be a whole-row relation reference"})
+                    continue
+                if dialect in (None, "postgres", "postgresql") and column.name in {"ctid", "tableoid", "xmin", "cmin", "xmax", "cmax"}:
+                    findings.append({"kind": "uncertain", "reason": f"{column.name} may be a PostgreSQL system column absent from catalog metadata"})
+                    continue
                 findings.append({"kind": "missing_column", "column": column.name,
                                  "tables": sorted(path for path, _ in candidates)})
     return sorted({json.dumps(f, sort_keys=True): f for f in findings}.values(), key=lambda f: json.dumps(f, sort_keys=True))
