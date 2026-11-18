@@ -1,0 +1,232 @@
+{
+  "tool": "dbt",
+  "datasource": "warehouse",
+  "warehouse": "",
+  "tables": [
+    {
+      "datasource": "warehouse",
+      "schema": "",
+      "name": "customers",
+      "description": "One row per customer, including their sales region.",
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "",
+          "description": "Unique customer identifier.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        },
+        {
+          "name": "customer_name",
+          "type": "",
+          "description": "Fictional customer name.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        },
+        {
+          "name": "region",
+          "type": "",
+          "description": "Customer sales region.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        }
+      ],
+      "source_ref": "dbt:models/customers.sql",
+      "primary_key": [],
+      "foreign_keys": []
+    },
+    {
+      "datasource": "warehouse",
+      "schema": "",
+      "name": "orders",
+      "description": "One row per order. Recognized revenue counts paid orders only; refunded and cancelled orders are excluded.",
+      "columns": [
+        {
+          "name": "amount",
+          "type": "",
+          "description": "USD amount before filtering for paid status.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        },
+        {
+          "name": "customer_id",
+          "type": "",
+          "description": "Customer foreign key.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        },
+        {
+          "name": "order_id",
+          "type": "",
+          "description": "Unique order identifier.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        },
+        {
+          "name": "ordered_at",
+          "type": "",
+          "description": "Order date; calendar months are used for monthly reporting.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        },
+        {
+          "name": "status",
+          "type": "",
+          "description": "paid, refunded, or cancelled. Only paid contributes to recognized revenue.",
+          "label": "",
+          "hidden": false,
+          "nullable": null
+        }
+      ],
+      "source_ref": "dbt:models/orders.sql",
+      "primary_key": [],
+      "foreign_keys": []
+    }
+  ],
+  "semantic_models": [
+    {
+      "name": "orders",
+      "table": "orders",
+      "description": "",
+      "entities": [
+        {
+          "name": "order",
+          "type": "primary",
+          "expr": "order_id",
+          "join_type": "",
+          "extensions": {}
+        },
+        {
+          "name": "customer",
+          "type": "foreign",
+          "expr": "customer_id",
+          "join_type": "",
+          "extensions": {}
+        }
+      ],
+      "dimensions": [
+        {
+          "name": "ordered_at",
+          "type": "time",
+          "expr": "",
+          "description": "",
+          "label": "",
+          "time_granularity": "day",
+          "source_expression": "name: ordered_at\ntype: time\ntype_params:\n  time_granularity: day",
+          "source_language": "MetricFlow",
+          "todo": "",
+          "format": "",
+          "source_format": "",
+          "value_labels": []
+        },
+        {
+          "name": "status",
+          "type": "categorical",
+          "expr": "",
+          "description": "",
+          "label": "",
+          "time_granularity": "",
+          "source_expression": "name: status\ntype: categorical",
+          "source_language": "MetricFlow",
+          "todo": "",
+          "format": "",
+          "source_format": "",
+          "value_labels": []
+        }
+      ],
+      "measures": [
+        {
+          "name": "recognized_revenue",
+          "agg": "sum",
+          "expr": "CASE WHEN status = 'paid' THEN amount ELSE 0 END",
+          "description": "Revenue in USD from paid orders, excluding refunds and cancellations.",
+          "label": "",
+          "agg_params": {},
+          "source_expression": "agg: sum\ncreate_metric: true\ndescription: Revenue in USD from paid orders, excluding refunds and cancellations.\nexpr: CASE WHEN status = 'paid' THEN amount ELSE 0 END\nname: recognized_revenue",
+          "source_language": "MetricFlow",
+          "todo": "",
+          "format": "",
+          "source_format": ""
+        }
+      ],
+      "default_time_dimension": "ordered_at",
+      "datasource": "warehouse",
+      "source_ref": "dbt:models/schema.yml#semantic_models/orders",
+      "todo": "",
+      "sql": ""
+    }
+  ],
+  "metrics": [
+    {
+      "name": "recognized_revenue",
+      "type": "simple",
+      "label": "",
+      "description": "",
+      "measure": "recognized_revenue",
+      "numerator": "",
+      "denominator": "",
+      "expr": "",
+      "metrics": [],
+      "offsets": {},
+      "filter": "",
+      "window": "",
+      "grain_to_date": "",
+      "fill_nulls_with": null,
+      "semantic_model": "orders",
+      "source_expression": "agg: sum\ncreate_metric: true\ndescription: Revenue in USD from paid orders, excluding refunds and cancellations.\nexpr: CASE WHEN status = 'paid' THEN amount ELSE 0 END\nname: recognized_revenue",
+      "source_language": "MetricFlow",
+      "source_ref": "",
+      "todo": "",
+      "format": "",
+      "source_format": ""
+    }
+  ],
+  "dashboards": [],
+  "schedules": [],
+  "queries": [
+    {
+      "name": "dbt customers",
+      "sql": "SELECT customer_id, customer_name, region FROM public.customers\n",
+      "description": "Reference model SQL; importing does not execute or verify it.",
+      "language": "sql",
+      "datasource": "warehouse",
+      "aliases": [],
+      "owner": "",
+      "metric": false,
+      "source_ref": "dbt:models/customers.sql",
+      "todo": ""
+    },
+    {
+      "name": "dbt orders",
+      "sql": "SELECT order_id, customer_id, ordered_at, amount, status FROM public.orders\n",
+      "description": "Reference model SQL; importing does not execute or verify it.",
+      "language": "sql",
+      "datasource": "warehouse",
+      "aliases": [],
+      "owner": "",
+      "metric": false,
+      "source_ref": "dbt:models/orders.sql",
+      "todo": ""
+    }
+  ],
+  "knowledge": [],
+  "permissions": [],
+  "row_filters": [],
+  "warnings": [
+    {
+      "item": "datasource warehouse",
+      "message": "warehouse type unknown, so semantic expressions are labelled ANSI_SQL; set [datasources.warehouse] type in unshackle.toml and re-run build",
+      "severity": "warn"
+    }
+  ],
+  "skipped": [],
+  "local_db": "",
+  "local_db_sql": ""
+}

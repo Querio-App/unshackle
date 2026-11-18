@@ -1,0 +1,126 @@
+{
+  "tool": "warehouse",
+  "datasource": "warehouse",
+  "warehouse": "postgres",
+  "tables": [
+    {
+      "datasource": "warehouse",
+      "schema": "public",
+      "name": "customers",
+      "description": "",
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "INTEGER",
+          "description": "",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        },
+        {
+          "name": "customer_name",
+          "type": "TEXT",
+          "description": "",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        },
+        {
+          "name": "region",
+          "type": "TEXT",
+          "description": "Customer sales region, not order destination.",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        }
+      ],
+      "source_ref": "warehouse:public.customers",
+      "primary_key": [
+        "customer_id"
+      ],
+      "foreign_keys": []
+    },
+    {
+      "datasource": "warehouse",
+      "schema": "public",
+      "name": "orders",
+      "description": "One row per order. Recognized revenue includes only status = paid; refunded and cancelled orders are excluded.",
+      "columns": [
+        {
+          "name": "amount",
+          "type": "NUMERIC(12, 2)",
+          "description": "Order amount in USD; include only paid orders when calculating recognized revenue.",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        },
+        {
+          "name": "customer_id",
+          "type": "INTEGER",
+          "description": "",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        },
+        {
+          "name": "order_id",
+          "type": "INTEGER",
+          "description": "",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        },
+        {
+          "name": "ordered_at",
+          "type": "DATE",
+          "description": "",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "description": "",
+          "label": "",
+          "hidden": false,
+          "nullable": false
+        }
+      ],
+      "source_ref": "warehouse:public.orders",
+      "primary_key": [
+        "order_id"
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "customer_id"
+          ],
+          "referred_schema": "public",
+          "referred_table": "customers",
+          "referred_columns": [
+            "customer_id"
+          ]
+        }
+      ]
+    }
+  ],
+  "semantic_models": [],
+  "metrics": [],
+  "dashboards": [],
+  "schedules": [],
+  "queries": [],
+  "knowledge": [],
+  "permissions": [],
+  "row_filters": [],
+  "warnings": [
+    {
+      "item": "datasource warehouse",
+      "message": "warehouse type 'postgres' taken from the warehouse export; set [datasources.warehouse] type in unshackle.toml to override",
+      "severity": "info"
+    }
+  ],
+  "skipped": [],
+  "local_db": "",
+  "local_db_sql": ""
+}

@@ -1,0 +1,229 @@
+---
+name: source-metabase
+description: Use when migrating Metabase (questions, models, metrics, dashboards, collections, data and collection permissions) with unshackle - API key access, what `unshackle build metabase` translates from MBQL and native SQL, template tags and dashboard filters, finishing Metabase metric and chart TODOs, paid-only gaps (row and column security), and parity through Metabase's own CSV export.
+---
+
+# Metabase source
+
+Metabase keeps everything in its application database and serves it over the HTTP
+API. unshackle reads cards (questions, models, metrics), dashboards, the database
+metadata, collections and the permission graphs. Query-builder cards are compiled
+to SQL **by Metabase** at extract time (`POST /api/dataset/native`), so tile SQL is
+exactly what Metabase runs. Tested against Metabase v0.64.1 (open source); MBQL 4
+(before v0.57) and MBQL 5 are both read.
+
+## Access
+
+| Variable | Value |
+| --- | --- |
+| `METABASE_URL` | the address you open Metabase at, no path: `https://metabase.example.com` |
+| `METABASE_API_KEY` | an API key (Admin > Settings > Authentication > API keys), sent as `X-API-Key` |
+
+- Put the key in the **Administrators** group. A key in another group only sees the
+  collections and databases that group can see; the permission graphs need admin.
+- API keys exist since v0.49. On older versions, create a session
+  (`POST /api/session`) and use a key-less proxy, or upgrade first.
+- unshackle paces itself at 300 requests/minute. Compiling is one
+  `POST /api/dataset/native` per query-builder card (plus one per dashboard tile with
+  filters); it doesn't run queries on the warehouse.
+- The API is AGPL server code; unshackle only calls it over HTTP.
+
+## Commands
+
+```
+unshackle inventory metabase          # questions, models, metrics, dashboards, collections
+unshackle extract metabase [--only dashboard:<id> | --only card:<id> | --only collection:<id>]
+unshackle build metabase
+unshackle todo
+```
+
+`--only dashboard:<id>` pulls every card on it (and cards those reference with
+`{{#id}}`); `--only collection:<id>` takes the collection and its sub-collections.
+
+Raw files under `migration/raw/metabase/`:
+
+| File | From |
+| --- | --- |
+| `instance.json` | URL and version (`GET /api/session/properties`) |
+| `collections.json` | `GET /api/collection/tree` |
+| `cards/<id>.json` | `GET /api/card/{id}` - `type` (question / model / metric), `display`, `dataset_query`, `visualization_settings`, `result_metadata`, `view_count` |
+| `cards/<id>.sql` | `POST /api/dataset/native` (pretty) for query-builder cards |
+| `dashboards/<id>.json` | `GET /api/dashboard/{id}` - dashcards (24-column grid), `parameters`, `tabs`, `view_count` |
+| `dashboards/<id>/parameter-names.json` | Metabase parameter ID -> unique probe name; shared allocation for extract and build, including date/range suffixes |
+| `dashboards/<id>/<dashcard>.sql` | the card compiled with the dashboard's filters set to sentinels: text `'unshackle__<unique name>'`, numbers `-901234.5` (+ the filter's position; `between` also `901234.5`), dates `1901-02-03~1901-04-05` (year 1901 + position); the time-grouping filter with its default |
+| `databases/<id>.json` | `GET /api/database/{id}/metadata` (connection details removed) |
+| `snippets.json` | `GET /api/native-query-snippet` |
+| `permissions/groups.json`, `graph.json`, `collections.json` | `GET /api/permissions/group`, `/api/permissions/graph`, `/api/collection/graph` |
+| `permissions/gtap.json` | `GET /api/mt/gtap` (paid plans only) |
+| `paid_features.json` | paid endpoints that weren't available, with the HTTP error |
+| `pulses/<id>.json` | safe subscription projection from `GET /api/pulse` for active and archived subscriptions; channel details and per-card attachment flags retained |
+| `_pulses.json` | request scope/status, unknown completeness, fetched IDs and retained potentially stale IDs |
+| `_errors.json` | failures (a card Metabase can't compile, for example) |
+
+Fingerprints, creator/editor details and database connection details are dropped.
+Subscriptions use a separate safe projection because the generic cleaner drops `details`.
+
+## Subscription delivery specifications
+
+`schedules/metabase-pulse-<id>.yml` keeps one subscription with all its channels. Each channel retains
+its own cadence, enabled state, visible recipients and details; cards retain CSV/XLS, formatted-row
+and pivot flags. Parameter overrides use the shared parameter ID-to-name mapping and range expansion.
+Unsupported overrides retain their original values and TODOs instead of becoming executable parameters.
+
+Only the default Pulse visibility scope is requested. There is no recipient-union query or permission
+discovery subsystem. API failures do not stop the rest of the migration. Earlier subscriptions missing
+from a later visible list are retained and marked potentially stale; an empty or limited response is
+never proof that no subscriptions or recipients exist. Missing lists remain unknown, distinct from `[]`.
+
+Timezone is not inferred from report settings or the machine running the migration. Unverified timezone,
+unsupported delivery types/settings, limited attachments and missing notebook references remain TODOs.
+Configure an external orchestrator to execute notebooks, apply empty-result behavior, render attachments
+and deliver results. This feature adds GET reads only: never invoke Pulse send/test endpoints or create jobs.
+Destination addresses are preserved intentionally; credentials and delivery URLs are omitted.
+
+Dashboard filters are identified by Metabase parameter ID. Bind names start from the normalized slug;
+collisions get deterministic numeric suffixes, including collisions with expanded `_from` / `_to` and
+`_min` / `_max` names. Defaults and tile mappings follow the ID. Older exports without
+`parameter-names.json` still build when the sentinels are unambiguous on each tile. If several mapped
+parameters share an old text sentinel, the tile keeps its SQL and a TODO: re-run
+`unshackle extract metabase --only dashboard:<id>`, then `unshackle build metabase`.
+
+## What is deterministic
+
+| Metabase | Becomes |
+| --- | --- |
+| database tables and fields (display names, descriptions, `type/PK`, `type/FK` with `fk_target_field_id`) | `catalog/` tables; semantic models (with primary and foreign entities) for the tables metrics read and their FK targets |
+| metric card: one `count / sum / avg / distinct / min / max / median` over a column of its `source-table`, optional filters `= != < > <= >= between is-null not-null and or` on the same table | measure + simple metric with a `filter` (`{{ Dimension('orders__status') }} = 'COMPLETED'`); `!=` keeps NULLs like Metabase (`x <> 'a' OR x IS NULL`) |
+| any other metric (custom expression, joined column, segment, multi-stage, built on a model) | TODO metric in `semantic/<table>.ossie.yaml` (`custom_extensions`) with the compiled SQL as `source_expression`, plus `queries/<metric>.sql` (`metric: true`) |
+| native question | `queries/<name>.sql`: text/number/date tags -> `:tag` binds (listed in the description with defaults); `[[ ... ]]` blocks kept when their tags have a default, else dropped (noted); field filters `{{x}}` -> `("schema"."table"."col" = :x OR :x IS NULL)` for `=`-type widgets; `{{snippet: x}}` inlined; `{{#id-name}}` -> the card's SQL as a subquery |
+| query-builder question not on a dashboard | `queries/<name>.sql` with Metabase's compiled SQL |
+| model (native or query builder) | `queries/<name>.sql` (TODO: materialize as a SQL model) + a semantic model named after it, dimensions from `result_metadata` |
+| dashboard | `notebooks/<slug>.ipynb`; cells in grid order (row, then col); tabs become `## Tab` headings |
+| dashboard filter `string/=`, `category`, `id` on a query-builder card field | `:slug` bind, written `(<column> = :slug OR :slug IS NULL)` into Metabase's compiled SQL (empty filter = no filter, as in Metabase); default from the parameter |
+| dashboard filter `string/!=`, `contains`, `does-not-contain`, `starts-with`, `ends-with` | `:slug`: `(<column> <> :slug OR <column> IS NULL OR :slug IS NULL)`; `POSITION(:slug IN <column>) > 0` (`= 1` for starts-with), `RIGHT(<column>, LENGTH(:slug)) = :slug` for ends-with, so `%` and `_` in the value match literally as in Metabase; `LOWER(...)` on both sides when the filter is case-insensitive |
+| dashboard filter `number/=`, `!=`, `>=`, `<=` | `:slug` with the same operator; `number/between` -> `:slug_min` / `:slug_max` (inclusive, either may be empty) |
+| dashboard filter `date/*` (range, single date, month, quarter, relative, all options) on a `date` or `timestamp` column | `:slug_from` / `:slug_to`, inclusive days: `<column> >= :slug_from`, `<column> <= :slug_to` (`CAST(<column> AS date) <= :slug_to` on timestamps, which Metabase compiles as `< to + 1 day`). Defaults: ranges, single dates, `2024-03`, `Q1-2024`; before (`~d`) and after (`d~`) exclude `d`, as in Metabase |
+| dashboard filter on a native template tag | the tile's `{{tag}}` becomes `:slug`; unmapped tags use the card's default |
+| display `bar`, `line`, `area`, `scatter`, `row` (bar, axes swapped), `pie`, `combo` | mark + encodings from `graph.dimensions` / `graph.metrics` (or breakout/aggregation columns when unset); second dimension -> `color` (+ `xOffset` unless stacked); several metrics on line/area/combo -> layers, `axis: right` -> dual axis |
+| `scalar`, `smartscalar`, `progress`, `gauge` | KPI (text) on `scalar.field` or the first metric |
+| `table`, `object`, `pivot` | table tiles |
+| text / heading / link cards | markdown cells |
+| collections | `knowledge/metabase-collections.md`: where each item lived |
+| groups and data permissions | Cedar: `All Users` -> any principal, other groups -> `Group::"<name>"`; `view-data: unrestricted` + `create-queries: query-builder(-and-native)` -> `permit query` on the datasource; table-level grants -> `permit query` on tables; `blocked` -> `forbid query` |
+| collection permissions | `view` (read) / `edit` (write) on the notebooks of dashboards in that collection |
+| `view_count` on dashboards | `Dashboard.views` in `migration/ir/metabase.json` (search has no view counts, so the inventory doesn't either) |
+
+Encodings use the column names the SQL returns: Metabase aliases implicit-join
+columns as `accounts__via__account_id__account_manager`, and unshackle reads the alias
+from `result_metadata` (`lib/desired-column-alias`).
+
+## What needs a human
+
+- **Custom-expression metrics** (`sum(a) / sum(b)`, `(sum(a) - sum(b)) / sum(a)`,
+  `count-where`, `share`, cumulative): split into simple measures and a ratio or
+  derived metric (skills/translate-metrics). The compiled SQL in `queries/` is the
+  reference: Metabase divides as `CAST(a AS DOUBLE PRECISION) / NULLIF(b, 0.0)`, which is
+  the same as unshackle's `1.0 * a / nullif(b, 0)`.
+- **Models**: materialize the SQL in `queries/models/<name>.sql` (dbt:
+  `models/unshackle/<name>.sql`), then mark the key column as the primary entity.
+- **Relative date defaults** (`past30days`, `thisyear`) and exclusions
+  (`exclude-days-Mon`): Metabase works them out when the dashboard loads, so the notebook's
+  `<slug>_from` / `<slug>_to` start empty (no filter) with a TODO; set the dates you want.
+- **Date filters on `timestamptz` columns**: Metabase compiles them in the report time
+  zone (`timestamp with time zone '... +00:00'`), and casting to a date would use the
+  warehouse session's. The tile keeps a TODO; write the predicate in that time zone.
+- **Time grouping** (`temporal-unit`) filter: the SQL keeps the default unit (or the
+  card's own), with a TODO. Metabase's week starts on Sunday
+  (`DATE_TRUNC('week', x + INTERVAL '1 day') - INTERVAL '1 day'`); copy what it compiles
+  if the notebook needs other units.
+- **Filters unshackle can't find in the compiled SQL** (on an expression, an aggregation or
+  a later stage): the tile keeps a TODO naming the `:binds` to add.
+- **Field filters** in native SQL with `contains`, `starts-with`, number or date widgets:
+  write the predicate (`POSITION(:x IN col) > 0`).
+- **Optional `[[ ... ]]` clauses without a default**: dropped, which is what Metabase
+  runs when the filter is empty. Add `(... = :x OR :x IS NULL)` if the notebook needs the filter.
+- **Charts**: `funnel`, `waterfall`, `map`, `sankey`, `boxplot`,
+  `progress`/`gauge` goals, `smartscalar` comparisons, 100% stacked bars, pivot tables
+  and dashcard `series` (other cards overlaid) are TODOs on the tile. Pivot with
+  `pandas.pivot_table`; funnels as sorted bars.
+- **Query builder only**: Metabase can limit a group to the query builder (no native
+  SQL). Cedar has no such distinction; the permission keeps a TODO.
+- **Sample database**: cards on Metabase's H2 sample database are extracted too and
+  warned about (several databases in one datasource); skip them with `--only`.
+- **Iframe, action and placeholder cards**: unknown tiles with a TODO.
+
+## Paid-only features
+
+| Feature | What unshackle does |
+| --- | --- |
+| Row and column security (formerly sandboxing, `GET /api/mt/gtap`) | Open source returns 404: an info warning in the report. On paid plans each sandbox becomes a row filter with a TODO: write the predicate from `attribute_remappings` (user attribute -> column) or the sandboxing question's filter |
+| Impersonation, `view-data` other than unrestricted/blocked | `forbid query` with a TODO to decide the group's access |
+| Official collections, verified content, audit/usage analytics | not read; the collections knowledge file lists items |
+| Serialization (`metabase export`) | not used; the API covers the same content |
+
+## Parity
+
+After building with the current version:
+
+```
+unshackle verify --init metabase --only dashboard:2
+unshackle verify
+```
+
+Omit `--only` for all built dashboards, or repeat it. Initialization runs each supported
+dashcard through the existing API client with `format_rows=false`, `pivot_results=false`,
+and original parameter IDs, defaults, targets and options. Target binds use the shared
+parameter-ID mapping and date/range expansion. Unmapped native tags keep their card defaults.
+
+CSV baselines and capture context go to `migration/parity/data/metabase-<dashboard>-<dashcard>.csv`
+and `.json`; the matching YAML case is strict and checks all columns. Existing cases and CSVs
+are never replaced. A saved CSV needs matching capture context to scaffold without API access;
+an unknown or changed context is reported, not silently repinned to current defaults.
+
+Initialization checks the actual notebook's generated SQL cell and literal parameter defaults.
+It skips edited execution shapes, missing metadata, ambiguous headers/aliases, relative dates,
+unsupported multi-value defaults and unresolved tile TODOs. Joined result aliases are accepted
+when a simple outer SELECT proves the projected names; uncertain projections need a manual
+case. No query is executed during offline parsing. The export request contract is covered
+against Metabase v0.65.3 (`src/metabase/dashboards_rest/api.clj`).
+
+For cases that need manual work:
+
+Metabase's own results are the source side:
+
+```
+curl -s -X POST "$METABASE_URL/api/card/42/query/csv" -H "X-API-Key: $METABASE_API_KEY" \
+  -d format_rows=false > migration/parity/data/42.csv
+# a dashboard tile with a filter value:
+curl -s -X POST "$METABASE_URL/api/dashboard/2/dashcard/39/card/43/query/csv" -H "X-API-Key: $METABASE_API_KEY" \
+  --data-urlencode 'parameters=[{"id":"<parameter id>","type":"string/=","value":["COMPLETED"],"target":<mapping target>}]' \
+  -d format_rows=false > migration/parity/data/managers.csv
+```
+
+```yaml
+name: Sales overview - Monthly revenue
+source:
+  csv: migration/parity/data/42.csv
+target:
+  notebook: notebooks/sales-overview.ipynb
+  tile: monthly_revenue
+keys: [purchased_at]
+columns: {"Purchased At: Month": purchased_at, "Sum of Post Discount Revenue ($)": sum}
+```
+
+CSV headers are display names (with the currency in brackets), so map them with
+`columns:`. The dashcard CSV starts with a byte-order mark; strip it. Send each dashcard parameter with
+the dashboard's `options`, as the dashboard does: without them a case-insensitive filter
+runs case-sensitive.
+
+## Gotchas
+
+- `view_count` didn't move when we read cards and dashboards through the API (v0.64.1);
+  a freshly created instance shows 0. Usage comes from people opening them in Metabase.
+- A query-builder card whose breakout bins a field Metabase hasn't fingerprinted yet
+  fails to compile ("Unable to bin Field without a min/max value"); re-run extract after
+  the next sync.
+- Field filters compile to fully qualified columns (`"public"."orders"."status"`), so
+  the native SQL must not alias that table. unshackle writes the same reference.
+- Snippet tags need `snippet-id` for Metabase to run them; unshackle resolves snippets
+  by name.

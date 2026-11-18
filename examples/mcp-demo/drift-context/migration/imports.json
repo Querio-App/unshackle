@@ -1,0 +1,20 @@
+{
+  "imports": [
+    {
+      "source": "warehouse"
+    },
+    {
+      "source": "dbt",
+      "paths": [
+        "inputs/dbt"
+      ]
+    },
+    {
+      "source": "sql",
+      "paths": [
+        "inputs/queries"
+      ]
+    }
+  ],
+  "dialect": "postgres"
+}

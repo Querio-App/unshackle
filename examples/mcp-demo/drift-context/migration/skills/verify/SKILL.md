@@ -1,0 +1,162 @@
+---
+name: verify
+description: Use when proving a migration's numbers match the source BI tool - writing migration/parity/*.yaml cases, getting source numbers from each tool, running `unshackle verify`, and debugging differences. Passing cases become evals/.
+---
+
+# Verify parity with the source tool
+
+A parity case runs the same question on both sides and compares the results.
+`unshackle verify` runs every `migration/parity/*.yaml`, writes
+`migration/parity/results.json`, updates `migration/report.md`, and copies each
+passing case to `evals/<id>.yaml`.
+
+```
+UNSHACKLE_WAREHOUSE_URL=snowflake://user@account/db/schema?warehouse=wh unshackle verify
+```
+
+(`unshackle verify --url ...` also works; needs the warehouse's
+SQLAlchemy driver. Never put the URL with a password in a tracked file.)
+
+## Start from the source's own numbers
+
+```
+unshackle verify --init tableau
+```
+
+writes `migration/parity/<tile>.yaml` for each view CSV that `extract tableau` saved
+(`migration/raw/tableau/views/`) and that matches a tile with SQL: the CSV as the source,
+the notebook tile as the target with the dashboard's default filter values pinned in
+`params`, CSV headers mapped to the tile's columns, dimensions as `keys`, and a display
+format for each column the CSV shows formatted (`$1,234`, `11.9%`, `0.1M`). Existing case
+files are kept. Check each case's `keys` and `params` (the CSV holds the view as last
+saved, with its filters), then run `unshackle verify`. Other tools can offer saved CSVs through
+`parity_csv` on their tiles.
+
+For Metabase, build with the current version first, then run:
+
+```
+unshackle verify --init metabase [--only dashboard:<id>]
+```
+
+This runs dashboard card exports through the Metabase API with the original source parameter
+IDs, values and options, and unformatted, unpivoted results. `--only` is repeatable. Baselines
+and capture context are saved as `migration/parity/data/metabase-<dashboard>-<dashcard>.csv`
+and `.json`; cases use the same ID in `migration/parity/`. Existing files are kept.
+
+Cases use `strict: true`, compare all result columns, and pin translated SQL binds after
+checking the actual notebook's SQL, literal defaults and parameter mapping. The saved capture
+context must match before a CSV is reused without an API request. Unknown CSV provenance,
+changed context, incomplete or colliding columns, uncertain output aliases, unresolved tile
+TODOs, and unsupported relative-date or multi-value defaults are reported as skips. Write a
+manual case when automatic scaffolding cannot establish that both sides use the same query
+and filters. Initialization does not overwrite edited notebooks or cases.
+
+## Case format
+
+```yaml
+name: Monthly revenue by region
+question: What was revenue by region per month in H1 2025?   # optional; used in the eval
+source:
+  csv: migration/raw/tableau/views/abc123.csv    # or  sql: "select ..."
+target:
+  notebook: notebooks/revenue-overview.ipynb     # or  sql: "select ..."
+  tile: monthly_revenue                            # runs monthly_revenue_sql
+  params: {date_from: '2025-01-01', date_to: '2025-07-01'}   # override the parameters cell
+keys: [month, region]
+columns: {"Sum of Revenue": revenue}   # optional: source name -> target name
+formats: {"Profit Ratio": "0.0%"}      # optional: compare at the precision the source shows
+tolerance: 0.0001
+```
+
+- `source` / `target`: exactly one of `csv` (path relative to the repo), `sql`
+  (run on the warehouse; optional `params`), or `notebook` + `tile` (runs that tile's
+  `<tile>_sql` with the notebook's parameters cell merged with `params`).
+- `keys`: columns that identify a row; both sides are sorted by them. Omit only for
+  single-row results.
+- Column names are compared lower-cased and trimmed. Map renamed columns with
+  `columns:` ({source name: target name}). A source column the target doesn't have is
+  noted in the result and not compared; list it in `ignore:` to silence the note, or set
+  `strict: true` to fail the case on it. A case with nothing but its keys in common fails.
+- `formats`: a display format per source column (`0.0%`, `$#,##0`, `0.00`, `$0.0M`,
+  `#,##0K`). Values pass when they are at most half a displayed step apart (`0.0%`:
+  0.05 points), so an exact half-way tie passes whichever way the tool rounds. Use it for
+  exports rounded as displayed; it never makes the comparison stricter than `tolerance`.
+- `id`: the eval's file name (`evals/<id>.yaml`); defaults to the case's file name.
+- Statuses: `pass`, `differs` (with the first bad column and values), `not checked`
+  (an error loading a side; the note has it).
+
+## Where the source numbers come from
+
+Prefer SQL the tool itself generated, run on the same warehouse: it removes
+connection and caching differences. Save the SQL in the case's `source.sql`.
+
+| Tool | Source side |
+| --- | --- |
+| Looker | `GET /api/4.0/queries/{query_id}/run/sql` for a tile's query (or `run_inline_query` with `result_format: sql`); `result_format: csv` for numbers |
+| Lightdash | `POST /api/v1/projects/{projectUuid}/explores/{exploreId}/compileQuery` with the chart's metricQuery -> SQL |
+| Omni | query API with `planOnly: true` -> generated SQL for a tile's query |
+| Sigma | `GET /v2/workbooks/{workbookId}/elements/{elementId}/query` -> element SQL |
+| ThoughtSpot | `POST /api/rest/2.0/metadata/liveboard/sql` (or `/metadata/answer/sql`) -> SQL per visualization |
+| Tableau | `GET /api/<ver>/sites/{site}/views/{viewId}/data` -> CSV (filter with `vf_<field>=<value>`); save under `migration/raw/tableau/views/` |
+| Power BI | `POST /v1.0/myorg/datasets/{datasetId}/executeQueries` with a DAX `EVALUATE SUMMARIZECOLUMNS(...)` (tenant setting must allow it), or DAX over the XMLA endpoint; else a CSV exported from the visual |
+| Hex | re-run the project's SQL cells on the warehouse (they are the source of truth) |
+| Metabase | `POST /api/card/{id}/query/csv` with `format_rows=false` (a dashboard tile with filters: `POST /api/dashboard/{d}/dashcard/{dc}/card/{c}/query/csv` with `parameters`); the SQL is `POST /api/dataset/native` |
+| Superset | `POST /api/v1/chart/data` with the chart's `query_context`, `result_type: full`, `result_format: csv`, `pivot`/`flatten` post-processing dropped (a dashboard filter: add `{"col", "op": "IN", "val"}` to each query's `filters`); headers are metric verbose names; the SQL is the same call with `result_type: query` |
+| QuickSight | no query API: `StartDashboardSnapshotJob` exports table and pivot visuals as CSV (Pixel Perfect add-on); else Export to CSV from the visual, or QuickSight's own SQL from the warehouse's query history (Athena `ListQueryExecutions` in the data source's workgroup) after the dashboard is opened |
+| Qlik | the engine itself: `GetHyperCubeData` on the chart object (after `Field.SelectValues` for a filtered case), a session object with a one-measure `qHyperCubeDef` for a metric; use `qNum` (dates are days since 1899-12-30); a set expression on the reduction field checks a Section Access row filter |
+| Redash | `POST /api/queries/{id}/results` with `{"parameters": {...}, "max_age": 0}`, poll `GET /api/jobs/{job}` until `status` 3, then `GET /api/query_results/{query_result_id}` (`data.columns` / `data.rows`; its `query` is the SQL Redash ran); a date range is `{"start", "end"}` |
+
+The source skill (`skills/source-<tool>/SKILL.md`) has the auth details. Save CSVs
+you export into `migration/parity/data/` if they aren't already under `migration/raw/`.
+
+## Fix the window
+
+Live data moves. Pin every case to a closed period (last full month or quarter,
+e.g. `2025-01-01` to `2025-07-01`, half-open) on both sides, and pull both sides
+close together in time. Avoid "last 30 days", "today" and relative filters. For
+snapshot tables, pin the snapshot date too. Use the same timezone on both sides.
+
+## Tolerance
+
+- Counts and distinct counts: exact, `tolerance: 0`.
+- Sums, averages, ratios: `tolerance: 0.0001` (0.01%, the default).
+- Don't loosen tolerance to make a case pass. If a real difference is expected
+  (e.g. the source rounded before summing), say so in the case `name`/note and in
+  the report.
+
+The comparison is relative: `|a - b| / max(|a|, |b|)`. Numbers formatted as text in
+a CSV (`"1,234.50"`, `"$1,234"`, `"12%"`, `"0.1M"`, `"(3.2)"`) are parsed as numbers;
+when they are rounded for display, add the column's `formats:` entry rather than
+loosening `tolerance`.
+
+## What to cover
+
+1. The top dashboards by views: one case per headline tile.
+2. Every metric used on them: grouped by its main time dimension (month) for a
+   closed period.
+3. One case per row filter: run the target SQL with the predicate substituted for a
+   known user and compare with the source viewed as that user (if the tool can
+   impersonate) or with a hand-checked number.
+
+## Debugging a diff
+
+| Symptom | Look at |
+| --- | --- |
+| Row count differs | filters (missing dashboard default, date boundary inclusive vs exclusive), join type (inner vs left), nulls grouped differently (source "Null" bucket), top-N / row limits in the source |
+| Row count equal, values higher | join fan-out (sum over a one-to-many join; count distinct or aggregate before joining), duplicated rows in a derived table |
+| Values lower | inner join dropping rows, filter applied twice, row filter active for the verify user |
+| Small % gap | average of averages vs weighted average, integer division, rounding before aggregating, `count` vs `count distinct` |
+| Off at month edges | timezone (UTC vs local), timestamp vs date truncation, week start day, fiscal calendar |
+| Ratio wrong, parts right | ratio of sums vs sum of ratios; division by zero handling (`nullif`) |
+| Nulls | `sum` of all nulls is null vs 0; `avg` ignores nulls; `coalesce` in the source |
+| Strings differ | case, trailing spaces, date formatting (`2025-01-01` vs `2025-01-01 00:00:00`: cast to date in the target SQL) |
+
+Fix the translation (metric, tile SQL, row filter), not the case. Re-run until it
+passes, or write down why it can't.
+
+## After it passes
+
+Passing cases are written to `evals/<id>.yaml` (the case's `id:`, else its file name)
+with the expected row count and a 20-row sample, so they keep running after the
+migration. An eval that already exists is kept; delete it to record a new sample. Report the
+pass rate (`## Parity (n/m pass)` in `migration/report.md`) in the PR.

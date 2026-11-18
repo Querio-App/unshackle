@@ -1,0 +1,151 @@
+{
+  "tool": "sql",
+  "datasource": "warehouse",
+  "warehouse": "",
+  "tables": [],
+  "semantic_models": [],
+  "metrics": [],
+  "dashboards": [
+    {
+      "name": "python/monthly.py",
+      "slug": "python-monthly-py-cd98ddc19804",
+      "description": "",
+      "tiles": [
+        {
+          "id": "cd98ddc19804-5-1",
+          "title": "python/monthly.py:5",
+          "kind": "table",
+          "mark": "table",
+          "sql": "SELECT substr(CAST(ordered_at AS VARCHAR), 1, 7) AS month, SUM(amount) AS revenue FROM orders WHERE status = 'paid' GROUP BY 1 ORDER BY 1",
+          "encodings": {},
+          "text": "",
+          "source_type": "py",
+          "source_config": {
+            "source_path": "python/monthly.py",
+            "line": 5,
+            "source_expression": "\"SELECT substr(CAST(ordered_at AS VARCHAR), 1, 7) AS month, \"\n    \"SUM(amount) AS revenue FROM orders WHERE status = 'paid' \"\n    \"GROUP BY 1 ORDER BY 1\""
+          },
+          "todo": "",
+          "layers": [],
+          "compose": "layer",
+          "references": [],
+          "geo": ""
+        },
+        {
+          "id": "cd98ddc19804-10-2",
+          "title": "python/monthly.py:10",
+          "kind": "table",
+          "mark": "table",
+          "sql": "",
+          "encodings": {},
+          "text": "",
+          "source_type": "py",
+          "source_config": {
+            "source_path": "python/monthly.py",
+            "line": 10,
+            "source_expression": "f\"SELECT * FROM {table_name}\""
+          },
+          "todo": "python/monthly.py:10: dynamic Python expression; SQL cannot be extracted statically",
+          "layers": [],
+          "compose": "layer",
+          "references": [],
+          "geo": ""
+        }
+      ],
+      "layout": [],
+      "filters": [],
+      "datasource": "",
+      "source_ref": "python/monthly.py",
+      "url": "",
+      "views": null,
+      "notes": [
+        "Source `python/monthly.py:5`\n\n```py\n\"SELECT substr(CAST(ordered_at AS VARCHAR), 1, 7) AS month, \"\n    \"SUM(amount) AS revenue FROM orders WHERE status = 'paid' \"\n    \"GROUP BY 1 ORDER BY 1\"\n```",
+        "Source `python/monthly.py:10`\n\n```py\nf\"SELECT * FROM {table_name}\"\n```"
+      ],
+      "not_migrated": []
+    },
+    {
+      "name": "sql/regions.sql",
+      "slug": "sql-regions-sql-8613b8029aff",
+      "description": "",
+      "tiles": [
+        {
+          "id": "8613b8029aff-1-1",
+          "title": "sql/regions.sql:1",
+          "kind": "table",
+          "mark": "table",
+          "sql": "SELECT c.region, SUM(o.amount) AS revenue\nFROM orders AS o JOIN customers AS c USING (customer_id)\nWHERE o.status = 'paid'\nGROUP BY c.region ORDER BY c.region;\n",
+          "encodings": {},
+          "text": "",
+          "source_type": "sql",
+          "source_config": {
+            "source_path": "sql/regions.sql",
+            "line": 1,
+            "source_expression": "SELECT c.region, SUM(o.amount) AS revenue\nFROM orders AS o JOIN customers AS c USING (customer_id)\nWHERE o.status = 'paid'\nGROUP BY c.region ORDER BY c.region;\n"
+          },
+          "todo": "",
+          "layers": [],
+          "compose": "layer",
+          "references": [],
+          "geo": ""
+        }
+      ],
+      "layout": [],
+      "filters": [],
+      "datasource": "",
+      "source_ref": "sql/regions.sql",
+      "url": "",
+      "views": null,
+      "notes": [
+        "Source `sql/regions.sql:1`\n\n```sql\nSELECT c.region, SUM(o.amount) AS revenue\nFROM orders AS o JOIN customers AS c USING (customer_id)\nWHERE o.status = 'paid'\nGROUP BY c.region ORDER BY c.region;\n\n```"
+      ],
+      "not_migrated": []
+    },
+    {
+      "name": "sql/revenue.sql",
+      "slug": "sql-revenue-sql-3ea4e59b08ab",
+      "description": "",
+      "tiles": [
+        {
+          "id": "3ea4e59b08ab-1-1",
+          "title": "sql/revenue.sql:1",
+          "kind": "table",
+          "mark": "table",
+          "sql": "-- Recognized revenue excludes refunded and cancelled orders.\nSELECT SUM(amount) AS revenue FROM orders WHERE status = 'paid';\n",
+          "encodings": {},
+          "text": "",
+          "source_type": "sql",
+          "source_config": {
+            "source_path": "sql/revenue.sql",
+            "line": 1,
+            "source_expression": "-- Recognized revenue excludes refunded and cancelled orders.\nSELECT SUM(amount) AS revenue FROM orders WHERE status = 'paid';\n"
+          },
+          "todo": "",
+          "layers": [],
+          "compose": "layer",
+          "references": [],
+          "geo": ""
+        }
+      ],
+      "layout": [],
+      "filters": [],
+      "datasource": "",
+      "source_ref": "sql/revenue.sql",
+      "url": "",
+      "views": null,
+      "notes": [
+        "Source `sql/revenue.sql:1`\n\n```sql\n-- Recognized revenue excludes refunded and cancelled orders.\nSELECT SUM(amount) AS revenue FROM orders WHERE status = 'paid';\n\n```"
+      ],
+      "not_migrated": []
+    }
+  ],
+  "schedules": [],
+  "queries": [],
+  "knowledge": [],
+  "permissions": [],
+  "row_filters": [],
+  "warnings": [],
+  "skipped": [],
+  "local_db": "",
+  "local_db_sql": ""
+}

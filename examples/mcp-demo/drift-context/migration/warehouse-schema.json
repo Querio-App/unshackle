@@ -1,0 +1,79 @@
+{
+  "retained_paths": [],
+  "tables": {
+    "catalog/warehouse/public/customers.yml": {
+      "columns": [
+        {
+          "name": "customer_id",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "name": "customer_name",
+          "nullable": false,
+          "type": "TEXT"
+        },
+        {
+          "description": "Customer sales region, not order destination.",
+          "name": "region",
+          "nullable": false,
+          "type": "TEXT"
+        }
+      ],
+      "name": "customers",
+      "primary_key": [
+        "customer_id"
+      ],
+      "source": "warehouse:public.customers"
+    },
+    "catalog/warehouse/public/orders.yml": {
+      "columns": [
+        {
+          "description": "Order amount in USD; include only paid orders when calculating recognized revenue.",
+          "name": "amount",
+          "nullable": false,
+          "type": "NUMERIC(12, 2)"
+        },
+        {
+          "name": "customer_id",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "name": "order_id",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "name": "ordered_at",
+          "nullable": false,
+          "type": "DATE"
+        },
+        {
+          "name": "status",
+          "nullable": false,
+          "type": "TEXT"
+        }
+      ],
+      "description": "One row per order. Recognized revenue includes only status = paid; refunded and cancelled orders are excluded.",
+      "foreign_keys": [
+        {
+          "columns": [
+            "customer_id"
+          ],
+          "referred_columns": [
+            "customer_id"
+          ],
+          "referred_schema": "public",
+          "referred_table": "customers"
+        }
+      ],
+      "name": "orders",
+      "primary_key": [
+        "order_id"
+      ],
+      "source": "warehouse:public.orders"
+    }
+  },
+  "version": 1
+}

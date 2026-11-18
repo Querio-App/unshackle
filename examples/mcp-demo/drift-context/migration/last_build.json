@@ -1,0 +1,13 @@
+{
+  "tool": "sql",
+  "written": [
+    "notebooks/python-monthly-py-cd98ddc19804.ipynb",
+    "notebooks/sql-regions-sql-8613b8029aff.ipynb",
+    "notebooks/sql-revenue-sql-3ea4e59b08ab.ipynb"
+  ],
+  "unchanged": [],
+  "kept_hand_edits": [],
+  "renamed": {},
+  "removed": [],
+  "kept_stale": []
+}

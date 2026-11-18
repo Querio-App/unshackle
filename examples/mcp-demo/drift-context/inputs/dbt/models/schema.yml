@@ -1,0 +1,49 @@
+version: 2
+models:
+  - name: orders
+    description: One row per order. Recognized revenue counts paid orders only; refunded and cancelled orders are excluded.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+      - name: customer_id
+        description: Customer foreign key.
+      - name: ordered_at
+        description: Order date; calendar months are used for monthly reporting.
+      - name: amount
+        description: USD amount before filtering for paid status.
+      - name: status
+        description: paid, refunded, or cancelled. Only paid contributes to recognized revenue.
+  - name: customers
+    description: One row per customer, including their sales region.
+    columns:
+      - name: customer_id
+        description: Unique customer identifier.
+      - name: customer_name
+        description: Fictional customer name.
+      - name: region
+        description: Customer sales region.
+semantic_models:
+  - name: orders
+    model: ref('orders')
+    defaults:
+      agg_time_dimension: ordered_at
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+    dimensions:
+      - name: ordered_at
+        type: time
+        type_params:
+          time_granularity: day
+      - name: status
+        type: categorical
+    measures:
+      - name: recognized_revenue
+        agg: sum
+        expr: "CASE WHEN status = 'paid' THEN amount ELSE 0 END"
+        description: Revenue in USD from paid orders, excluding refunds and cancellations.
+        create_metric: true

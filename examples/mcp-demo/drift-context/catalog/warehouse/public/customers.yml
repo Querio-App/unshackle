@@ -1,0 +1,15 @@
+name: customers
+primary_key:
+- customer_id
+source: warehouse:public.customers
+columns:
+- name: customer_id
+  nullable: false
+  type: INTEGER
+- name: customer_name
+  nullable: false
+  type: TEXT
+- description: Customer sales region, not order destination.
+  name: region
+  nullable: false
+  type: TEXT

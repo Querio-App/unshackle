@@ -1,0 +1,1 @@
+Synthetic drift acceptance baseline. Fictional customers/orders only. Warehouse credentials are external. Refresh with the implementation from epic #193 using migration/imports.json. This branch is evidence only and is not intended for merge.

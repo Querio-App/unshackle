@@ -1,0 +1,10 @@
+name: customers
+description: One row per customer, including their sales region.
+source: dbt:models/customers.sql
+columns:
+- name: customer_id
+  description: Unique customer identifier.
+- name: customer_name
+  description: Fictional customer name.
+- name: region
+  description: Customer sales region.

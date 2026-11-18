@@ -1,0 +1,30 @@
+{
+  "files": {
+    "catalog/warehouse/main/customers.yml": "a851ed0b4a973d416e194c7f7f85f3e1f1a3de121317fcab214c308cb9f42082",
+    "catalog/warehouse/main/orders.yml": "616daeff64148efce1ea7df1b28ac631d6620ffa9ee743fff5baf00387b7b65a",
+    "catalog/warehouse/public/customers.yml": "ffe0d1ad3f5d6f102686253e049deabd44dd16e92ceefb1542e722b7960b29e8",
+    "catalog/warehouse/public/orders.yml": "1fd1f567e8790dd6c5aea88e2064eb669c7934cc4b014763a3396c78a3eff56e",
+    "migration/warehouse-schema.json": "44f49b3147c934d3a2d15275a5828e8fbc32ac21e646b531039939f34b99d42d",
+    "notebooks/python-monthly-py-cd98ddc19804.ipynb": "d2f3f22cbfef3480b207ab0d136f73b80133e1f1c8194b04d27adfe83545c641",
+    "notebooks/sql-regions-sql-8613b8029aff.ipynb": "6c73ed232781c6d72a025b09d084e1e6a8c6ad11bf9c16e8bb236cb2fd7b7abf",
+    "notebooks/sql-revenue-sql-3ea4e59b08ab.ipynb": "4524b784b8dc9186f3b0244473415ccd669724075d2595288898fca642b192c1",
+    "queries/dbt-customers.sql": "e33583146887a56315e995b43ff9d8beea50410910367879a6ce4d79276882a6",
+    "queries/dbt-orders.sql": "d6e4bd9eb6c794e07919c0f3fd366343b93bba22ebb90434c69cbf12c8c5b5ce",
+    "semantic/orders.ossie.yaml": "34205e67ffc084797d3f3982970724b0feba0c3d3b2c0281749340d680bbd521"
+  },
+  "owners": {
+    "catalog/warehouse/main/customers.yml": "dbt",
+    "catalog/warehouse/main/orders.yml": "dbt",
+    "catalog/warehouse/public/customers.yml": "warehouse",
+    "catalog/warehouse/public/orders.yml": "warehouse",
+    "migration/warehouse-schema.json": "warehouse",
+    "notebooks/python-monthly-py-cd98ddc19804.ipynb": "sql",
+    "notebooks/sql-regions-sql-8613b8029aff.ipynb": "sql",
+    "notebooks/sql-revenue-sql-3ea4e59b08ab.ipynb": "sql",
+    "queries/dbt-customers.sql": "dbt",
+    "queries/dbt-orders.sql": "dbt",
+    "semantic/orders.ossie.yaml": "dbt"
+  },
+  "sources": {},
+  "version": 2
+}
