@@ -17,6 +17,32 @@ from unshackle.sources._dbt import load_yaml, nodes
 
 REF = re.compile(r"^(?:\{\{\s*)?ref\(\s*['\"]([\w]+)['\"]\s*\)(?:\s*\}\})?$")
 AGGS = {"sum", "min", "max", "average", "count", "count_distinct", "median"}
+RELATION_CONFIG = {"alias", "schema", "database", "materialized", "enabled", "quoting"}
+
+
+def _project_relation_config(project: dict, relative: str, model_paths: list[str]) -> list[dict]:
+    """Collect applicable literal config scopes without evaluating dbt/Jinja precedence."""
+    scopes = []
+    tree = project.get("models") or {}
+    path = Path(relative)
+    roots = [Path(p) for p in model_paths if path.is_relative_to(Path(p))]
+    local = path.relative_to(max(roots, key=lambda p: len(p.parts))) if roots else path
+    parts = [str(project.get("name") or ""), *local.with_suffix("").parts]
+    scope = "models"
+    for part in [None, *parts]:
+        if not isinstance(tree, dict):
+            break
+        if part is not None:
+            tree = tree.get(part) or {}
+            scope += f".{part}"
+        if not isinstance(tree, dict):
+            break
+        config = {k: v for k, v in tree.items() if str(k).removeprefix("+") in RELATION_CONFIG}
+        if config:
+            scopes.append({"scope": scope, "config": config})
+    if project.get("quoting"):
+        scopes.append({"scope": "quoting", "config": project["quoting"]})
+    return scopes
 
 
 def _source(value: dict) -> str:
@@ -41,7 +67,7 @@ def _pending(bundle: Bundle, ref: str, node: dict, why: str) -> None:
     ))
 
 
-def _semantics(bundle: Bundle, documents: list[tuple[str, dict]]) -> None:
+def _semantics(bundle: Bundle, documents: list[tuple[str, dict]], pending_relations: dict[str, str]) -> None:
     counts = Counter(str(raw["name"]) for _, doc in documents for raw in nodes(doc, "semantic_models"))
     for rel, doc in documents:
         for raw in nodes(doc, "semantic_models"):
@@ -59,6 +85,8 @@ def _semantics(bundle: Bundle, documents: list[tuple[str, dict]]) -> None:
             if not match:
                 problems.append("semantic model relation is not a single local ref")
             else:
+                if match[1] in pending_relations:
+                    problems.append(pending_relations[match[1]])
                 tables = [t for t in bundle.tables if Path(t.source_ref.removeprefix("dbt:")).stem == match[1]]
                 if len(tables) != 1:
                     problems.append("dbt ref does not resolve to one imported SQL model")
@@ -164,6 +192,7 @@ def parse(path: Path) -> Bundle:
                          "embedded semantic annotations need translation; legacy semantic_models are supported")
     counts = Counter(Path(rel).stem for rel, _ in sql_files)
     consumed = set()
+    pending_relations = {}
     for rel, raw_sql in sql_files:
         name = Path(rel).stem
         matches = by_path.get(rel, [])
@@ -177,6 +206,25 @@ def parse(path: Path) -> Bundle:
         alias = str(node.get("alias") or cfg.get("alias") or name)
         identity = name if counts[name] == 1 else f"{name}_{hashlib.sha256(rel.encode()).hexdigest()[:8]}"
         todo = ""
+        relation_source = {}
+        project_config = _project_relation_config(project, rel, model_paths)
+        inline_config = [tag for tag in re.findall(r"\{\{.*?\}\}|\{%.*?%\}", raw_sql, re.S)
+                         if re.search(r"\bconfig\s*\(", tag)]
+        properties_config = {k: v for k, v in cfg.items() if k in RELATION_CONFIG}
+        if not node:
+            if project_config:
+                relation_source["dbt_project.yml"] = project_config
+            if inline_config:
+                relation_source[rel] = inline_config
+            if properties_config:
+                relation_source["model.config"] = properties_config
+        if (node.get("config") or {}).get("materialized") == "ephemeral":
+            relation_source["manifest.config"] = {k: v for k, v in node["config"].items() if k in RELATION_CONFIG}
+        if relation_source:
+            reason = "dbt relation/materialization configuration is unresolved; use compiled manifest metadata or reconcile before enabling"
+            pending_relations[name] = reason
+            todo = reason
+            _pending(bundle, f"{rel}#relation-config", relation_source, reason)
         if counts[name] > 1 and not node:
             alias = identity
             todo = "duplicate model name; relation and documentation require disambiguation"
@@ -192,7 +240,8 @@ def parse(path: Path) -> Bundle:
         for c in nodes(model, "columns"):
             columns[c["name"]] = {**columns.get(c["name"], {}), **c}
         bundle.tables.append(Table(bundle.datasource, schema, alias,
-            description=model.get("description") or node.get("description") or "",
+            description=join_todos([model.get("description") or node.get("description") or "",
+                                   f"TODO(unshackle): {pending_relations[name]}" if name in pending_relations else ""]),
             columns=[Column(str(n), str(c.get("data_type") or ""), str(c.get("description") or "")) for n, c in sorted(columns.items())],
             source_ref=f"dbt:{rel}"))
         bundle.queries.append(VerifiedQuery(f"dbt {identity}", str(sql), datasource=bundle.datasource,
@@ -202,5 +251,5 @@ def parse(path: Path) -> Bundle:
             continue
         for rel, model in definitions:
             _pending(bundle, f"{rel}#models/{name}", model, "model documentation could not be matched to one SQL model")
-    _semantics(bundle, documents)
+    _semantics(bundle, documents, pending_relations)
     return bundle.settle_time_dimensions()

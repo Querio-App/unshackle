@@ -17,6 +17,10 @@ raw SQL is retained and unresolved Jinja receives a `TODO(unshackle)`. Refresh
 artifacts with your normal dbt compile process before importing; stale artifacts
 cannot be detected reliably offline. A manifest provides resolved schema and
 alias; YAML `config.schema` alone may not be the final warehouse schema.
+Applicable project-level `models` relation settings and inline `config(...)` calls
+are preserved with pending relation/semantic TODOs until a manifest resolves them.
+A compiled SQL file alone does not resolve relation configuration. Ephemeral
+materializations remain pending because they do not define a warehouse table.
 
 Legacy MetricFlow `semantic_models` entities, categorical/time dimensions, basic
 measures, and simple measure-backed metrics translate into Ossie. A dbt destination
