@@ -57,6 +57,7 @@ from unshackle.sources._semyaml import (
     resolve_sql,
 )
 from unshackle.sources import _manual
+from unshackle.sources._dbt import load_yaml, nodes
 from unshackle.sources.base import Inventory, Source
 
 POST_TYPES = {"number", "string", "date", "timestamp", "boolean"}
@@ -437,13 +438,11 @@ class LightdashSource(Source):
         joins: list[tuple[str, dict[str, Any]]] = []
         for rel in [*store.glob("dbt/**/*.yml"), *store.glob("dbt/**/*.yaml")]:
             try:
-                doc = yaml.safe_load(store.get_text(rel)) or {}
+                doc = load_yaml(store.get_text(rel))
             except yaml.YAMLError as exc:
                 bundle.warn(rel, f"invalid YAML: {exc}")
                 continue
-            for model in as_list(doc.get("models") if isinstance(doc, dict) else None):
-                if not isinstance(model, dict) or not model.get("name"):
-                    continue
+            for model in nodes(doc, "models"):
                 t = self._table_from_dbt(rel, model)
                 tables[t.name] = t
                 joins += [(t.name, j) for j in as_list(_merged_meta(model).get("joins")) if isinstance(j, dict)]
