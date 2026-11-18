@@ -382,7 +382,11 @@ def build_notebook(d: Dashboard, tool: str, local_db: str = "") -> dict:
             continue
         cells.append(_code(f"{ident}-sql", lines, unshackle={"tile_id": tile.id}))
         chart = _composed_chart(ident, tile) if tile.layers else _single_chart(ident, tile)
-        cells.append(_code(f"{ident}-chart", _with_references(ident, tile, chart)))
+        from unshackle.run import chart_spec_from_source
+        chart_lines = _with_references(ident, tile, chart)
+        cells.append(_code(f"{ident}-chart", chart_lines, unshackle={
+            "chart_spec": chart_spec_from_source("\n".join(chart_lines), ident),
+            "chart_source": "\n".join(chart_lines), "tile_ident": ident}))
     layout = [[idents[i] for i in row if i in idents] for row in d.layout or [[t.id] for t in d.tiles]]
     seen: set[str] = set()
     for cell in cells:  # ids are cut at 64 characters, so long titles can collide
@@ -396,7 +400,7 @@ def build_notebook(d: Dashboard, tool: str, local_db: str = "") -> dict:
         "metadata": {
             "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
             "language_info": {"name": "python"},
-            "unshackle": {"tool": tool, "source": d.source_ref, "layout": [r for r in layout if r], **({"local_db": local_db} if local_db else {})},
+            "unshackle": {"tool": tool, "source": d.source_ref, "datasource": d.datasource, "layout": [r for r in layout if r], **({"local_db": local_db} if local_db else {})},
         },
         "nbformat": 4,
         "nbformat_minor": 5,

@@ -21,20 +21,80 @@ PROBE = "unshackle-rows:"
 SQL_ECHO = re.compile(r"^Execution failed on sql '.*?': ", re.S)  # pandas repeats the query before the error
 
 
-def query(sql: str, params: dict[str, Any], url: str | None = None):
+def query(sql: str, params: dict[str, Any], url: str | None = None, *,
+          limit: int | None = None, timeout: float | None = None):
+    """Execute SQL; optional bounded mode requires a natively cancellable driver.
+
+    Existing notebook/verify callers retain their unbounded behavior. MCP uses both
+    options. The deadline covers execution and fetching, starting after connection.
+    """
+    import math
+    import threading
+    import time
     import pandas as pd
     from sqlalchemy import create_engine, text
 
     url = url or os.environ.get("UNSHACKLE_WAREHOUSE_URL")
     if not url:
         raise SystemExit("set UNSHACKLE_WAREHOUSE_URL to run notebooks")
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 1):
+        raise ValueError("limit must be a positive integer")
+    if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError("timeout must be positive and finite")
     used = {k: v for k, v in params.items() if k in set(PARAM.findall(sql))}
     engine = create_engine(url)
     try:
         with engine.connect() as conn:
-            return pd.read_sql(text(sql), conn, params=used)
+            if limit is None and timeout is None:
+                return pd.read_sql(text(sql), conn, params=used)
+            dialect = engine.dialect.name
+            raw = conn.connection.driver_connection
+            cancel = None
+            if timeout is not None:
+                if dialect == "sqlite":
+                    cancel = raw.interrupt
+                elif dialect == "duckdb":
+                    cancel = raw.interrupt
+                elif dialect == "postgresql" and callable(getattr(raw, "cancel", None)):
+                    cancel = raw.cancel
+                    conn.execute(text("SELECT set_config('statement_timeout', :ms, true)"),
+                                 {"ms": str(max(1, int(timeout * 1000)))})
+                else:
+                    raise ValueError(f"Cancellable query deadlines unsupported for {dialect}; use PostgreSQL, DuckDB or SQLite")
+            expired = threading.Event()
+            deadline = time.monotonic() + timeout if timeout is not None else float('inf')
+            def interrupt():
+                expired.set()
+                cancel()
+            timer = threading.Timer(timeout, interrupt) if timeout is not None else None
+            if dialect == "sqlite" and timeout is not None:
+                raw.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+            if timer:
+                timer.daemon = True
+                timer.start()
+            try:
+                # Limit at the database as well as the cursor. Fetch one extra row to
+                # distinguish exact-limit results from truncation without a COUNT query.
+                bounded_sql = f"SELECT * FROM ({sql.strip().rstrip(';')}) AS unshackle_result LIMIT {limit + 1}" if limit is not None else sql
+                with conn.execution_options(stream_results=dialect == "postgresql", max_row_buffer=(limit or 1000) + 1).execute(text(bounded_sql), used) as result:
+                    rows = result.fetchmany(limit + 1) if limit is not None else result.fetchall()
+                    frame = pd.DataFrame(rows[:limit] if limit is not None else rows, columns=result.keys())
+                    frame.attrs['truncated'] = limit is not None and len(rows) > limit
+                if expired.is_set() or time.monotonic() >= deadline:
+                    raise TimeoutError("Query execution deadline exceeded")
+                return frame
+            except Exception:
+                if expired.is_set() or time.monotonic() >= deadline:
+                    raise TimeoutError("Query execution deadline exceeded") from None
+                raise
+            finally:
+                if timer:
+                    timer.cancel()
+                    timer.join()
+                if dialect == "sqlite" and timeout is not None:
+                    raw.set_progress_handler(None, 0)
     finally:
-        engine.dispose()  # pooled connections would keep file databases (DuckDB) locked for other processes
+        engine.dispose()
 
 
 def _source(cell: dict) -> str:
@@ -198,3 +258,59 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("usage: python -m unshackle.run notebooks/<name>.ipynb")
     run_notebook(sys.argv[1])
+
+
+def chart_spec_from_source(source: str, ident: str) -> dict:
+    """Interpret a small declarative Altair subset, never execute notebook Python.
+
+    Unknown expressions keep their complete source and a TODO. No imports, arbitrary
+    attributes, Python calls, comprehensions or code execution are permitted.
+    """
+    import altair as alt
+    constructors = {name: getattr(alt, name) for name in (
+        'X', 'Y', 'Color', 'XOffset', 'Theta', 'Size', 'Text', 'Detail', 'Row', 'Column',
+        'Facet', 'Latitude', 'Longitude', 'Tooltip', 'Axis', 'Legend', 'Scale',
+        'layer', 'hconcat', 'vconcat', 'datum', 'value', 'topo_feature')}
+    methods = {'encode', 'properties', 'facet', 'resolve_scale', 'project',
+               'mark_bar', 'mark_line', 'mark_area', 'mark_point', 'mark_arc',
+               'mark_rect', 'mark_geoshape', 'mark_text', 'mark_rule'}
+    values = {ident: alt.NamedData(name=ident)}
+    def value(node):
+        if isinstance(node, ast.Name) and node.id in values:
+            return values[node.id]
+        if isinstance(node, ast.List):
+            return [value(n) for n in node.elts]
+        if isinstance(node, ast.Dict):
+            return {value(k): value(v) for k, v in zip(node.keys, node.values)}
+        if isinstance(node, ast.Call):
+            if any(kw.arg is None for kw in node.keywords):
+                raise ValueError('expanded arguments')
+            args = [value(n) for n in node.args]
+            kwargs = {kw.arg: value(kw.value) for kw in node.keywords}
+            fn = node.func
+            if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name) and fn.value.id == 'alt':
+                if fn.attr == 'Chart':
+                    return alt.Chart(*args, **kwargs)
+                if fn.attr in constructors:
+                    return constructors[fn.attr](*args, **kwargs)
+            elif isinstance(fn, ast.Attribute) and fn.attr in methods:
+                receiver = value(fn.value)
+                if isinstance(receiver, alt.TopLevelMixin):
+                    return getattr(receiver, fn.attr)(*args, **kwargs)
+            raise ValueError('unsupported call')
+        return ast.literal_eval(node)
+    try:
+        for node in ast.parse(source).body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                values[node.targets[0].id] = value(node.value)
+            elif isinstance(node, ast.Expr):
+                value(node.value)
+            else:
+                raise ValueError('unsupported statement')
+        chart = values.get(ident + '_chart')
+        if not isinstance(chart, alt.TopLevelMixin):
+            raise ValueError('no chart specification')
+        return chart.to_dict()
+    except Exception:
+        return {'source_expression': source,
+                'todo': 'TODO(unshackle): chart cannot be faithfully recovered statically; inspect source_expression'}

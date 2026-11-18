@@ -13,6 +13,7 @@ dependencies = [
   "altair>=5.4",
   "pandas>=2.2",
   "sqlalchemy>=2.0",
+  "sqlglot>=25",
   "nbformat>=5.9",
   "nbclient>=0.10",
   "ipykernel>=6.29",
@@ -28,8 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 # Tableau's Hyper API is large and has wheels for fewer platforms: only copying .hyper extracts needs it
 hyper = ["tableauhyperapi>=0.0.26479"]
-mcp = ["mcp>=1.26,<2", "sqlglot>=25", "psycopg[binary]>=3.2"]
-dev = ["pytest>=8", "mcp>=1.26,<2", "psycopg[binary]>=3.2", "sqlglot>=25", "jsonschema>=4.18", "tableauhyperapi>=0.0.26479"]
+mcp = ["mcp>=1.26,<2", "psycopg[binary]>=3.2"]
+dev = ["pytest>=8", "mcp>=1.26,<2", "psycopg[binary]>=3.2", "jsonschema>=4.18", "tableauhyperapi>=0.0.26479"]
 
 [project.urls]
 Repository = "https://github.com/Querio-App/unshackle"
