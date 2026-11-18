@@ -29,15 +29,15 @@
     "catalog/warehouse/public/orders.yml": {
       "columns": [
         {
-          "description": "Order amount in USD; include only paid orders when calculating recognized revenue.",
-          "name": "amount",
-          "nullable": false,
-          "type": "NUMERIC(12, 2)"
-        },
-        {
           "name": "customer_id",
           "nullable": false,
           "type": "INTEGER"
+        },
+        {
+          "description": "Order amount in USD; include only paid orders when calculating recognized revenue.",
+          "name": "net_amount",
+          "nullable": false,
+          "type": "NUMERIC(12, 2)"
         },
         {
           "name": "order_id",
