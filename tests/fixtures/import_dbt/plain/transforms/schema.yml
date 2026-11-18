@@ -1,0 +1,40 @@
+version: 2
+models:
+  - name: orders
+    description: Synthetic paper orders.
+    columns:
+      - name: order_id
+        description: Order identifier.
+        data_type: integer
+      - name: amount
+        description: Order amount.
+        data_type: decimal
+semantic_models:
+  - name: orders_semantic
+    model: ref('orders')
+    defaults:
+      agg_time_dimension: ordered_at
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+    dimensions:
+      - name: ordered_at
+        type: time
+        type_params:
+          time_granularity: day
+    measures:
+      - name: order_amount
+        agg: sum
+        expr: amount
+metrics:
+  - name: revenue
+    label: Revenue
+    type: simple
+    type_params:
+      measure: order_amount
+  - name: rolling_revenue
+    type: cumulative
+    type_params:
+      measure: order_amount
+      window: 7 days
