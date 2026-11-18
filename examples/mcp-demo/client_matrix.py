@@ -62,7 +62,8 @@ def main():
         elif args.client == "codex":
             config = "mcp_servers.unshackle=" + "{command=" + json.dumps(server["command"]) + ",args=" + json.dumps(server["args"]) + "}"
             command = [executable, "exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check",
-                       "--sandbox", "read-only", "--json", "-c", config, text]
+                       "--sandbox", "read-only", "--json", "-c", config,
+                       "-c", 'mcp_servers.unshackle.default_tools_approval_mode="approve"', text]
         else:
             config_dir = workspace / "cursor-config"
             config_dir.mkdir()
@@ -72,14 +73,14 @@ def main():
             original = Path.home() / ".cursor/cli-config.json"
             existing = json.loads(original.read_text()) if original.exists() else {}
             config = {k: existing[k] for k in ("authInfo", "model", "selectedModel", "modelParameters") if k in existing}
-            config.update({"version": 1, "editor": {"vimMode": False}, "permissions": {"allow": [], "deny": ["Shell(*)"]},
+            config.update({"version": 1, "editor": {"vimMode": False}, "permissions": {"allow": [f"Mcp(unshackle:{tool})" for tool in ("overview", "search", "read", "run_query")], "deny": ["Shell(*)", "Read(**)", "Write(**)", "WebFetch(*)"]},
                            "notifications": False, "display": {"showStatusIndicators": False}})
             (config_dir / "cli-config.json").write_text(json.dumps(config))
             (config_dir / "mcp.json").write_text(mcp.read_text())
             (workspace / ".cursor").mkdir()
             shutil.copyfile(mcp, workspace / ".cursor/mcp.json")
-            command = [executable, "-p", text, "--output-format", "stream-json", "--mode", "ask",
-                       "--approve-mcps", "--workspace", str(workspace)]
+            command = [executable, "-p", text, "--output-format", "stream-json",
+                       "--approve-mcps", "--trust", "--workspace", str(workspace)]
         metadata = {"client": args.client, "version": version, "source_commit": source_commit,
                     "transport": "stdio", "config": "temporary, no persistent user configuration writes"}
         with (out / "stdout.jsonl").open("w") as stdout, (out / "stderr.txt").open("w") as stderr:
