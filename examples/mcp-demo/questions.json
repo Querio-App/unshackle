@@ -1,0 +1,37 @@
+[
+  {
+    "id": "q1",
+    "question": "What is total recognized revenue in USD across all dates?",
+    "sql": "SELECT SUM(amount) AS revenue FROM orders WHERE status = 'paid'",
+    "expected": [[350]],
+    "derivation": "Paid orders 101, 102, 103, 105 contribute 100 + 50 + 80 + 120 = 350. Refunded 40 and cancelled 30 are excluded."
+  },
+  {
+    "id": "q2",
+    "question": "What is recognized revenue in USD by customer sales region, ordered by region?",
+    "sql": "SELECT c.region, SUM(o.amount) AS revenue FROM orders o JOIN customers c USING (customer_id) WHERE o.status = 'paid' GROUP BY c.region ORDER BY c.region",
+    "expected": [["North", 270], ["South", 80]],
+    "derivation": "North: Acme 100 + 50 and Cedar 120 = 270. South: Beacon 80 = 80."
+  },
+  {
+    "id": "q3",
+    "question": "Which customer has the highest recognized revenue, and what is that revenue in USD?",
+    "sql": "SELECT c.customer_name, SUM(o.amount) AS revenue FROM orders o JOIN customers c USING (customer_id) WHERE o.status = 'paid' GROUP BY c.customer_id, c.customer_name ORDER BY revenue DESC, c.customer_id LIMIT 1",
+    "expected": [["Acme Paper", 150]],
+    "derivation": "Acme 100 + 50 = 150, Cedar 120, Beacon 80. Acme is highest at 150."
+  },
+  {
+    "id": "q4",
+    "question": "What is recognized revenue by calendar month (YYYY-MM), ordered by month?",
+    "sql": "SELECT substr(CAST(ordered_at AS VARCHAR), 1, 7) AS month, SUM(amount) AS revenue FROM orders WHERE status = 'paid' GROUP BY 1 ORDER BY 1",
+    "expected": [["2025-01", 230], ["2025-02", 120]],
+    "derivation": "January paid orders: 100 + 50 + 80 = 230. February: 120, excluding refunded 40 and cancelled 30."
+  },
+  {
+    "id": "q5",
+    "question": "What is average paid order value in USD across all dates?",
+    "sql": "SELECT 1.0 * SUM(amount) / nullif(COUNT(*), 0) AS average_paid_order_value FROM orders WHERE status = 'paid'",
+    "expected": [[87.5]],
+    "derivation": "Four paid orders contribute 350, so 350 / 4 = 87.5. Denominator excludes both non-paid orders."
+  }
+]
