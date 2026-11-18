@@ -71,3 +71,55 @@ def test_other_connection_is_flagged(tmp_path):
     result = Repository(tmp_path).read('queries/other.sql')
     assert result['datasource'] == 'other_warehouse'
     assert 'server warehouse' in result['connection_warning']
+
+
+@pytest.mark.parametrize('source', [
+    'column = "amount"\ntile_sql = f"select {column} from orders"',
+    'tile_sql = "select " + column + " from orders"',
+    'tile_sql = build_query()',
+    'tile_sql: str = f"select {column} from orders"',
+    'if include_amount:\n    tile_sql = "select amount from orders"',
+    'tile_sql = f"select {column from orders"',
+    'tile_sql = "select amount from orders"\ntile_sql += predicate',
+])
+def test_unresolved_notebook_sql_keeps_source_and_todo(tmp_path, source):
+    (tmp_path / 'notebooks').mkdir()
+    path = tmp_path / 'notebooks/dynamic.ipynb'
+    path.write_text(json.dumps({'cells': [
+        {'cell_type': 'code', 'source': 'tile_sql = "select 1"', 'metadata': {}},
+        {'cell_type': 'code', 'source': source, 'metadata': {}},
+    ]}))
+    repo = Repository(tmp_path)
+    result = repo.read('notebooks/dynamic.ipynb')
+    assert result['has_todo']
+    tile, = result['tiles']
+    assert tile['id'] == 'tile' and tile['sql'] == ''
+    assert source.splitlines()[-1].strip() in tile['source_expression']
+    assert 'TODO(unshackle)' in tile['todo']
+    assert repo.search('tile_sql')[0]['has_todo']
+
+
+def test_pending_notebook_sql_never_executes_python(tmp_path):
+    (tmp_path / 'notebooks').mkdir()
+    marker = tmp_path / 'must-not-exist'
+    source = f'tile_sql = __import__("pathlib").Path({str(marker)!r}).write_text("executed")'
+    (tmp_path / 'notebooks/dynamic.ipynb').write_text(json.dumps({'cells': [
+        {'cell_type': 'code', 'source': source, 'metadata': {}}
+    ]}))
+    result = Repository(tmp_path).read('notebooks/dynamic.ipynb')
+    assert result['tiles'][0]['source_expression'] == source
+    assert result['has_todo']
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize('sql_line', ['tile_sql = f"select {column} from orders"', 'tile_sql = f"select {column from orders"'])
+def test_pending_sql_does_not_copy_unrelated_cell_assignments(tmp_path, sql_line):
+    (tmp_path / 'notebooks').mkdir()
+    source = 'unrelated_configuration = "example-synthetic-sensitive-value"\n' + sql_line
+    (tmp_path / 'notebooks/dynamic.ipynb').write_text(json.dumps({'cells': [
+        {'cell_type': 'code', 'source': source, 'metadata': {}}
+    ]}))
+    result = Repository(tmp_path).read('notebooks/dynamic.ipynb')
+    assert result['has_todo']
+    assert sql_line in result['tiles'][0]['source_expression']
+    assert 'example-synthetic-sensitive-value' not in json.dumps(result)
