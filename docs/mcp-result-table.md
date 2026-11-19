@@ -115,8 +115,7 @@ The user-provided screenshot confirms the real Claude web app rendered **Query r
 and Show copyable CSV. The controls are visible; their interactions have not been
 user-tested in Claude. Browser tests separately exercise sorting, filtering and CSV.
 
-Screenshot evidence remains at its original local path only (not copied into the repo):
-`/var/folders/v4/1c669zdx61725t730fh8ztt80000gn/T/codex-clipboard-7o0I7y.png`.
+Screenshot evidence was supplied locally and is not included in the repository.
 The model's text in that screenshot incorrectly claims no app appeared; the visible
 widget is the rendering evidence.
 
