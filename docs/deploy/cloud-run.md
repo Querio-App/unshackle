@@ -53,7 +53,7 @@ the future operator, never for an unattended preparation run:
 ```bash
 gcloud auth login
 # Optional ADC alternative: gcloud auth application-default login
-gh auth login
+gh auth login --scopes delete_repo
 ```
 
 If already signed in, inspect `gcloud auth list --filter=status:ACTIVE --format='value(account)'`
@@ -67,6 +67,7 @@ No service-account key download is needed. Do not use `--log-http`, debug loggin
 Return to the source checkout, install dependencies and keep all state outside Git:
 
 ```bash
+set -euo pipefail
 uv venv
 uv pip install -e '.[dev]'
 source .venv/bin/activate
@@ -106,6 +107,13 @@ Budgets are alerts, not a hard spending cap. Delete the rehearsal promptly.
 
 ## Provision once per disposable project — UNTESTED, billable
 
+Run provisioning commands individually and stop on any error. Fresh-project/API and
+service-account permissions can take time to propagate. If a named operation fails
+with permission denied or service account not found, inspect the exact new project
+and account, wait for propagation, then retry only that operation. Do not broaden
+organization permissions or create another project to work around it. See
+[IAM propagation](https://docs.cloud.google.com/iam/docs/access-change-propagation).
+
 For an individually owned new project, the creator needs project creation/deletion,
 service enablement, IAM and service-account management, Cloud SQL administration,
 Artifact Registry administration, Secret Manager administration and Cloud Run
@@ -118,6 +126,8 @@ gcloud billing accounts list --filter=open=true --format='table(name,displayName
 # Substitute the chosen billing account ID locally; it is not a credential.
 export BILLING_ACCOUNT=REPLACE_WITH_BILLING_ACCOUNT_ID
 gcloud projects create "$PROJECT" --name="unshackle synthetic rehearsal"
+printf '%s\n' "$PROJECT" > "$GCP_STATE/project-created"
+test "$(cat "$GCP_STATE/project-id")" = "$PROJECT"
 gcloud billing projects link "$PROJECT" --billing-account "$BILLING_ACCOUNT"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
   sqladmin.googleapis.com secretmanager.googleapis.com iam.googleapis.com \
@@ -179,7 +189,11 @@ is required; a generic/unsupported driver must not silently lose timeout support
 Only the reader connection string reaches Cloud Run. Admin/reader passwords and
 the bearer stay in the mode-0700 state directory, outside context and Docker inputs.
 
-Create a separate synthetic GitHub repository. Replace only `REPLACE_WITH_OWNER`:
+Create a separate synthetic GitHub repository only after confirming the account
+can delete it. For an existing OAuth login missing `delete_repo`, the operator must
+first run `gh auth refresh -h github.com -s delete_repo`; this is interactive and is
+not part of unattended deployment. Do not create an unremovable repository while
+waiting for that grant. Replace only `REPLACE_WITH_OWNER`:
 
 ```bash
 export CONTEXT_GITHUB=REPLACE_WITH_OWNER/unshackle-gcp-demo
@@ -230,7 +244,10 @@ python deploy/gcp/verify.py
 
 The helper builds the existing root Dockerfile for `linux/amd64`, adds only the
 optional SSH startup wrapper, pushes the image and deploys it. Secret references
-pin numeric versions (initially 1). Cloud Run resolves the image tag to a digest
+pin numeric versions (initially 1). A successful deployment saves `token-version`
+and `warehouse-version` under `GCP_STATE`; later deploys and token reloads reuse
+those versions unless explicitly overridden. The helper rejects a project that
+does not match both the chosen ID and successful-creation marker. Cloud Run resolves the image tag to a digest
 for the revision; save that digest when recording evidence. The service disables
 Google's invoker IAM check so standard MCP clients can send the application's
 bearer. **Every application HTTP route still requires that bearer.** A missing or
@@ -288,7 +305,8 @@ and [GitHub metadata API](https://docs.github.com/en/rest/meta/meta#get-github-m
 operator shell without displaying it:
 
 ```bash
-export UNSHACKLE_MCP_TOKEN="$(gcloud secrets versions access 1 \
+export TOKEN_VERSION="$(cat "$GCP_STATE/token-version")"
+export UNSHACKLE_MCP_TOKEN="$(gcloud secrets versions access "$TOKEN_VERSION" \
   --secret "$PREFIX-token" --project "$PROJECT")"
 python deploy/gcp/verify.py
 ```
@@ -342,6 +360,7 @@ For runtime updates, check out the reviewed source commit, set a new `IMAGE_TAG`
 rerun `deploy.sh`, then the verifier and real clients. For bearer rotation:
 
 ```bash
+PREVIOUS_TOKEN_VERSION="$(cat "$GCP_STATE/token-version")"
 python - <<'PY'
 import os, secrets
 from pathlib import Path
@@ -359,7 +378,7 @@ python deploy/gcp/verify.py
 ```
 
 Update client environments too. After success, disable the old secret version with
-`gcloud secrets versions disable 1 --secret "$PREFIX-token" --project "$PROJECT"`.
+`gcloud secrets versions disable "$PREVIOUS_TOKEN_VERSION" --secret "$PREFIX-token" --project "$PROJECT"`.
 Existing old revisions may retain their loaded token; remove obsolete revisions once
 rollback is no longer required. Database credential rotation also requires changing
 the Postgres role password, adding a matching warehouse secret version and setting

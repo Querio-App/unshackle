@@ -48,6 +48,8 @@ def test_private_state_and_socket_url(private_state):
 @pytest.mark.parametrize("private", [False, True])
 def test_deploy_command_flow_has_no_secret_values(tmp_path, private_state, private):
     state = private_state
+    module("fixture").private_write(state / "project-id", "example-gcp-project\n")
+    module("fixture").private_write(state / "project-created", "example-gcp-project\n")
     commands = tmp_path / "commands"
     commands.mkdir()
     log = tmp_path / "commands.jsonl"
@@ -74,8 +76,22 @@ def test_deploy_command_flow_has_no_secret_values(tmp_path, private_state, priva
     for name in ("token", "reader-password"):
         assert (state / name).read_text() not in output
     assert json.loads((state / "run-env.json").read_text())["UNSHACKLE_REPO_URL"] == env["REPO_URL"]
-    # Reject embedded credentials before any build/push/deployment.
+    assert (state / "token-version").read_text().strip() == "1"
+    # A successful rotation must survive a fresh invocation without overrides.
+    env["TOKEN_VERSION"] = "2"
+    subprocess.run(["bash", str(ROOT / "deploy/gcp/deploy.sh")], env=env, cwd=ROOT, check=True, capture_output=True)
+    del env["TOKEN_VERSION"]
     log.unlink()
+    subprocess.run(["bash", str(ROOT / "deploy/gcp/deploy.sh")], env=env, cwd=ROOT, check=True, capture_output=True)
+    assert "UNSHACKLE_MCP_TOKEN=ush193-token:2" in log.read_text()
+    # Scope mismatches must fail before building or touching cloud resources.
+    log.unlink()
+    for marker in ("project-id", "project-created"):
+        (state / marker).write_text("another-project\n")
+        denied = subprocess.run(["bash", str(ROOT / "deploy/gcp/deploy.sh")], env=env, cwd=ROOT, capture_output=True)
+        assert denied.returncode != 0 and not log.exists()
+        (state / marker).write_text("example-gcp-project\n")
+    # Reject embedded credentials before any build/push/deployment.
     env["REPO_URL"] = "https://user:secret@example.com/context.git"
     denied = subprocess.run(["bash", str(ROOT / "deploy/gcp/deploy.sh")], env=env, cwd=ROOT, capture_output=True)
     assert denied.returncode != 0 and not log.exists()
@@ -87,17 +103,20 @@ def test_probe_rejects_cleartext_remote_before_network():
 
 
 @pytest.mark.skipif(os.environ.get("UNSHACKLE_GCP_LOCAL_TEST") != "1", reason="explicit opt-in to isolated local Docker fixture")
-def test_real_postgres_seed_and_http_probe(tmp_path, monkeypatch):
+def test_real_postgres_seed_and_http_probe(tmp_path, private_state, monkeypatch):
     """Actual psycopg role, native cancellation and public probe; always remove container."""
     fixture = module("fixture")
-    state = tmp_path / "state"
-    fixture.prepare(state)
+    state = private_state
     name = "unshackle-gcp-test-" + secrets.token_hex(4)
     admin = json.loads((state / "admin.json").read_text())["--password"]
     env = {**os.environ, "POSTGRES_PASSWORD": admin}
-    subprocess.run(["docker", "run", "-d", "--name", name, "-p", "127.0.0.1::5432", "-e", "POSTGRES_PASSWORD", "-e", "POSTGRES_DB=example", "postgres:16-alpine"], env=env, check=True, stdout=subprocess.DEVNULL)
     server = None
+    volumes = []
     try:
+        subprocess.run(["docker", "run", "-d", "--name", name, "-p", "127.0.0.1::5432", "-e", "POSTGRES_PASSWORD", "-e", "POSTGRES_DB=example", "postgres:16-alpine"], env=env, check=True, stdout=subprocess.DEVNULL)
+        mounts = json.loads(subprocess.check_output(["docker", "inspect", "--format", "{{json .Mounts}}", name], text=True))
+        volumes = [mount["Name"] for mount in mounts if mount["Type"] == "volume"]
+        assert volumes, "Expected the Postgres data volume to be included in cleanup"
         for _ in range(120):
             ready = subprocess.run(["docker", "exec", name, "pg_isready", "-U", "postgres", "-d", "example"], capture_output=True)
             if ready.returncode == 0:
@@ -134,11 +153,16 @@ def test_real_postgres_seed_and_http_probe(tmp_path, monkeypatch):
                 assert cloud.password not in path.read_text(errors="replace")
                 assert token not in path.read_text(errors="replace")
     finally:
-        if server is not None:
-            server.terminate()
-            server.wait(timeout=10)
-        subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        # pytest preserves tmp_path on failure; remove private material explicitly.
-        for path in state.iterdir():
-            path.unlink()
-        state.rmdir()
+        try:
+            if server is not None:
+                server.terminate()
+                try:
+                    server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait(timeout=10)
+        finally:
+            # -v removes only anonymous volumes owned by this exact container.
+            subprocess.run(["docker", "rm", "-fv", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            for volume in volumes:
+                assert subprocess.run(["docker", "volume", "inspect", volume], capture_output=True).returncode != 0

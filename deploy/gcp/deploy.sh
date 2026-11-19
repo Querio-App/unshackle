@@ -4,7 +4,9 @@ set -eu
 umask 077
 export CLOUDSDK_CORE_DISABLE_FILE_LOGGING=true
 : "${PROJECT:?}" "${REGION:?}" "${PREFIX:?}" "${GCP_STATE:?}" "${REPO_URL:?}" "${REPO_REF:?}" "${IMAGE_TAG:?}"
-export PROJECT REGION PREFIX GCP_STATE REPO_URL REPO_REF
+TOKEN_VERSION="${TOKEN_VERSION:-$(cat "$GCP_STATE/token-version" 2>/dev/null || printf 1)}"
+WAREHOUSE_VERSION="${WAREHOUSE_VERSION:-$(cat "$GCP_STATE/warehouse-version" 2>/dev/null || printf 1)}"
+export PROJECT REGION PREFIX GCP_STATE REPO_URL REPO_REF TOKEN_VERSION WAREHOUSE_VERSION
 python - <<'PY'
 import json, os, re
 from pathlib import Path
@@ -19,10 +21,13 @@ ref = os.environ['REPO_REF']
 assert ref and not ref.startswith('-') and not any(c in ref for c in '\n\r\0'), 'Invalid Git ref'
 state = Path(os.environ['GCP_STATE'])
 assert state.is_dir(), 'Create private state first'
+assert (state / 'project-id').read_text().strip() == os.environ['PROJECT'], 'Project does not match saved scope'
+assert (state / 'project-created').read_text().strip() == os.environ['PROJECT'], 'No matching successful project creation recorded'
+assert all(re.fullmatch(r'[1-9][0-9]*', os.environ[k]) for k in ('TOKEN_VERSION', 'WAREHOUSE_VERSION')), 'Pin numeric secret versions'
 (state / 'run-env.json').write_text(json.dumps({'UNSHACKLE_REPO_URL': os.environ['REPO_URL'], 'UNSHACKLE_REPO_REF': ref, 'UNSHACKLE_POLL_INTERVAL': '60'}))
 PY
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/$PREFIX-images/mcp:$IMAGE_TAG"
-SECRETS="UNSHACKLE_WAREHOUSE_URL=$PREFIX-warehouse:${WAREHOUSE_VERSION:-1},UNSHACKLE_MCP_TOKEN=$PREFIX-token:${TOKEN_VERSION:-1}"
+SECRETS="UNSHACKLE_WAREHOUSE_URL=$PREFIX-warehouse:$WAREHOUSE_VERSION,UNSHACKLE_MCP_TOKEN=$PREFIX-token:$TOKEN_VERSION"
 case "$REPO_URL" in
   ssh://*) SECRETS="$SECRETS,/var/run/git-key/key=$PREFIX-git-key:${GIT_VERSION:-1},/var/run/git-hosts/known_hosts=$PREFIX-git-hosts:${GIT_HOSTS_VERSION:-1}" ;;
 esac
@@ -37,4 +42,6 @@ gcloud run deploy "$PREFIX-mcp" --project "$PROJECT" --region "$REGION" \
   --memory "${RUN_MEMORY:-1Gi}" --cpu 1 --concurrency 4 \
   --min-instances "${MIN_INSTANCES:-1}" --max-instances 1 \
   --no-cpu-throttling --timeout 120 --ingress all --no-invoker-iam-check
+printf '%s\n' "$TOKEN_VERSION" > "$GCP_STATE/token-version"
+printf '%s\n' "$WAREHOUSE_VERSION" > "$GCP_STATE/warehouse-version"
 gcloud run services describe "$PREFIX-mcp" --project "$PROJECT" --region "$REGION" --format='value(status.url)'
