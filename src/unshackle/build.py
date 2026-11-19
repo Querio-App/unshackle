@@ -376,16 +376,11 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
             contacts = sum(len(c.details.get("recipient_emails") or []) for c in email_channels)
             unknown_recipients = sum(1 for c in s.channels if c.recipients is None)
             unresolved = sum(1 for p in s.parameter_bindings if p.get("status") == "unresolved")
-            subscriptions.append((
-                b.tool,
-                s.name,
-                dash_names.get(s.dashboard_ref) or s.dashboard_ref or "(unknown)",
-                len(s.channels),
-                len(email_channels),
-                contacts,
-                unknown_recipients,
-                unresolved,
-            ))
+            subscriptions.append(
+                f"| {b.tool} | {s.name.replace('|', '/')} | "
+                f"{(dash_names.get(s.dashboard_ref) or s.dashboard_ref or '(unknown)').replace('|', '/')} | "
+                f"{len(s.channels)} | {len(email_channels)} | {contacts} | {unknown_recipients} | {unresolved} |"
+            )
     if subscriptions:
         lines += [
             f"## Subscription readiness ({len(subscriptions)})",
@@ -393,10 +388,7 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
             "| Tool | Subscription | Dashboard | Channels | Email channels | Contacts found | Unknown recipient lists | Unresolved params |",
             "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
-        lines += [
-            f"| {tool} | {name.replace('|', '/')} | {dash.replace('|', '/')} | {channels} | {emails} | {contacts} | {unknown} | {unresolved} |"
-            for tool, name, dash, channels, emails, contacts, unknown, unresolved in subscriptions
-        ]
+        lines += subscriptions
         lines += [
             "",
             "Contacts found: deduped email targets extracted from each email channel's recipient_emails field.",
