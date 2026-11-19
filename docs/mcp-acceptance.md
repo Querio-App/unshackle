@@ -1,9 +1,10 @@
 # MCP acceptance evidence
 
-Epic #193 is **not fully accepted**: hosted deployment/client runs remain unverified.
-All five questions passed with three actual clients over stdio and authenticated
-local HTTP. A real Postgres rename produced the draft drift evidence PR below.
-Local HTTP is not Railway; no scheduled GitHub Actions execution is claimed.
+Railway hosted acceptance now has three actual clients with all five answers correct,
+in addition to the earlier stdio and local HTTP runs. Deployment, Git refresh and
+service update passed; remaining cleanup and provider gates are recorded in the
+[cloud validation matrix](deploy/validation.md). No scheduled GitHub Actions execution
+is claimed, and the epic and draft PRs remain open.
 
 ## Dataset and independent expectations
 
@@ -82,12 +83,13 @@ on this environment. Warehouse import aborts without partial metadata. DuckDB qu
 and arithmetic checks passed; DuckDB introspection is not claimed. SQLite supplies
 offline adapter integration; Postgres supplies actual database/client acceptance.
 
-Railway credentials and deployment authorization were unavailable. No Railway,
-AWS or Cloud Run deployment was performed by this worker. To close the epic's
-remaining live gate, deploy the reviewed code and fixture to Railway, repeat all
-three clients with the same five questions over bearer-authenticated HTTP, and
-record deployment/source/version evidence. Actual scheduled workflow execution
-also remains unverified; PR #207 proves manual workflow-equivalent generation.
+The initial 2026-11-18 acceptance run had no cloud access. The separately authorized
+2026-11-19 Railway rehearsal subsequently passed all three clients over hosted HTTP,
+plus authentication, resource/tool access, five reference queries, caps, native
+cancellation, direct database write denial, service update and Git refresh. See the
+[committed sanitized evidence](../deploy/railway/evidence/README.md) for exact source,
+image, context and client versions and cleanup limitations. Actual scheduled workflow
+execution remains unverified; PR #207 proves manual workflow-equivalent generation.
 
 ## Cloud deployment follow-up
 

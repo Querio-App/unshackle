@@ -1,29 +1,37 @@
 # Cloud deployment validation
 
-Preparation date: 2026-11-19. The guides are intended to be executed after account
-access and deployment authorization are established. **No cloud deployment was run
-for this preparation.** Local validation cannot prove provider IAM, billing, quotas,
-networking, certificate issuance, or hosted client behavior.
+Validation date: 2026-11-19. Railway and GCP live rehearsals were separately
+authorized after account login. AWS remains preparation-only. Local validation
+cannot prove provider IAM, billing, quotas, networking, certificate issuance or
+hosted client behavior; each row below records only the evidence obtained.
 
 | Gate | Railway | GCP Cloud Run | AWS ECS Fargate |
 | --- | --- | --- | --- |
 | Guide and scoped lifecycle commands | [Guide](railway.md) | [Guide](cloud-run.md) | [Guide](aws.md) |
 | Follow-up issue | [#210](https://github.com/Querio-App/unshackle/issues/210) | [#211](https://github.com/Querio-App/unshackle/issues/211) | [#212](https://github.com/Querio-App/unshackle/issues/212) |
-| Local syntax/config/fixture checks | Pending | Pending | Pending |
-| Usable CLI authentication | Pending login | CLI absent during preparation | Unverified |
-| Billing/project/region/quota readiness | Unverified | Unverified | Unverified |
-| Build/push and hosted deployment | Not run | Not run | Not run |
-| Public HTTPS, missing-token 401, authenticated MCP | Not run | Not run | Not run |
-| Read-only role, five answers, caps/cancellation | Not run hosted | Not run hosted | Not run hosted |
-| Claude Code hosted five-answer run | Not run | Not run | Not run |
-| Codex CLI hosted five-answer run | Not run | Not run | Not run |
-| Cursor hosted five-answer run | Not run | Not run | Not run |
-| Service update and Git refresh | Not run hosted | Not run hosted | Not run hosted |
-| Scoped teardown/resource absence | Not run | Not run | Not run |
+| Draft PR | [#215](https://github.com/Querio-App/unshackle/pull/215) | [#216](https://github.com/Querio-App/unshackle/pull/216) | [#214](https://github.com/Querio-App/unshackle/pull/214) |
+| Local syntax/config/fixture checks | Passed | Passed | Passed: lint, fixtures, actual containers |
+| Usable CLI authentication | Verified, CLI 5.75.0 | Verified, CLI 594.0.0 | Unverified; no AWS calls |
+| Billing/project/region/quota readiness | Isolated personal-workspace project created | New disposable project and billing linked | Unverified; domain/Route53 zone also required |
+| Build/push and hosted deployment | Passed after provider Dockerfile correction | Image pushed and digest verified; Cloud Run not deployed | Not run |
+| Public HTTPS, missing-token 401, authenticated MCP | Passed | Pending | Not run |
+| Read-only role, five answers, caps/cancellation | Passed hosted | Actual Cloud SQL seed/write denial/native cancellation passed; hosted MCP pending | Local containers only |
+| Claude Code hosted five-answer run | [5/5](../../deploy/railway/evidence/claude-railway-http.json) | Pending | Not run |
+| Codex CLI hosted five-answer run | [5/5](../../deploy/railway/evidence/codex-railway-http.json) | Pending | Not run |
+| Cursor hosted five-answer run | [5/5](../../deploy/railway/evidence/cursor-railway-http.json) | Pending | Not run |
+| Service update and Git refresh | Update passed; marker add/revert refreshed without restart | Pending | Not run hosted |
+| Scoped teardown/resource absence | Railway project absent; context repository deletion blocked by GitHub scope | Pending | No cloud resources created |
+
+Railway evidence includes [deployment, refresh and cleanup results](../../deploy/railway/evidence/live-run.json).
+All three clients used the initial image; the final update was checked separately
+with the full protocol/query probe. A private repository, actual rollback and custom
+domain were not exercised. The observed project usage snapshot before deletion was
+about USD 0.000483; this is not a final bill.
 
 The earlier [acceptance evidence](../mcp-acceptance.md) covers three real clients over
 stdio and local HTTP, plus local Postgres and a manually generated drift PR. It does
-not cover any provider above or scheduled GitHub Actions.
+not itself cover any provider above or scheduled GitHub Actions. The provider rows
+use additional live evidence, kept separate from those earlier local runs.
 
 ## Live validation record
 
