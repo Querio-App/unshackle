@@ -209,7 +209,9 @@ def test_preflight_rejects_existing_hostname_and_uses_only_reads(monkeypatch):
     def absent(args, *expected):
         calls.append(args)
     monkeypatch.setattr(check, "absent", absent)
-    monkeypatch.setattr(check, "aws", lambda *args: subprocess.CompletedProcess(args, 0, '{"clusters":[],"failures":[{"reason":"MISSING"}]}', ""))
+    monkeypatch.setattr(check, "aws", lambda *args: subprocess.CompletedProcess(
+        args, 0, '{"clusters":[],"failures":[{"reason":"MISSING"}]}' if args[1] == "describe-clusters"
+        else '{"taskDefinitionArns":[]}', ""))
     monkeypatch.setattr(check, "records", lambda: [{"Name": "MCP.EXAMPLE.INVALID."}])
     with pytest.raises(RuntimeError, match="hostname already exists"):
         check.main()
@@ -247,3 +249,111 @@ def test_cleanup_verifier_exact_family_and_api_failures(tmp_path, monkeypatch):
     monkeypatch.setattr(fresh, "aws", lambda *a: subprocess.CompletedProcess(a, 1, "", "AccessDenied"))
     with pytest.raises(RuntimeError, match="auth/permissions"):
         fresh.read("ecs", "describe-clusters", "--clusters", "unshackle-example")
+
+
+@pytest.mark.skipif(os.environ.get("UNSHACKLE_AWS_FIXTURE_TESTS") != "1", reason="explicit local generator Docker acceptance required")
+@pytest.mark.parametrize("mode", ["default", "keep", "keep_failure"])
+def test_shared_generator_removes_only_owned_volumes_and_preserves_keep(tmp_path, monkeypatch, capsys, mode):
+    import shutil
+    spec = importlib.util.spec_from_file_location("aws_shared_generator", ROOT / "examples/mcp-demo/local.py")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    repo = tmp_path / "context"
+    real_run = subprocess.run
+    owned_name = None
+    owned_volumes = []
+
+    def run(args, **kwargs):
+        nonlocal owned_name, owned_volumes
+        if args[:2] == ["docker", "run"]:
+            owned_name = args[args.index("--name") + 1]
+        result = real_run(args, **kwargs)
+        if args[:2] == ["docker", "run"] and result.returncode == 0:
+            # Capture only this generator's mounts before its automatic cleanup.
+            mounts = json.loads(real_run(["docker", "inspect", "--format", "{{json .Mounts}}", owned_name],
+                                         capture_output=True, text=True, check=True).stdout)
+            owned_volumes = [mount["Name"] for mount in mounts if mount["Type"] == "volume"]
+            assert owned_volumes
+        return result
+
+    def verify_volumes_absent():
+        for volume in owned_volumes:
+            result = real_run(["docker", "volume", "inspect", volume], capture_output=True, text=True)
+            assert result.returncode != 0 and "no such volume" in result.stderr.lower()
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(sys, "argv", ["local.py", "--output", str(repo)] + (["--keep"] if mode != "default" else []))
+    if mode == "keep_failure":
+        def fail_import(_):
+            raise RuntimeError("Synthetic import failure")
+        monkeypatch.setattr(generator.warehouse, "introspect", fail_import)
+    try:
+        if mode == "keep_failure":
+            with pytest.raises(RuntimeError, match="Synthetic import failure"):
+                generator.main()
+        else:
+            generator.main()
+            assert f"docker rm -fv {owned_name}" in capsys.readouterr().out
+        assert owned_name and owned_volumes
+        state = real_run(["docker", "inspect", "--format", "{{.State.Running}}", owned_name], capture_output=True, text=True)
+        if mode == "keep":
+            assert state.returncode == 0 and state.stdout.strip() == "true"
+            for volume in owned_volumes:
+                real_run(["docker", "volume", "inspect", volume], capture_output=True, check=True)
+        else:
+            assert state.returncode != 0 and "no such" in state.stderr.lower()
+            verify_volumes_absent()
+    finally:
+        try:
+            if owned_name:
+                # Only this captured generator container; a second rm may report absent.
+                result = real_run(["docker", "rm", "-fv", owned_name], capture_output=True, text=True)
+                assert result.returncode == 0 or "no such container" in result.stderr.lower()
+                verify_volumes_absent()
+        finally:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
+@pytest.mark.parametrize("existing_status", [None, "ACTIVE", "INACTIVE", "DELETE_IN_PROGRESS"])
+def test_preflight_exact_task_family_excludes_prefix_peers(monkeypatch, existing_status):
+    check = module("preflight")
+    monkeypatch.setenv("PREFIX", "unshackle-example")
+    monkeypatch.setenv("DOMAIN_NAME", "mcp.example.invalid")
+    monkeypatch.setattr(check, "absent", lambda *args: None)
+    monkeypatch.setattr(check, "records", lambda: [])
+    seen = []
+    def aws(*args):
+        if args[1] == "describe-clusters":
+            return subprocess.CompletedProcess(args, 0, '{"clusters":[],"failures":[{"reason":"MISSING"}]}', "")
+        assert args[:4] == ("ecs", "list-task-definitions", "--family-prefix", "unshackle-example")
+        status = args[-1]
+        seen.append(status)
+        arns = ["example/task-definition/unshackle-example-neighbor:1"]
+        if status == existing_status:
+            arns.append("example/task-definition/unshackle-example:42")
+        return subprocess.CompletedProcess(args, 0, json.dumps({"taskDefinitionArns": arns}), "")
+    monkeypatch.setattr(check, "aws", aws)
+    if existing_status:
+        with pytest.raises(RuntimeError, match="Task definition family already exists"):
+            check.main()
+        assert seen[-1] == existing_status
+    else:
+        check.main()
+        assert seen == ["ACTIVE", "INACTIVE", "DELETE_IN_PROGRESS"]
+
+
+@pytest.mark.parametrize("failed_status", ["ACTIVE", "INACTIVE", "DELETE_IN_PROGRESS"])
+@pytest.mark.parametrize("error", ["ExpiredToken", "AccessDenied", "ThrottlingException"])
+def test_preflight_task_revision_api_errors_fail_closed(monkeypatch, failed_status, error):
+    check = module("preflight")
+    monkeypatch.setenv("PREFIX", "unshackle-example")
+    monkeypatch.setattr(check, "absent", lambda *args: None)
+    def aws(*args):
+        if args[1] == "describe-clusters":
+            return subprocess.CompletedProcess(args, 0, '{"clusters":[],"failures":[{"reason":"MISSING"}]}', "")
+        if args[-1] == failed_status:
+            return subprocess.CompletedProcess(args, 1, "", f"({error})")
+        return subprocess.CompletedProcess(args, 0, '{"taskDefinitionArns":[]}', "")
+    monkeypatch.setattr(check, "aws", aws)
+    with pytest.raises(RuntimeError, match="Cannot inspect task definitions"):
+        check.main()

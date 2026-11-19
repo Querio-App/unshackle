@@ -40,10 +40,19 @@ def main():
     data = json.loads(result.stdout)
     if data.get("clusters") or any(f.get("reason") != "MISSING" for f in data.get("failures", [])):
         raise RuntimeError("Cluster name exists or cannot be verified")
+    # A deleted stack/cluster can leave revisions behind. Teardown removes the
+    # exact family, so refuse every pre-existing revision before claiming it.
+    for status in ("ACTIVE", "INACTIVE", "DELETE_IN_PROGRESS"):
+        result = aws("ecs", "list-task-definitions", "--family-prefix", prefix, "--status", status)
+        if result.returncode:
+            raise RuntimeError("Cannot inspect task definitions; resolve authentication/API permissions")
+        revisions = json.loads(result.stdout)["taskDefinitionArns"]
+        if any(arn.rsplit("/", 1)[-1].split(":")[0] == prefix for arn in revisions):
+            raise RuntimeError("Task definition family already exists")
     domain = os.environ["DOMAIN_NAME"].rstrip(".").lower()
     if any(record["Name"].rstrip(".").lower() == domain for record in records()):
         raise RuntimeError("DNS hostname already exists")
-    print("PASS: stack/repository/cluster/optional-secret names and DNS hostname are unused")
+    print("PASS: stack/repository/cluster/task-family/optional-secret names and DNS hostname are unused")
 
 
 if __name__ == "__main__":
