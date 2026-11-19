@@ -44,6 +44,21 @@ def connect(url):
     return psycopg.connect(url.set(drivername="postgresql").render_as_string(hide_password=False))
 
 
+def verify_reader(url):
+    # A transaction default is not a permission boundary. Check grants with it off.
+    with connect(url) as con:
+        assert con.execute("SHOW transaction_read_only").fetchone() == ("on",)
+        for statement in ("UPDATE orders SET amount = amount WHERE false", "DELETE FROM orders WHERE false",
+                          "CREATE TABLE forbidden(id int)", "CREATE TEMP TABLE forbidden(id int)"):
+            con.execute("SET TRANSACTION READ WRITE")
+            try:
+                con.execute(statement)
+            except psycopg.errors.InsufficientPrivilege:
+                con.rollback()
+            else:
+                raise RuntimeError("Reader unexpectedly has write access")
+
+
 def seed(output: Path, *, local: bool = False):
     output = output.resolve()
     if output.is_relative_to(ROOT):
@@ -73,16 +88,7 @@ def seed(output: Path, *, local: bool = False):
         con.execute("GRANT USAGE ON SCHEMA public TO example_reader")
         con.execute("GRANT SELECT ON customers, orders TO example_reader")
         con.execute("ALTER ROLE example_reader SET default_transaction_read_only = on")
-    # A transaction default is not a permission boundary. Check grants even with it off.
-    with connect(reader_public) as con:
-        assert con.execute("SHOW transaction_read_only").fetchone() == ("on",)
-        con.execute("SET TRANSACTION READ WRITE")
-        try:
-            con.execute("UPDATE orders SET amount = amount WHERE false")
-        except psycopg.errors.InsufficientPrivilege:
-            con.rollback()
-        else:
-            raise RuntimeError("Reader unexpectedly has write access")
+    verify_reader(reader_public)
     repo = output / "context"
     scaffold.init(repo)
     build.apply(warehouse.introspect(reader_public.render_as_string(hide_password=False)), repo)
