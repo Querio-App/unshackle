@@ -43,10 +43,6 @@ def create_app(repo: Path | Callable[[], Path], *, host: str = '127.0.0.1', max_
     server = create_server(repo, max_rows=max_rows, timeout=timeout, host=host,
                            stateless_http=True, json_response=True)
     app = server.streamable_http_app()
-    if os.environ.get('UNSHACKLE_MCP_UI_DIAGNOSTICS') == '1':
-        from .ui_diagnostics import UiDiagnostics
-        app.add_middleware(UiDiagnostics)
-    # Starlette's last-added middleware is outermost: reject before diagnostics.
     app.add_middleware(BearerAuth, token=token)
     return app
 

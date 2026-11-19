@@ -107,3 +107,24 @@ Official references (checked November 19, 2026):
 - [Downloads and cancellation semantics](https://claude.com/docs/connectors/building/mcp-apps/download-files)
 - [Host theming](https://claude.com/docs/connectors/building/mcp-apps/transparent-theming)
 - [Large results and optional stable domains](https://claude.com/docs/connectors/building/mcp-apps/troubleshooting)
+
+## Actual Claude web validation (November 19, 2026)
+
+The user-provided screenshot confirms the real Claude web app rendered **Query results**,
+`diagnostic_value = 1`, the search input, sortable column header, Download filtered CSV,
+and Show copyable CSV. The controls are visible; their interactions have not been
+user-tested in Claude. Browser tests separately exercise sorting, filtering and CSV.
+
+Screenshot evidence remains at its original local path only (not copied into the repo):
+`/var/folders/v4/1c669zdx61725t730fh8ztt80000gn/T/codex-clipboard-7o0I7y.png`.
+The model's text in that screenshot incorrectly claims no app appeared; the visible
+widget is the rendering evidence.
+
+An earlier conversation showed ordinary tool cards without the widget. Read-only logs
+showed discovery/tool calls without a UI resource read. After one fresh connection,
+Claude advertised Apps/MIME support, received the paired tool metadata, fetched the UI,
+and visibly rendered it. This establishes a discovery/session transition; the exact
+cache or host-selection cause is unproved. No rendering code changed to produce the
+success. Signed `353361b` added temporary, opt-in, fixed-schema diagnostics solely for
+this investigation; it was not a widget fix. The diagnostic flag and observer were
+removed afterward, restoring the reviewed `e5c9f84` runtime behavior and widget bytes.
