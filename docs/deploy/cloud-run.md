@@ -1,10 +1,15 @@
 # Google Cloud Run: CLI deployment rehearsal
 
-**Preparation only. All GCP login, API enablement, provisioning, deployment, update
-and teardown commands below are UNTESTED against GCP.** No cloud resources were
-created. The helpers have offline/mock and opt-in local Docker checks; those do not
-prove Cloud Run, Cloud SQL, billing, IAM or hosted client acceptance. See the shared
-[validation record](validation.md) for the current evidence.
+**Live validation is partial.** A new disposable project, billing linkage, APIs,
+registry, Cloud SQL fixture, scoped IAM and secrets were created successfully; the
+amd64 image was built from the signed provider commit and pushed. Cloud SQL read-only denial and native
+cancellation/recovery passed. Cloud Run deployment, hosted SDK/three-client checks,
+Git refresh and update remain **UNTESTED** because the GitHub account lacked
+the scope needed to delete a new context repository. No context GitHub repo was
+created. The owned SQL, registry/images, secrets and runtime account were removed
+and verified absent; the disposable project reached `DELETE_REQUESTED` (asynchronous
+shutdown, not a claim of permanent deletion or final billing closure). See the
+[sanitized run record](../../deploy/gcp/evidence/run.json) and shared [validation record](validation.md); local checks are not hosted acceptance.
 
 This recipe uses one **new disposable project** for one synthetic demonstration:
 Artifact Registry, Cloud Run, Cloud SQL PostgreSQL 16 and Secret Manager. Run commands
@@ -105,7 +110,7 @@ vary by region: [SQL](https://cloud.google.com/sql/pricing),
 [CPU allocation](https://docs.cloud.google.com/run/docs/configuring/cpu-allocation).
 Budgets are alerts, not a hard spending cap. Delete the rehearsal promptly.
 
-## Provision once per disposable project — UNTESTED, billable
+## Provision once per disposable project — live validated, billable
 
 Run provisioning commands individually and stop on any error. Fresh-project/API and
 service-account permissions can take time to propagate. If a named operation fails
@@ -220,9 +225,9 @@ PY
 
 An exact commit SHA or tag also works; a pinned SHA never advances on polling. Check
 that the generated repository, not the unshackle source repository, is configured.
-No GitHub repository is created by the preparation worker.
+No GitHub repository was created during this run.
 
-## Store secrets, build and deploy — UNTESTED
+## Store secrets and build — validated; deploy — UNTESTED
 
 ```bash
 gcloud secrets create "$PREFIX-warehouse" --project "$PROJECT" \
@@ -384,10 +389,12 @@ rollback is no longer required. Database credential rotation also requires chang
 the Postgres role password, adding a matching warehouse secret version and setting
 `WAREHOUSE_VERSION` before redeployment; changing Secret Manager alone is insufficient.
 
-## Scoped teardown — UNTESTED, destructive
+## Scoped teardown — destructive
 
-These commands delete only this rehearsal's named resources. Stop any proxy started
-by this session, remove any configured client entry, then review the saved project
+SQL, registry, secrets, IAM cleanup and project shutdown were validated live.
+Cloud Run and GitHub deletion commands were not exercised because those resources
+were never created. These commands delete only this rehearsal's named resources.
+Stop any proxy started by this session, remove any configured client entry, then review the saved project
 ID against the intended disposable project. Do not use an all-project/account loop.
 
 ```bash
@@ -432,7 +439,8 @@ as intentionally retained. Remove only this session's Docker images with
 `docker image rm "$REGION-docker.pkg.dev/$PROJECT/$PREFIX-images/mcp:$IMAGE_TAG" unshackle-gcp-base`;
 do not prune unrelated images/build caches. Remove any other tags built by updates
 by their recorded exact names. No local Postgres container is created by the cloud
-recipe; the opt-in test cleans its own container in `finally`.
+recipe; the opt-in test cleans its own container and anonymous data volumes in nested
+`finally` blocks and verifies the captured volume IDs are absent.
 
 Finally remove the exact private state directory (after preserving sanitized
 evidence) and unset the token:
