@@ -1,11 +1,14 @@
 # Railway: CLI deployment from a fresh account
 
-**Preparation only.** CLI 5.75.0 command help and isolated local Postgres/HTTP
-checks have been exercised. Railway authentication, provisioning, build, HTTPS,
-client acceptance, update and deletion are **UNTESTED**. Signup is complete for
-this preparation session; authentication and billing eligibility remain pending.
-Do not treat this recipe as executed cloud acceptance. See the
-[validation matrix](validation.md) and [hosted evidence checklist](README.md#record-hosted-acceptance).
+**Live verified on 2026-11-19 with CLI 5.75.0.** The synthetic Railway deployment,
+HTTPS/MCP/SQL probe, all five answers in actual Claude/Codex/Cursor clients, Git
+refresh and source-upload updates passed. Railway project/services/volume/domain
+were removed and the old endpoint returns 404. Synthetic GitHub repository deletion
+is pending a `delete_repo` permission grant; the current token returned 403. No
+billing upgrade was performed. See [sanitized provider evidence](../../deploy/railway/evidence/README.md),
+the [validation matrix](validation.md) and [hosted evidence checklist](README.md#record-hosted-acceptance).
+Actual rollback, private Git SSH mounts, custom domains and alternative regions/plans
+remain untested.
 
 This recipe creates one disposable project, one `production` environment, one MCP
 service, one Postgres service/volume and one generated synthetic GitHub context
@@ -22,7 +25,7 @@ one of its [official installation methods](https://docs.railway.com/cli):
 ```bash
 brew install railway                  # macOS; already installed in this prep session
 # Alternative on a machine with Node: npm install -g @railway/cli@5.75.0
-railway --version                     # recipe checked against 5.75.0
+railway --version                     # live recipe checked against 5.75.0
 railway login                         # USER action: completes signup/login in browser
 railway whoami                        # inspect account/workspace locally; don't publish output
 # Headless machine only: railway login --browserless
@@ -60,8 +63,7 @@ local Git push; they are not sent to the runtime. If Git push asks for credentia
 ## Prepare names and source
 
 Run the following sections in the **same Bash session**. Replace the workspace and
-GitHub owner placeholders. All cloud commands below are deferred until deployment
-is explicitly authorized. No command here is an all-account cleanup.
+GitHub owner placeholders. Run cloud commands only when deployment is authorized. No command here is an all-account cleanup.
 
 Use a fresh source clone containing this guide. Until epic #193 merges, the feature
 branch contains runtime changes absent from `main`; record the exact commit used:
@@ -94,7 +96,7 @@ it until teardown succeeds. Commands use `--service` and `--environment` explici
 `railway add` changes the linked service. Never use `railway variable list`, `railway
 run env`, `--verbose`, shell tracing or raw credential output as troubleshooting.
 
-## Create the isolated project and database — UNTESTED
+## Create the isolated project and database
 
 [init](https://docs.railway.com/cli/init) creates and links a project;
 [add](https://docs.railway.com/cli/add) immediately deploys a database. This is where
@@ -187,7 +189,7 @@ works. SSH mounts are optional infrastructure outside this tested recipe; valida
 private clone access inside the deployed container before switching the URL. See
 [Git refresh behavior](README.md#git-refresh-behavior).
 
-## Configure secrets, build and publish HTTPS — UNTESTED
+## Configure secrets, build and publish HTTPS
 
 [Variable stdin](https://docs.railway.com/cli/variable) keeps secret values out of
 process arguments/history. Do not substitute `$(cat ...)` into a `KEY=value` argument.
@@ -236,7 +238,7 @@ auth, so an unauthenticated Railway health request gets 401. There is no public
 [HTTP healthcheck](https://docs.railway.com/deployments/healthchecks); the Dockerfile's
 socket check is not hosted protocol acceptance.
 
-## Endpoint and client checks — UNTESTED on Railway
+## Endpoint and client checks
 
 ```bash
 export UNSHACKLE_MCP_URL='https://REPLACE_WITH_GENERATED_HOSTNAME/mcp'
@@ -270,9 +272,10 @@ exported endpoint/token, then the existing
 [client_matrix harness and evidence steps](README.md#record-hosted-acceptance).
 Run clients from this shell so the environment reaches them; restart GUI clients
 with an appropriate private environment if necessary. Those client runs may consume
-the user's model subscription and remain deferred during preparation.
+the user's model subscription. The recorded live run used existing authenticated
+clients; it did not alter persistent client configuration.
 
-## Logs, updates and troubleshooting — UNTESTED on Railway
+## Logs, updates and troubleshooting
 
 ```bash
 railway logs --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT" --lines 100
@@ -328,7 +331,7 @@ set it with `railway variable set ... --stdin`, and redeploy/recheck clients. Av
 reads its bearer at startup. A shared bearer grants access to the deployment's one
 warehouse role; it does not identify individual users or enforce policy files.
 
-## Scoped teardown of everything created — UNTESTED
+## Scoped teardown of everything created
 
 The project contains only this demo. Confirm its saved ID/name and inspect services,
 volumes, proxy and domain before deletion. Run this from the same source session;
@@ -344,29 +347,50 @@ railway service list
 railway volume list
 railway domain list --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT"
 railway tcp-proxy list --service "$RW_DB_SERVICE" --environment "$RW_ENVIRONMENT"
+# Clear the local link while the project still exists; unlink needs a project lookup.
+railway unlink --yes
 # Human confirms the exact dedicated project; interactive prompt can handle MFA.
 railway delete --project "$RW_PROJECT"
-# Deletion can be scheduled: inspect until this exact project is absent.
-railway list
+# CLI deletion scheduled a 48-hour grace period in the live run.
+# For this disposable project only, inspect the official live API schema, then purge it.
+railway api describe projectScheduleDeleteForce
+railway api 'mutation ForceDelete($id: String!) { projectScheduleDeleteForce(id: $id) }' \
+  --raw-var "id=$RW_PROJECT"
+railway list --json > "$STATE/projects-after-delete.json"
+python - <<'PYVERIFY'
+import json, os
+from pathlib import Path
+projects = json.loads((Path(os.environ['STATE']) / 'projects-after-delete.json').read_text())
+assert not any(p['id'] == os.environ['RW_PROJECT'] for p in projects)
+print('Exact owned Railway project is absent')
+PYVERIFY
 # Delete ONLY the generated public synthetic context repository.
 gh repo delete "$CONTEXT_REPO" --yes
-railway unlink
 ```
 
 [Project deletion](https://docs.railway.com/cli/delete) removes the project's services,
 deployments and data, including this Postgres volume and its fixture role/tables;
-its generated service domain/proxy belong to the project. CLI 5.75.0 reports that
-deletion may be scheduled: successful submission is not proof cleanup has finished.
-Verify removal in the project list/dashboard and billing usage before deleting the
-local ownership record. If deletion needs MFA, complete it in the human terminal or
-dashboard; do not pass codes through command arguments/logs. `railway down` alone
-is insufficient: storage/project resources remain.
+its generated service domain/proxy belong to the project. CLI 5.75.0 scheduled project deletion 48 hours later in the live run;
+its API `projectScheduleDeleteForce(id)` then removed the exact scheduled project
+immediately. The [official API CLI](https://docs.railway.com/cli/api) supports schema
+inspection before a mutation; its live schema describes this operation as skipping
+the grace period. [Volumes can otherwise remain recoverable for 48 hours](https://docs.railway.com/volumes/reference).
+Verify the exact project is absent, an API project query returns not found, and the
+old endpoint no longer serves MCP before discarding the ownership record. This
+purge is irreversible; apply it only to this disposable project's saved ID. If deletion needs MFA, complete it in the human terminal or
+dashboard; do not pass codes through command arguments/logs. `railway unlink` must run before deletion: CLI 5.75.0 cannot unlink a project
+that has already been purged. If run too late, only a stale local association remains;
+it does not recreate cloud resources. `railway down` alone is insufficient: storage/project resources remain.
 
 Also remove any optional external DNS records, repo deploy keys or project tokens
 you created; none are required by the baseline. Remove only this server's client
-configuration entries (see the shared client guide). The GitHub delete may require
-the `delete_repo` scope; grant it interactively only if needed, then retry that exact
-repository. If either deletion fails, retain `STATE` and finish cleanup first.
+configuration entries (see the shared client guide). The live GitHub delete returned 403 because the existing token lacked
+`delete_repo`. A human must run `gh auth refresh -h github.com -s delete_repo` and
+complete its consent flow, or delete this exact repository through its GitHub
+settings. Then retry deletion and verify `gh repo view "$CONTEXT_REPO"` no longer
+finds it. Do not claim full cleanup while the repository remains. Keep a non-secret
+ownership record if permission blocks cleanup; credentials can be removed once the
+Railway server/database are gone.
 
 After verified remote cleanup, remove private local artifacts and unset credentials:
 
@@ -387,4 +411,4 @@ UNSHACKLE_RAILWAY_LOCAL_TEST=1 pytest -q tests/test_deploy_railway.py
 ```
 
 Official references above were checked 2026-11-19 against Railway CLI 5.75.0.
-No cloud execution or client acceptance is implied by the local validation.
+Local tests and actual hosted/client results are recorded separately in the evidence.
