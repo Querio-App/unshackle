@@ -83,7 +83,9 @@ def query(sql: str, params: dict[str, Any], url: str | None = None, *,
                 cursor = bounded.execute(text(bounded_sql), used) if used else bounded.exec_driver_sql(bounded_sql)
                 with cursor as result:
                     rows = result.fetchmany(limit + 1) if limit is not None else result.fetchall()
-                    frame = pd.DataFrame(rows[:limit] if limit is not None else rows, columns=result.keys())
+                    # Preserve native integers/Decimals alongside NULL. Inference can
+                    # coerce BIGINT + NULL to float and lose precision before JSON.
+                    frame = pd.DataFrame(rows[:limit] if limit is not None else rows, columns=result.keys(), dtype=object)
                     frame.attrs['truncated'] = limit is not None and len(rows) > limit
                 if expired.is_set() or time.monotonic() >= deadline:
                     raise TimeoutError("Query execution deadline exceeded")

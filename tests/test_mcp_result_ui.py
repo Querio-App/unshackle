@@ -46,3 +46,20 @@ def test_ui_preserves_execution_limits(tmp_path, monkeypatch):
         await create_server(tmp_path, max_rows=1000, timeout=15).call_tool('run_query', {'sql': 'select 1'})
     anyio.run(check)
     assert calls == [('select 1', 1000, {'max_rows': 1000, 'timeout': 15})]
+
+
+def test_bigint_protocol_and_text_fallback_preserve_precision_with_null(tmp_path, monkeypatch):
+    monkeypatch.setenv('UNSHACKLE_WAREHOUSE_URL', 'duckdb://')
+    server = create_server(tmp_path, stateless_http=True, json_response=True)
+    values = [-(2**53 + 1), -(2**53), -(2**53 - 1), 2**53 - 1, 2**53, 2**53 + 1, None]
+    sql = ' UNION ALL '.join('SELECT CAST(' + ('NULL' if n is None else str(n)) + ' AS BIGINT) AS n' for n in values)
+    with TestClient(server.streamable_http_app(), base_url='http://localhost:8000') as client:
+        response = client.post('/mcp', headers={'Accept': 'application/json, text/event-stream'}, json={
+            'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+            'params': {'name': 'run_query', 'arguments': {'sql': sql}}})
+        result = response.json()['result']
+    rows = [[str(n) if n is not None and abs(n) > 2**53 - 1 else n] for n in values]
+    assert result['structuredContent']['rows'] == rows
+    assert json.loads(result['content'][0]['text'])['rows'] == rows
+    assert type(result['structuredContent']['rows'][2][0]) is int
+    assert type(result['structuredContent']['rows'][3][0]) is int

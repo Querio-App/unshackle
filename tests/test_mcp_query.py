@@ -77,3 +77,22 @@ def test_postgres_dialect_preserved_at_execution_boundary(monkeypatch):
     assert 'JSON_EXTRACT' not in sqls[0]
     assert 'ARRAY[1, 2]' in sqls[0]
     assert "->> 'a'" in sqls[0]
+
+
+@pytest.mark.parametrize('url', ['duckdb://', 'sqlite://'])
+def test_bounded_native_values_with_null_do_not_coerce_bigint_to_float(url):
+    frame = query('SELECT CAST(9007199254740993 AS BIGINT) AS n UNION ALL SELECT NULL',
+                  {}, url, limit=2, timeout=1)
+    assert frame.iloc[0, 0] == 9007199254740993
+    assert isinstance(frame.iloc[0, 0], int)
+    assert frame.iloc[1, 0] is None
+
+
+def test_json_safe_integer_boundary_and_native_types():
+    for n in [-(2**53 + 1), -(2**53), 2**53, 2**53 + 1]:
+        assert json_value(n) == str(n)
+    for n in [-(2**53 - 1), -42, 0, 2**53 - 1]:
+        assert json_value(n) == n and type(json_value(n)) is int
+    assert json_value(True) is True
+    assert json_value(None) is None
+    assert json_value(decimal.Decimal('9007199254740993.123456789')) == '9007199254740993.123456789'

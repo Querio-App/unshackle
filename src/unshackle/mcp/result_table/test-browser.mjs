@@ -127,4 +127,16 @@ test('precision-preserving formatting only with reliable values or explicit USD 
   assert.ok(csv.includes('"12345678901234567890.123456789"'));
   assert.ok(csv.includes('"2026-11-19"')); assert.ok(!csv.includes('$')); await page.close();
 });
+test('serialized BIGINT boundaries and NULL remain exact through host JSON parsing and CSV',async()=>{
+  const wire = '{"content":[],"structuredContent":{"columns":["n"],"rows":[["-9007199254740993"],["-9007199254740992"],[-9007199254740991],[9007199254740991],["9007199254740992"],["9007199254740993"],[null]],"row_count":7,"truncated":false}}';
+  const {page,frame} = await mount(JSON.parse(wire));
+  await frame.locator('#head button').click();
+  assert.deepEqual(await column(frame,1),['-9,007,199,254,740,993','-9,007,199,254,740,992','-9,007,199,254,740,991','9,007,199,254,740,991','9,007,199,254,740,992','9,007,199,254,740,993','NULL']);
+  await frame.locator('#show-csv').click();
+  const csv = await frame.locator('#csv').inputValue();
+  assert.ok(csv.includes('"9007199254740993"'));
+  assert.ok(csv.includes('"-9007199254740991"'));
+  assert.ok(csv.includes("'"+'-9007199254740993'));
+  assert.ok(csv.endsWith('""\n')); await page.close();
+});
 test.after(async()=>{await browser.close();});

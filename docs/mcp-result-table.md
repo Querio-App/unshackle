@@ -4,7 +4,11 @@
 An Apps-capable host sends the actual tool result to the view after its handshake.
 Other clients, including Claude Code, keep the same JSON/text response:
 `{columns, rows, row_count, truncated}`. No query, authentication or execution-limit
-behavior changes. The retained team demo keeps its 1,000-row / 15-second limits.
+behavior changes. Bounded results preserve native values alongside NULL; integers
+outside JavaScript’s safe range (±9,007,199,254,740,991) serialize as exact decimal
+strings, like existing Decimal values. Safe integers remain JSON numbers. This
+prevents both DataFrame NULL coercion and host JSON parsing from losing precision.
+The retained team demo keeps its 1,000-row / 15-second limits.
 
 The table supports keyboard sorting (Tab to a column header, Enter or Space),
 search across all columns, a returned-row count, truncation notice, and filtered CSV.

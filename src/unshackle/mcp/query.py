@@ -33,6 +33,10 @@ def json_value(value):
         return None
     if isinstance(value, (dt.datetime, dt.date, dt.time)):
         return value.isoformat()
+    # JavaScript hosts parse JSON numbers before an MCP App receives them.
+    # Keep unsafe integers lossless, like the Decimal string representation below.
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2**53 - 1:
+        return str(value)
     if isinstance(value, decimal.Decimal):
         return str(value) if value.is_finite() else None
     if isinstance(value, float) and not math.isfinite(value):
