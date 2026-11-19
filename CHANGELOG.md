@@ -1,6 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-19)
+
+- Serve migrated repository context through MCP: `overview`, `search`, confined `read`,
+  file resources and bounded read-only `run_query`, with local stdio client configurations.
+- Import warehouse metadata, plain dbt projects, SQL files and static Python SQL literals.
+  Imports write usable context immediately; unsupported expressions retain source and TODOs.
+- Provide bearer-authenticated Streamable HTTP hosting, Git refresh and deployment guides
+  for Railway, AWS and Cloud Run. One warehouse role serves all token holders; policies
+  remain context, and git-ignored local data is unavailable to Git-pulled hosts.
+- Add an inactive scheduled drift workflow example that updates one PR with schema changes
+  and missing-column references, and closes obsolete PRs when drift disappears. Renames
+  are reported as removed + added columns; uncertain SQL references stay explicit.
+- Add a bundled MCP App for query results, with local sorting, filtering and CSV export
+  over returned rows. JSON/text clients keep the same results. Large integers and decimals
+  retain exact digits alongside NULL; query caps, cancellation and authentication still apply.
+- Add synthetic MCP examples with five hand-derived answers, offline protocol checks and
+  a persistent team-demo guide. Recorded live acceptance covers three clients over stdio,
+  local HTTP and Railway. GCP validation is partial; AWS has local checks but no cloud run.
+  Actual Claude web rendering passed; its visible controls have not been user-tested.
+- Install MCP support with `pip install "unshackle[mcp]"` on Python 3.11+.
+  The wheel includes the prebuilt result table and license notices; Node is not needed
+  to run the server.
 
 ## 0.2.0 (2026-11-11)
 

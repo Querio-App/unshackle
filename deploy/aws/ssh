@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+# GitRefresh supplies its own GIT_SSH_COMMAND; PATH selects this wrapper.
+exec /usr/bin/ssh -i "/tmp/unshackle-git/id_ed25519" \
+  -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=/tmp/unshackle-git/known_hosts" "$@"

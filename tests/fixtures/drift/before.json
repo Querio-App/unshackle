@@ -1,0 +1,1 @@
+{"version":1,"tables":{"catalog/warehouse/main/orders.yml":{"name":"orders","columns":[{"name":"order_id","type":"INTEGER","nullable":false},{"name":"amount","type":"NUMERIC","nullable":true}]}}}

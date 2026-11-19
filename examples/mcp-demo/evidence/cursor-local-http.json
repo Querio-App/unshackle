@@ -1,0 +1,370 @@
+{
+  "client": "cursor",
+  "version": "2026.11.17-f532c45",
+  "source_commit": "b5cda2628f8c5a537a153f9b46945a6f548642a7",
+  "transport": "http",
+  "config": "temporary, no persistent user configuration writes",
+  "endpoint_scope": "local",
+  "exit_code": 0,
+  "date": "2026-11-18",
+  "model": "Auto",
+  "fixture_sha256": "c12e8b52369b2cf482228def797117955e949ab02a18651cbf556904b0fa2629",
+  "prompt": "This is an acceptance test of the unshackle MCP server. Use only its overview, search, read, and run_query tools. Do not use shell, direct filesystem access, web search, other MCP servers, or subagents. First inspect overview and search/read the context to establish the business definition of recognized revenue. Then execute SQL through run_query to answer all five questions; do not infer numbers without querying. TODO-marked dynamic SQL is not a usable query. Return only a JSON object mapping q1..q5 to arrays of result rows, with numeric amounts as JSON numbers. Do not include SQL or column headers in the final JSON.\n\nq1: What is total recognized revenue in USD across all dates?\nq2: What is recognized revenue in USD by customer sales region, ordered by region?\nq3: Which customer has the highest recognized revenue, and what is that revenue in USD?\nq4: What is recognized revenue by calendar month (YYYY-MM), ordered by month?\nq5: What is average paid order value in USD across all dates?",
+  "tool_calls": [
+    {
+      "tool": "overview",
+      "arguments": {},
+      "status": "completed"
+    },
+    {
+      "tool": "search",
+      "arguments": {
+        "query": "recognized revenue"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "catalog/warehouse/main/orders.yml"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "catalog/warehouse/public/orders.yml"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "catalog/warehouse/main/customers.yml"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "semantic/orders.ossie.yaml"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "notebooks/sql-revenue-sql-3ea4e59b08ab.ipynb"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "search",
+      "arguments": {
+        "query": "TODO(unshackle)"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "notebooks/sql-regions-sql-8613b8029aff.ipynb"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "queries/dbt-orders.sql"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "catalog/warehouse/public/customers.yml"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "read",
+      "arguments": {
+        "path": "queries/dbt-customers.sql"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "search",
+      "arguments": {
+        "query": "average"
+      },
+      "status": "completed"
+    },
+    {
+      "tool": "run_query",
+      "arguments": {
+        "sql": "SELECT c.region, SUM(o.amount) AS revenue FROM orders AS o JOIN customers AS c USING (customer_id) WHERE o.status = 'paid' GROUP BY c.region ORDER BY c.region"
+      },
+      "status": "completed",
+      "result": {
+        "success": {
+          "content": [
+            {
+              "text": {
+                "text": "{\n  \"columns\": [\n    \"region\",\n    \"revenue\"\n  ],\n  \"rows\": [\n    [\n      \"North\",\n      \"270.00\"\n    ],\n    [\n      \"South\",\n      \"80.00\"\n    ]\n  ],\n  \"row_count\": 2,\n  \"truncated\": false\n}"
+              }
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "columns": [
+              "region",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "North",
+                "270.00"
+              ],
+              [
+                "South",
+                "80.00"
+              ]
+            ],
+            "row_count": 2,
+            "truncated": false
+          },
+          "systemReminders": []
+        }
+      }
+    },
+    {
+      "tool": "run_query",
+      "arguments": {
+        "sql": "SELECT SUM(amount) AS revenue FROM orders WHERE status = 'paid'"
+      },
+      "status": "completed",
+      "result": {
+        "success": {
+          "content": [
+            {
+              "text": {
+                "text": "{\n  \"columns\": [\n    \"revenue\"\n  ],\n  \"rows\": [\n    [\n      \"350.00\"\n    ]\n  ],\n  \"row_count\": 1,\n  \"truncated\": false\n}"
+              }
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "columns": [
+              "revenue"
+            ],
+            "rows": [
+              [
+                "350.00"
+              ]
+            ],
+            "row_count": 1,
+            "truncated": false
+          },
+          "systemReminders": []
+        }
+      }
+    },
+    {
+      "tool": "run_query",
+      "arguments": {
+        "sql": "SELECT c.customer_name, SUM(o.amount) AS revenue FROM orders AS o JOIN customers AS c USING (customer_id) WHERE o.status = 'paid' GROUP BY c.customer_name ORDER BY revenue DESC LIMIT 1"
+      },
+      "status": "completed",
+      "result": {
+        "success": {
+          "content": [
+            {
+              "text": {
+                "text": "{\n  \"columns\": [\n    \"customer_name\",\n    \"revenue\"\n  ],\n  \"rows\": [\n    [\n      \"Acme Paper\",\n      \"150.00\"\n    ]\n  ],\n  \"row_count\": 1,\n  \"truncated\": false\n}"
+              }
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "columns": [
+              "customer_name",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "Acme Paper",
+                "150.00"
+              ]
+            ],
+            "row_count": 1,
+            "truncated": false
+          },
+          "systemReminders": []
+        }
+      }
+    },
+    {
+      "tool": "run_query",
+      "arguments": {
+        "sql": "SELECT TO_CHAR(ordered_at, 'YYYY-MM') AS month, SUM(amount) AS revenue FROM orders WHERE status = 'paid' GROUP BY TO_CHAR(ordered_at, 'YYYY-MM') ORDER BY month"
+      },
+      "status": "completed",
+      "result": {
+        "success": {
+          "content": [
+            {
+              "text": {
+                "text": "{\n  \"columns\": [\n    \"month\",\n    \"revenue\"\n  ],\n  \"rows\": [\n    [\n      \"2025-01\",\n      \"230.00\"\n    ],\n    [\n      \"2025-02\",\n      \"120.00\"\n    ]\n  ],\n  \"row_count\": 2,\n  \"truncated\": false\n}"
+              }
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "columns": [
+              "month",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "2025-01",
+                "230.00"
+              ],
+              [
+                "2025-02",
+                "120.00"
+              ]
+            ],
+            "row_count": 2,
+            "truncated": false
+          },
+          "systemReminders": []
+        }
+      }
+    },
+    {
+      "tool": "run_query",
+      "arguments": {
+        "sql": "SELECT AVG(amount) AS avg_paid_order_value FROM orders WHERE status = 'paid'"
+      },
+      "status": "completed",
+      "result": {
+        "success": {
+          "content": [
+            {
+              "text": {
+                "text": "{\n  \"columns\": [\n    \"avg_paid_order_value\"\n  ],\n  \"rows\": [\n    [\n      \"87.5000000000000000\"\n    ]\n  ],\n  \"row_count\": 1,\n  \"truncated\": false\n}"
+              }
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "columns": [
+              "avg_paid_order_value"
+            ],
+            "rows": [
+              [
+                "87.5000000000000000"
+              ]
+            ],
+            "row_count": 1,
+            "truncated": false
+          },
+          "systemReminders": []
+        }
+      }
+    }
+  ],
+  "other_client_tools": [
+    {
+      "tool": "getMcpToolsToolCall",
+      "status": [
+        "success"
+      ]
+    },
+    {
+      "tool": "readToolCall",
+      "status": [
+        "error"
+      ]
+    }
+  ],
+  "actual": {
+    "q1": [
+      [
+        350
+      ]
+    ],
+    "q2": [
+      [
+        "North",
+        270
+      ],
+      [
+        "South",
+        80
+      ]
+    ],
+    "q3": [
+      [
+        "Acme Paper",
+        150
+      ]
+    ],
+    "q4": [
+      [
+        "2025-01",
+        230
+      ],
+      [
+        "2025-02",
+        120
+      ]
+    ],
+    "q5": [
+      [
+        87.5
+      ]
+    ]
+  },
+  "expected": {
+    "q1": [
+      [
+        350
+      ]
+    ],
+    "q2": [
+      [
+        "North",
+        270
+      ],
+      [
+        "South",
+        80
+      ]
+    ],
+    "q3": [
+      [
+        "Acme Paper",
+        150
+      ]
+    ],
+    "q4": [
+      [
+        "2025-01",
+        230
+      ],
+      [
+        "2025-02",
+        120
+      ]
+    ],
+    "q5": [
+      [
+        87.5
+      ]
+    ]
+  },
+  "all_five_correct": true,
+  "transcript_scope": "Sanitized MCP call transcript. Context results omitted; query results and final answers retained. Client IDs, private paths, usage/account metadata and internal reasoning omitted."
+}

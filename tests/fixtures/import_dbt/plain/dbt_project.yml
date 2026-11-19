@@ -1,0 +1,3 @@
+name: dunder_example
+version: '1.0'
+model-paths: [transforms]

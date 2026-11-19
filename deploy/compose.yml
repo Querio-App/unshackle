@@ -1,0 +1,18 @@
+services:
+  mcp:
+    build:
+      context: ..
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      UNSHACKLE_WAREHOUSE_URL: ${UNSHACKLE_WAREHOUSE_URL:?Set a read-only warehouse URL}
+      UNSHACKLE_MCP_TOKEN: ${UNSHACKLE_MCP_TOKEN:?Set a random bearer token}
+      UNSHACKLE_REPO_URL: ${UNSHACKLE_REPO_URL:?Set the context repository URL}
+      UNSHACKLE_REPO_REF: ${UNSHACKLE_REPO_REF:-main}
+      UNSHACKLE_POLL_INTERVAL: ${UNSHACKLE_POLL_INTERVAL:-60}
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped

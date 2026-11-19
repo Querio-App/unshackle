@@ -1,0 +1,272 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Disposable synthetic Unshackle MCP acceptance (no production data)
+Parameters:
+  ImageRepository:
+    Type: String
+  ImageTag:
+    Type: String
+  ContextRepoUrl:
+    Type: String
+    AllowedPattern: '(https://[^/@:]+/[^ ?#]+|ssh://git@[^/:]+/[^ ?#]+)'
+  ContextRepoRef:
+    Type: String
+    Default: main
+    AllowedPattern: '[A-Za-z0-9][A-Za-z0-9_./-]*'
+  DomainName:
+    Type: String
+    Description: Fresh dedicated hostname in the supplied public Route53 zone
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+  CertificateArn:
+    Type: String
+    Description: Issued ACM certificate in this region, covering DomainName
+  GitSecretArn:
+    Type: String
+    Default: ''
+    Description: Optional Secrets Manager JSON with private_key and known_hosts
+  Cpu:
+    Type: String
+    Default: '512'
+    AllowedValues: ['512', '1024']
+  Memory:
+    Type: String
+    Default: '2048'
+    AllowedValues: ['2048', '3072', '4096']
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+Conditions:
+  PrivateGit: {Fn::Not: [{Fn::Equals: [{Ref: GitSecretArn}, '']}]}
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.193.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: {Ref: Vpc}
+      InternetGatewayId: {Ref: InternetGateway}
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: {Ref: Vpc}
+      CidrBlock: 10.193.0.0/24
+      AvailabilityZone: {Fn::Select: [0, {Fn::GetAZs: ''}]}
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: {Ref: Vpc}
+      CidrBlock: 10.193.1.0/24
+      AvailabilityZone: {Fn::Select: [1, {Fn::GetAZs: ''}]}
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: {Ref: Vpc}}
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: {Ref: RouteTable}
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: {Ref: InternetGateway}
+  AssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {RouteTableId: {Ref: RouteTable}, SubnetId: {Ref: SubnetA}}
+  AssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {RouteTableId: {Ref: RouteTable}, SubnetId: {Ref: SubnetB}}
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTPS only
+      VpcId: {Ref: Vpc}
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MCP from ALB only; no database ingress
+      VpcId: {Ref: Vpc}
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: {Ref: AlbSecurityGroup}
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: GatewayAttachment
+    Properties:
+      Scheme: internet-facing
+      Subnets: [{Ref: SubnetA}, {Ref: SubnetB}]
+      SecurityGroups: [{Ref: AlbSecurityGroup}]
+  Targets:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: {Ref: Vpc}
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /mcp
+      Matcher: {HttpCode: '401'}
+      TargetGroupAttributes:
+        - {Key: deregistration_delay.timeout_seconds, Value: '30'}
+  Https:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: {Ref: Alb}
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates: [{CertificateArn: {Ref: CertificateArn}}]
+      DefaultActions: [{Type: forward, TargetGroupArn: {Ref: Targets}}]
+  Dns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: {Ref: HostedZoneId}
+      Name: {Ref: DomainName}
+      Type: A
+      AliasTarget:
+        DNSName: {Fn::GetAtt: [Alb, DNSName]}
+        HostedZoneId: {Fn::GetAtt: [Alb, CanonicalHostedZoneID]}
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties: {ClusterName: {Ref: 'AWS::StackName'}}
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: {Fn::Sub: '/ecs/${AWS::StackName}'}
+      RetentionInDays: 7
+  AdminPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString: {PasswordLength: 40, ExcludePunctuation: true}
+  ReaderPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString: {PasswordLength: 40, ExcludePunctuation: true}
+  McpToken:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString: {PasswordLength: 48, ExcludePunctuation: true}
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - {Fn::Sub: 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'}
+      Policies:
+        - PolicyName: fixture-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - {Ref: AdminPassword}
+                  - {Ref: ReaderPassword}
+                  - {Ref: McpToken}
+                  - {Fn::If: [PrivateGit, {Ref: GitSecretArn}, {Ref: 'AWS::NoValue'}]}
+  Task:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: {Ref: 'AWS::StackName'}
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: {Ref: Cpu}
+      Memory: {Ref: Memory}
+      ExecutionRoleArn: {Fn::GetAtt: [ExecutionRole, Arn]}
+      RuntimePlatform: {CpuArchitecture: X86_64, OperatingSystemFamily: LINUX}
+      Volumes: [{Name: scratch}]
+      ContainerDefinitions:
+        - Name: fixture
+          Image: {Fn::Sub: '${ImageRepository}:fixture-${ImageTag}'}
+          Essential: true
+          Environment:
+            - {Name: POSTGRES_USER, Value: postgres}
+            - {Name: POSTGRES_DB, Value: example}
+            - {Name: PGDATA, Value: /var/lib/postgresql/data/pgdata}
+          Secrets:
+            - {Name: POSTGRES_PASSWORD, ValueFrom: {Ref: AdminPassword}}
+            - {Name: READER_PASSWORD, ValueFrom: {Ref: ReaderPassword}}
+          HealthCheck:
+            # TCP prevents reporting healthy during socket-only initialization.
+            Command: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d example']
+            Interval: 10
+            Timeout: 5
+            Retries: 6
+            StartPeriod: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: {Ref: Logs}
+              awslogs-region: {Ref: 'AWS::Region'}
+              awslogs-stream-prefix: fixture
+        - Name: mcp
+          Image: {Fn::Sub: '${ImageRepository}:mcp-${ImageTag}'}
+          Essential: true
+          User: '10001:10001'
+          ReadonlyRootFilesystem: true
+          LinuxParameters: {Capabilities: {Drop: [ALL]}}
+          PortMappings: [{ContainerPort: 8000, Protocol: tcp}]
+          MountPoints: [{SourceVolume: scratch, ContainerPath: /tmp, ReadOnly: false}]
+          DependsOn: [{ContainerName: fixture, Condition: HEALTHY}]
+          Environment:
+            - {Name: UNSHACKLE_REPO_URL, Value: {Ref: ContextRepoUrl}}
+            - {Name: UNSHACKLE_REPO_REF, Value: {Ref: ContextRepoRef}}
+            - {Name: UNSHACKLE_POLL_INTERVAL, Value: '60'}
+          Secrets:
+            - {Name: READER_PASSWORD, ValueFrom: {Ref: ReaderPassword}}
+            - {Name: UNSHACKLE_MCP_TOKEN, ValueFrom: {Ref: McpToken}}
+            - Fn::If:
+                - PrivateGit
+                - {Name: GIT_PRIVATE_KEY, ValueFrom: {Fn::Sub: '${GitSecretArn}:private_key::'}}
+                - {Ref: 'AWS::NoValue'}
+            - Fn::If:
+                - PrivateGit
+                - {Name: GIT_KNOWN_HOSTS, ValueFrom: {Fn::Sub: '${GitSecretArn}:known_hosts::'}}
+                - {Ref: 'AWS::NoValue'}
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: {Ref: Logs}
+              awslogs-region: {Ref: 'AWS::Region'}
+              awslogs-stream-prefix: mcp
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: [Https, InternetRoute, AssociationA, AssociationB]
+    Properties:
+      Cluster: {Ref: Cluster}
+      ServiceName: mcp
+      TaskDefinition: {Ref: Task}
+      LaunchType: FARGATE
+      PlatformVersion: '1.4.0'
+      DesiredCount: {Ref: DesiredCount}
+      HealthCheckGracePeriodSeconds: 180
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [{Ref: SubnetA}, {Ref: SubnetB}]
+          SecurityGroups: [{Ref: TaskSecurityGroup}]
+      LoadBalancers:
+        - {ContainerName: mcp, ContainerPort: 8000, TargetGroupArn: {Ref: Targets}}
+Outputs:
+  McpUrl:
+    Value: {Fn::Sub: 'https://${DomainName}/mcp'}
+  TokenSecretArn:
+    Value: {Ref: McpToken}
+  TargetGroupArn:
+    Value: {Ref: Targets}

@@ -179,14 +179,28 @@ def extract(tool: str, repo: Path, only: tuple[str, ...], with_data: bool = Fals
 
 
 @main.command(name="import")
-@TOOL
-@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.argument("tool", type=click.Choice(sorted((*TOOLS, "warehouse", "dbt", "sql"))))
+@click.argument("paths", nargs=-1, required=False, type=click.Path(exists=True, path_type=Path))
 @REPO
 @click.option("--with-data", is_flag=True, help="Also copy data packaged in the files (Tableau .twbx/.tdsx extracts, Excel, CSV) to Parquet.")
 def import_cmd(tool: str, paths: tuple[Path, ...], repo: Path, with_data: bool = False) -> None:
     """Use files downloaded from TOOL by hand (no API access) as migration/raw/<tool>/. Replaces earlier raw files."""
     from unshackle.sources._manual import run as import_files
 
+    if tool in {"warehouse", "dbt", "sql"}:
+        from unshackle.imports import parse
+        if with_data:
+            raise click.ClickException("--with-data applies only to BI exports")
+        envfile.load(repo)
+        try:
+            bundle = parse(tool, paths, url=os.environ.get("UNSHACKLE_WAREHOUSE_URL"))
+            result = build.apply(bundle, repo)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        _say(f"{len(result.writes.written)} written; report: {result.report_path}")
+        return
+    if not paths:
+        raise click.ClickException("BI import needs at least one path")
     src = get_source(tool)
     if with_data:
         if not hasattr(src, "import_data"):
@@ -427,5 +441,33 @@ def _run(fn):
         raise click.ClickException(f"network error{host}: {exc} (a 403 here can come from a proxy, not the BI tool)") from exc
 
 
-if __name__ == "__main__":
-    main()
+
+
+@main.command(name="mcp")
+@REPO
+@click.option("--transport", type=click.Choice(["stdio", "http"]), default="stdio", show_default=True)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=click.IntRange(1, 65535), default=8000, show_default=True)
+@click.option("--repo-url", envvar="UNSHACKLE_REPO_URL", help="Git repository to refresh (HTTP only).")
+@click.option("--repo-ref", envvar="UNSHACKLE_REPO_REF", default="main", show_default=True)
+@click.option("--poll-interval", envvar="UNSHACKLE_POLL_INTERVAL", type=click.FloatRange(min=0, min_open=True), default=60., show_default=True)
+@click.option("--max-rows", type=click.IntRange(1, 10000), default=10000, show_default=True)
+@click.option("--timeout", type=click.FloatRange(min=0, min_open=True), default=30., show_default=True)
+def mcp_cmd(repo: Path, transport: str, host: str, port: int, max_rows: int, timeout: float,
+            repo_url: str | None, repo_ref: str, poll_interval: float) -> None:
+    """Serve repository context and bounded read-only warehouse queries to MCP clients."""
+    envfile.load(repo)
+    try:
+        if transport == "http":
+            from unshackle.mcp.http import serve
+            serve(repo, host=host, port=port, max_rows=max_rows, timeout=timeout,
+                  repo_url=repo_url, repo_ref=repo_ref, poll_interval=poll_interval)
+        else:
+            if repo_url:
+                raise ValueError("Git refresh requires --transport http")
+            from unshackle.mcp.server import create_server
+            create_server(repo, max_rows=max_rows, timeout=timeout).run(transport="stdio")
+    except ImportError as exc:
+        raise click.ClickException("Install unshackle[mcp] for this transport") from exc
+    except (ValueError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc

@@ -41,6 +41,7 @@ class Column:
     description: str = ""
     label: str = ""
     hidden: bool = False
+    nullable: bool | None = None
 
 
 @dataclass
@@ -51,6 +52,8 @@ class Table:
     description: str = ""
     columns: list[Column] = field(default_factory=list)
     source_ref: str = ""
+    primary_key: list[str] = field(default_factory=list)
+    foreign_keys: list[dict] = field(default_factory=list)
 
 
 @dataclass

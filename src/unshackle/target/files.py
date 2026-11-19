@@ -30,6 +30,8 @@ def render_table(table: Table, existing: str | None) -> str:
             fresh["label"] = c.label
         if c.hidden:
             fresh["visible"] = False
+        if c.nullable is not None:
+            fresh["nullable"] = c.nullable
         prev = old_cols.get(c.name, {})
         merged = {**fresh, **{k: v for k, v in prev.items() if v not in (None, "")}}
         if c.type:
@@ -43,6 +45,10 @@ def render_table(table: Table, existing: str | None) -> str:
     if table.source_ref:
         fresh_doc["source"] = table.source_ref
     doc = {**fresh_doc, **{k: v for k, v in old.items() if k != "columns" and v not in (None, "")}}
+    if table.primary_key:
+        doc["primary_key"] = table.primary_key
+    if table.foreign_keys:
+        doc["foreign_keys"] = sorted(table.foreign_keys, key=lambda fk: (str(fk.get("referred_schema", "")), str(fk.get("referred_table", "")), str(fk.get("columns", []))))
     doc["columns"] = cols
     return dump_yaml(doc)
 
@@ -64,6 +70,9 @@ def unique_rel(files: dict, rel: str) -> str:
 
 
 def catalog_files(bundle: Bundle, layout: Layout, read) -> dict[str, str]:
+    if bundle.tool == "warehouse":
+        from unshackle.imports.catalog_refresh import catalog_files as warehouse_catalog_files
+        return warehouse_catalog_files(bundle, layout, read)
     files = {}
     for t in bundle.tables:
         rel = layout.rel(

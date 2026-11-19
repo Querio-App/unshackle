@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-SCRIPT_HASH'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Query results</title>
+<style>
+html,body{margin:0;background:transparent;color:var(--color-text-primary,light-dark(#202020,#ededed));font:14px var(--font-sans,system-ui,sans-serif)}
+main{padding:12px}h1{font-size:16px;margin:0 0 12px;font-weight:600}.controls{display:flex;gap:8px;align-items:end;flex-wrap:wrap}label{display:block;font-size:13px}input{display:block;margin-top:4px;min-width:180px}button,input,textarea{font:inherit;color:inherit;background:var(--color-background-primary,light-dark(#fff,#242424));border:1px solid var(--color-border-primary,light-dark(#bbb,#666));border-radius:6px;padding:7px 10px}button{cursor:pointer}button:disabled{cursor:default;opacity:.55}:focus-visible{outline:2px solid var(--color-ring-primary,#487fc1);outline-offset:2px}p{font-size:13px;color:var(--color-text-secondary,light-dark(#555,#bbb));line-height:1.5;margin:10px 0}.scroll{max-height:390px;overflow:auto;border:1px solid var(--color-border-primary,light-dark(#ccc,#555));border-radius:6px}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;text-align:left}caption{padding:8px;text-align:left;font-size:13px}th,td{padding:8px 10px;border-bottom:1px solid var(--color-border-secondary,light-dark(#ddd,#444));vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere;max-width:400px;min-width:70px}th{position:sticky;top:0;background:var(--color-background-secondary,light-dark(#f5f5f3,#303030));z-index:1}th button{background:transparent;border:0;padding:0;text-align:left;font-weight:600;width:100%}.numeric{text-align:right}.null{font-style:italic;color:var(--color-text-secondary,light-dark(#666,#aaa))}textarea{box-sizing:border-box;width:100%;height:150px;margin-top:6px}[hidden]{display:none!important}#status:empty{display:none}
+</style></head><body><main>
+<h1>Query results</h1>
+<div class="controls">
+<label>Search returned rows<input id="search" type="search" placeholder="Search all columns" disabled></label>
+<button id="download" hidden disabled>Download filtered CSV</button>
+<button id="show-csv" disabled>Show copyable CSV</button>
+</div>
+<p id="count" role="status">Waiting for query results…</p>
+<div class="scroll" tabindex="0" role="region" aria-label="Query results table"><table><caption>Returned rows · activate a column header to sort</caption><thead id="head"></thead><tbody id="body"></tbody></table></div>
+<p id="status" role="status"></p>
+<section id="csv-panel" hidden><label for="csv">CSV of the filtered rows, in the displayed order</label><textarea id="csv" readonly spellcheck="false"></textarea><p>NULL is an empty CSV field. Formula-like text is prefixed with an apostrophe for spreadsheet safety; numeric values are unchanged. Select and copy the text above.</p></section>
+</main><!-- APP --></body></html>

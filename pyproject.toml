@@ -1,6 +1,6 @@
 [project]
 name = "unshackle"
-version = "0.2.0"
+version = "0.3.0"
 description = "Move your metrics, dashboards and permissions out of a BI tool and into files in a Git repository you own."
 dynamic = ["readme"]
 license = "Apache-2.0"
@@ -13,6 +13,7 @@ dependencies = [
   "altair>=5.4",
   "pandas>=2.2",
   "sqlalchemy>=2.0",
+  "sqlglot>=25",
   "nbformat>=5.9",
   "nbclient>=0.10",
   "ipykernel>=6.29",
@@ -28,7 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 # Tableau's Hyper API is large and has wheels for fewer platforms: only copying .hyper extracts needs it
 hyper = ["tableauhyperapi>=0.0.26479"]
-dev = ["pytest>=8", "sqlglot>=25", "jsonschema>=4.18", "tableauhyperapi>=0.0.26479"]
+mcp = ["mcp>=1.26,<2", "psycopg[binary]>=3.2"]
+dev = ["pytest>=8", "mcp>=1.26,<2", "psycopg[binary]>=3.2", "jsonschema>=4.18", "tableauhyperapi>=0.0.26479"]
 
 [project.urls]
 Repository = "https://github.com/Querio-App/unshackle"
@@ -44,6 +46,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unshackle"]
+exclude = ["src/unshackle/mcp/result_table/node_modules/**"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "skills" = "unshackle/_data/skills"

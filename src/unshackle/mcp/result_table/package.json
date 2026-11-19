@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test-browser.mjs"
+  },
+  "dependencies": {"@modelcontextprotocol/ext-apps": "1.7.5"},
+  "devDependencies": {"esbuild": "0.25.12", "playwright": "1.56.1"}
+}
