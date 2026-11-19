@@ -36,7 +36,7 @@ def main():
     succeeded = False
     try:
         for _ in range(60):
-            if subprocess.run(["docker", "exec", name, "pg_isready", "-U", "postgres", "-d", "example"],
+            if subprocess.run(["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "example"],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                 break
             time.sleep(.5)
@@ -64,11 +64,11 @@ def main():
         with (repo / ".gitignore").open("a") as stream:
             stream.write("\nlocal-container.json\n")
         print(f"Context ready: {repo}. Credentials are in its ignored .env (mode 0600).")
-        print(f"Local container: {name}. Stop with: docker rm -f {name}")
+        print(f"Local container: {name}. Stop with: docker rm -fv {name}")
         succeeded = True
     finally:
         if not args.keep or not succeeded:
-            subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["docker", "rm", "-fv", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 
 if __name__ == "__main__":
