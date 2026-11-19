@@ -16,7 +16,11 @@ def test_result_ui_protocol_and_fallback(tmp_path, monkeypatch):
         def rpc(method, params=None):
             return client.post('/mcp', headers=headers, json={
                 'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params or {}}).json()
+        initialized = rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+                                        'clientInfo': {'name': 'example-client', 'version': '1'}})['result']
+        assert all(term in initialized['instructions'] for term in ('run_query', 'MCP App', 'JSON', 'Claude Code'))
         tool = next(t for t in rpc('tools/list')['result']['tools'] if t['name'] == 'run_query')
+        assert all(term in tool['description'] for term in ('MCP App', 'JSON', 'text-only'))
         assert tool['_meta']['ui']['resourceUri'] == result_ui.UI_URI
         resource = rpc('resources/list')['result']['resources'][0]
         assert resource['uri'] == result_ui.UI_URI

@@ -44,7 +44,13 @@ def create_server(repo: Path | Callable[[], Path], *, max_rows: int = MAX_LIMIT,
             return [ReadResourceContents(content=json.dumps(content), mime_type='application/json')]
 
     server = Server('unshackle', instructions='Read repository context; TODO(unshackle) marks incomplete conversion. '
-                    'Queries use one read-only warehouse role. Policies are context only.', **settings)
+                    'Queries use one read-only warehouse role. Policies are context only. '
+                    'Use run_query for ordinary analysis and comparisons. Its linked MCP App may render a table '
+                    'separately from the JSON/text result in supporting hosts; no special user wording or SQL aliases are required. '
+                    'Prefer the attached table with concise insights, avoiding a duplicate full Markdown table unless the user '
+                    'requests it or a text-only client needs it. In clients without Apps, including Claude Code, answer normally '
+                    'from the returned data. JSON/text alone proves neither rendering nor absence: do not infer missing UI '
+                    'metadata or assert what the user can see without host or user evidence.', **settings)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False))
     def overview() -> dict[str, Any]:
@@ -65,7 +71,14 @@ def create_server(repo: Path | Callable[[], Path], *, max_rows: int = MAX_LIMIT,
 
     @server.tool(meta={'ui': {'resourceUri': result_ui.UI_URI}, 'ui/resourceUri': result_ui.UI_URI})
     async def run_query(sql: str, limit: int = min(DEFAULT_LIMIT, max_rows)) -> dict[str, Any]:
-        """Run one SELECT/WITH, with a row cap and cancellable execution deadline."""
+        """Run one SELECT/WITH, with a row cap and cancellable execution deadline.
+
+        Use for ordinary analysis and comparisons. Links an MCP App result table in
+        supporting hosts alongside the JSON/text data. Prefer that table plus concise
+        insights; provide readable text/Markdown when requested or needed by text-only
+        clients. JSON/text alone proves neither UI rendering nor absence: do not claim
+        visible state or diagnose missing UI metadata from the result alone.
+        """
         return await anyio.to_thread.run_sync(partial(execute, sql, limit, max_rows=max_rows, timeout=timeout), limiter=query_slots)
 
     @server.resource('unshackle://repo/{path}')

@@ -128,3 +128,20 @@ cache or host-selection cause is unproved. No rendering code changed to produce 
 success. Signed `353361b` added temporary, opt-in, fixed-schema diagnostics solely for
 this investigation; it was not a widget fix. The diagnostic flag and observer were
 removed afterward, restoring the reviewed `e5c9f84` runtime behavior and widget bytes.
+
+## Guidance for model responses
+
+Server initialization instructions and the `run_query` description explain that ordinary
+analysis/comparison requests can use the linked table in Apps-capable hosts, without
+special wording or mandatory aliases. They encourage concise findings alongside the
+attached table and avoid duplicating all rows as Markdown unless requested or needed
+for a text-only client. Claude Code and other clients without Apps retain readable answers.
+
+A JSON/text tool result alone proves neither that the UI rendered nor that it is absent.
+Guidance asks models to avoid diagnosing missing metadata or asserting visible state
+without host/user evidence. It does not claim a model can never observe the UI.
+The response schema, data and JSON/text fallback are unchanged; no extra result-text
+preamble is added. Host use of server instructions varies, and these are behavioral
+hints rather than a rendering or response guarantee. Actual host behavior is evaluated
+separately. See the [MCP guidance on server instructions](https://blog.modelcontextprotocol.io/posts/2025-11-03-using-server-instructions/)
+and [Claude Apps quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart).

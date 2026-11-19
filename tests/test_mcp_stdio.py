@@ -14,8 +14,15 @@ def test_stdio_protocol_tools_resources_and_query(tmp_path):
                                       env={**os.environ, 'UNSHACKLE_WAREHOUSE_URL': 'duckdb://'})
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
-                await session.initialize()
-                assert {t.name for t in (await session.list_tools()).tools} == {'overview', 'search', 'read', 'run_query'}
+                initialized = await session.initialize()
+                # Both discovery surfaces must reach a real stdio client; check protocol
+                # concepts, not exact editorial wording. Visibility remains host-dependent.
+                assert all(term in initialized.instructions for term in ('run_query', 'MCP App', 'JSON', 'Claude Code'))
+                tools = (await session.list_tools()).tools
+                query_tool = next(t for t in tools if t.name == 'run_query')
+                assert all(term in query_tool.description for term in ('MCP App', 'JSON', 'text-only'))
+                assert query_tool.meta['ui']['resourceUri'].startswith('ui://')
+                assert {t.name for t in tools} == {'overview', 'search', 'read', 'run_query'}
                 resources = (await session.list_resources()).resources
                 assert len(resources) == 2
                 assert 'Revenue' in (await session.read_resource(resources[0].uri)).contents[0].text
