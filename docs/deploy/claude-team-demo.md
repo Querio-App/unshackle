@@ -21,7 +21,6 @@ field is absent, this bearer-only server cannot be connected directly through th
 account's web connector. Use the Desktop bridge below or Claude Code. Do not remove
 server authentication to make the URL work. A web-only user without the beta needs
 beta access or a separately designed OAuth gateway; this demo does not provide one.
-Custom connectors are documented across current plans; Free permits one.
 See [Anthropic's current connector instructions](https://claude.com/docs/connectors/custom/add-unlisted),
 including the beta qualification. Actual UI availability can differ by organization.
 
@@ -30,7 +29,7 @@ including the beta qualification. Actual UI availability can differ by organizat
 This uses Desktop's local MCP configuration and does not enable claude.ai web or
 cloud Cowork. Your organization must allow local servers. Node.js is required.
 [mcp-remote](https://github.com/punkpeye/mcp-remote) bridges stdio to authenticated
-HTTP. The commands pin the version tested for this demo and keep credentials out
+HTTP. The commands pin a bridge version and keep credentials out
 of process arguments and the Desktop configuration.
 
 Run from a shell with Node and npm available. Replace the two illustrative paths:
@@ -100,7 +99,7 @@ claude --strict-mcp-config --mcp-config ./dunder-mifflin.mcp.json
 
 Use `/mcp` to inspect connectivity. Approve the context and query tools when needed.
 [Claude Code documents environment expansion](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcpjson).
-The [demo guide](team-demo.md) includes exploratory prompts and verified answers.
+The [demo guide](team-demo.md) includes exploratory prompts and expected fixture answers.
 
 ## Share and revoke access
 

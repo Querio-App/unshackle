@@ -46,7 +46,10 @@ PR workflows; consult the [create-pull-request token documentation](https://gith
 if those checks must run. Pin action versions to reviewed SHAs under your repository's
 normal dependency policy.
 
-Run the same refresh locally before enabling a schedule:
+Run the same refresh locally before enabling a schedule. Export
+`UNSHACKLE_WAREHOUSE_URL` into the process environment first; unlike the CLI,
+`python -m unshackle.drift` does not load the repository’s `.env`. Keep the report
+path outside the repository:
 
 ```sh
 python -m unshackle.drift --repo . --config migration/imports.json \
@@ -72,8 +75,3 @@ Hand edits remain protected by the existing writers. A failed refresh stops befo
 PR creation; local files written by earlier imports may remain and should be reviewed
 before retrying. Error messages omit adapter exception text because it can contain
 connection credentials. Debug access/configuration locally without publishing secrets.
-
-Offline tests exercise all three imports together against synthetic SQLite, repeat
-with zero changed artifacts, rename a column, and check the resulting report. Actual
-GitHub scheduled execution and a live rename-triggered PR belong to epic acceptance;
-these unit/integration tests do not claim that live gate passed.

@@ -16,9 +16,7 @@
   over returned rows. JSON/text clients keep the same results. Large integers and decimals
   retain exact digits alongside NULL; query caps, cancellation and authentication still apply.
 - Add synthetic MCP examples with five hand-derived answers, offline protocol checks and
-  a persistent team-demo guide. Recorded live acceptance covers three clients over stdio,
-  local HTTP and Railway. GCP validation is partial; AWS has local checks but no cloud run.
-  Actual Claude web rendering passed; its visible controls have not been user-tested.
+  a persistent team-demo guide.
 - Install MCP support with `pip install "unshackle[mcp]"` on Python 3.11+.
   The wheel includes the prebuilt result table and license notices; Node is not needed
   to run the server.

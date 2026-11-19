@@ -8,7 +8,6 @@ behavior changes. Bounded results preserve native values alongside NULL; integer
 outside JavaScript’s safe range (±9,007,199,254,740,991) serialize as exact decimal
 strings, like existing Decimal values. Safe integers remain JSON numbers. This
 prevents both DataFrame NULL coercion and host JSON parsing from losing precision.
-The retained team demo keeps its 1,000-row / 15-second limits.
 
 The table supports keyboard sorting (Tab to a column header, Enter or Space),
 search across all columns, a returned-row count, truncation notice, and filtered CSV.
@@ -89,8 +88,7 @@ run the bundled SDK and CSP in an iframe with a JSON-RPC host mock, including in
 result delivery, safe text, exact numeric/date sorting, duplicate columns, NULL,
 keyboard navigation, search, theme updates, CSV quoting/injection, download capability
 absence/success/cancellation/errors/pending state, empty/malformed results and row caps.
-They are not proof of actual Claude rendering or download acceptance. Test those on the
-real connected web/desktop host after deployment.
+Check rendering and downloads in your connected host as well.
 
 Python protocol checks: `pytest tests/test_mcp_result_ui.py tests/test_mcp_stdio.py
  tests/test_mcp_http.py tests/test_mcp_query.py`. Before pushing, run editable dev install,
@@ -100,47 +98,10 @@ and read the UI resource from that installed package to verify packaging.
 Client dependencies are pinned by `package-lock.json`; license notices ship alongside
 the bundle. No Python MCP SDK upgrade is required.
 
-Official references (checked November 19, 2026):
+Official references:
 
 - [MCP Apps lifecycle and resource linkage](https://apps.extensions.modelcontextprotocol.io/api/documents/Overview.html)
 - [Claude MCP Apps](https://claude.com/docs/connectors/building/mcp-apps/getting-started)
 - [Downloads and cancellation semantics](https://claude.com/docs/connectors/building/mcp-apps/download-files)
 - [Host theming](https://claude.com/docs/connectors/building/mcp-apps/transparent-theming)
 - [Large results and optional stable domains](https://claude.com/docs/connectors/building/mcp-apps/troubleshooting)
-
-## Actual Claude web validation (November 19, 2026)
-
-The user-provided screenshot confirms the real Claude web app rendered **Query results**,
-`diagnostic_value = 1`, the search input, sortable column header, Download filtered CSV,
-and Show copyable CSV. The controls are visible; their interactions have not been
-user-tested in Claude. Browser tests separately exercise sorting, filtering and CSV.
-
-Screenshot evidence was supplied locally and is not included in the repository.
-The model's text in that screenshot incorrectly claims no app appeared; the visible
-widget is the rendering evidence.
-
-An earlier conversation showed ordinary tool cards without the widget. Read-only logs
-showed discovery/tool calls without a UI resource read. After one fresh connection,
-Claude advertised Apps/MIME support, received the paired tool metadata, fetched the UI,
-and visibly rendered it. This establishes a discovery/session transition; the exact
-cache or host-selection cause is unproved. No rendering code changed to produce the
-success. Signed `353361b` added temporary, opt-in, fixed-schema diagnostics solely for
-this investigation; it was not a widget fix. The diagnostic flag and observer were
-removed afterward, restoring the reviewed `e5c9f84` runtime behavior and widget bytes.
-
-## Guidance for model responses
-
-Server initialization instructions and the `run_query` description explain that ordinary
-analysis/comparison requests can use the linked table in Apps-capable hosts, without
-special wording or mandatory aliases. They encourage concise findings alongside the
-attached table and avoid duplicating all rows as Markdown unless requested or needed
-for a text-only client. Claude Code and other clients without Apps retain readable answers.
-
-A JSON/text tool result alone proves neither that the UI rendered nor that it is absent.
-Guidance asks models to avoid diagnosing missing metadata or asserting visible state
-without host/user evidence. It does not claim a model can never observe the UI.
-The response schema, data and JSON/text fallback are unchanged; no extra result-text
-preamble is added. Host use of server instructions varies, and these are behavioral
-hints rather than a rendering or response guarantee. Actual host behavior is evaluated
-separately. See the [MCP guidance on server instructions](https://blog.modelcontextprotocol.io/posts/2025-11-03-using-server-instructions/)
-and [Claude Apps quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart).

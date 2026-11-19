@@ -1,14 +1,8 @@
-# Railway: CLI deployment from a fresh account
+# Optional synthetic demo on Railway
 
-**Live verified on 2026-11-19 with CLI 5.75.0.** The synthetic Railway deployment,
-HTTPS/MCP/SQL probe, all five answers in actual Claude/Codex/Cursor clients, Git
-refresh and source-upload updates passed. Railway project/services/volume/domain
-were removed and the old endpoint returns 404. Synthetic GitHub repository deletion
-is pending a `delete_repo` permission grant; the current token returned 403. No
-billing upgrade was performed. See [sanitized provider evidence](../../deploy/railway/evidence/README.md),
-the [validation matrix](validation.md) and [hosted evidence checklist](README.md#record-hosted-acceptance).
-Actual rollback, private Git SSH mounts, custom domains and alternative regions/plans
-remain untested.
+For your own context and warehouse, start with [HTTP/container hosting](README.md).
+This recipe is an opt-in fictional dataset with its own database. Never run its
+fixture or cleanup commands against an existing team or production deployment.
 
 This recipe creates one disposable project, one `production` environment, one MCP
 service, one Postgres service/volume and one generated synthetic GitHub context
@@ -23,9 +17,9 @@ Docker is needed only for the optional local test. Install the Railway CLI using
 one of its [official installation methods](https://docs.railway.com/cli):
 
 ```bash
-brew install railway                  # macOS; already installed in this prep session
+brew install railway                  # macOS
 # Alternative on a machine with Node: npm install -g @railway/cli@5.75.0
-railway --version                     # live recipe checked against 5.75.0
+railway --version
 railway login                         # USER action: completes signup/login in browser
 railway whoami                        # inspect account/workspace locally; don't publish output
 # Headless machine only: railway login --browserless
@@ -65,11 +59,10 @@ local Git push; they are not sent to the runtime. If Git push asks for credentia
 Run the following sections in the **same Bash session**. Replace the workspace and
 GitHub owner placeholders. Run cloud commands only when deployment is authorized. No command here is an all-account cleanup.
 
-Use a fresh source clone containing this guide. Until epic #193 merges, the feature
-branch contains runtime changes absent from `main`; record the exact commit used:
+Use a fresh source clone and select a reviewed release/ref before deployment:
 
 ```bash
-git clone --branch feat/193-railway-cli https://github.com/Querio-App/unshackle.git
+git clone https://github.com/Querio-App/unshackle.git
 cd unshackle
 uv venv
 source .venv/bin/activate
@@ -266,14 +259,10 @@ The probe compares every answer against [questions.json](../../examples/mcp-demo
 | Average paid order | 350 / 4 = **87.5** |
 
 Refunded 40 and cancelled 30 are excluded. Decimal strings are compared numerically.
-A probe pass is HTTP/SQL evidence, not a real client/model run. Use the exact
-[Claude, Codex and Cursor HTTP configurations](README.md#connect-clients) with the
-exported endpoint/token, then the existing
-[client_matrix harness and evidence steps](README.md#record-hosted-acceptance).
-Run clients from this shell so the environment reaches them; restart GUI clients
-with an appropriate private environment if necessary. Those client runs may consume
-the user's model subscription. The recorded live run used existing authenticated
-clients; it did not alter persistent client configuration.
+Connect your chosen client using the [HTTP configurations](README.md#connect-clients).
+Ask the paid-revenue question and inspect the successful query result. Optional model
+checks use the [example harness](../../examples/mcp-demo/README.md); they consume client
+usage and keep transcripts outside the repository.
 
 ## Logs, updates and troubleshooting
 
@@ -309,8 +298,8 @@ railway service list
 python deploy/railway/check.py
 ```
 
-Record both source and context SHAs, and repeat probe/client checks. To roll back, use the initial recorded SHA and the same adaptation (the rollback
-sequence is locally checked; an actual Railway rollback was not exercised):
+Keep the source and context refs for rollback, and repeat the probe after updates.
+To roll back the runtime, use the saved source ref and the same adaptation:
 
 ```bash
 export SOURCE_SHA="$(cat "$STATE/source-sha")"
@@ -351,7 +340,7 @@ railway tcp-proxy list --service "$RW_DB_SERVICE" --environment "$RW_ENVIRONMENT
 railway unlink --yes
 # Human confirms the exact dedicated project; interactive prompt can handle MFA.
 railway delete --project "$RW_PROJECT"
-# CLI deletion scheduled a 48-hour grace period in the live run.
+# If deletion schedules a grace period, inspect it before proceeding.
 # For this disposable project only, inspect the official live API schema, then purge it.
 railway api describe projectScheduleDeleteForce
 railway api 'mutation ForceDelete($id: String!) { projectScheduleDeleteForce(id: $id) }' \
@@ -370,27 +359,16 @@ gh repo delete "$CONTEXT_REPO" --yes
 
 [Project deletion](https://docs.railway.com/cli/delete) removes the project's services,
 deployments and data, including this Postgres volume and its fixture role/tables;
-its generated service domain/proxy belong to the project. CLI 5.75.0 scheduled project deletion 48 hours later in the live run;
-its API `projectScheduleDeleteForce(id)` then removed the exact scheduled project
-immediately. The [official API CLI](https://docs.railway.com/cli/api) supports schema
-inspection before a mutation; its live schema describes this operation as skipping
-the grace period. [Volumes can otherwise remain recoverable for 48 hours](https://docs.railway.com/volumes/reference).
-Verify the exact project is absent, an API project query returns not found, and the
-old endpoint no longer serves MCP before discarding the ownership record. This
-purge is irreversible; apply it only to this disposable project's saved ID. If deletion needs MFA, complete it in the human terminal or
-dashboard; do not pass codes through command arguments/logs. `railway unlink` must run before deletion: CLI 5.75.0 cannot unlink a project
-that has already been purged. If run too late, only a stale local association remains;
-it does not recreate cloud resources. `railway down` alone is insufficient: storage/project resources remain.
+its generated service domain/proxy belong to the project. Inspect the current API schema
+before force deletion; skipping a recovery grace period is irreversible. Verify the exact
+project is absent and the old endpoint no longer serves MCP before discarding its private
+ownership record. `railway unlink` runs before deletion; `railway down` alone leaves
+storage/project resources behind.
 
-Also remove any optional external DNS records, repo deploy keys or project tokens
-you created; none are required by the baseline. Remove only this server's client
-configuration entries (see the shared client guide). The live GitHub delete returned 403 because the existing token lacked
-`delete_repo`. A human must run `gh auth refresh -h github.com -s delete_repo` and
-complete its consent flow, or delete this exact repository through its GitHub
-settings. Then retry deletion and verify `gh repo view "$CONTEXT_REPO"` no longer
-finds it. Do not claim full cleanup while the repository remains. Keep a non-secret
-ownership record if permission blocks cleanup; credentials can be removed once the
-Railway server/database are gone.
+Also remove only optional DNS records, deploy keys or project tokens created for this
+demo. The repository deletion command above applies only to the fresh synthetic repo
+created in this guide, never an existing retained team context repository. Keep private
+ownership state until cleanup is complete; do not broaden account permissions automatically.
 
 After verified remote cleanup, remove private local artifacts and unset credentials:
 
@@ -409,6 +387,3 @@ anonymous volume and private files, including on failure:
 ```bash
 UNSHACKLE_RAILWAY_LOCAL_TEST=1 pytest -q tests/test_deploy_railway.py
 ```
-
-Official references above were checked 2026-11-19 against Railway CLI 5.75.0.
-Local tests and actual hosted/client results are recorded separately in the evidence.

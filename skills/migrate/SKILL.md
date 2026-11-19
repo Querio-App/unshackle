@@ -51,8 +51,10 @@ Default proposal: everything viewed in the last 90 days, plus the models/dataset
 those items depend on. Say how many items fall in and out.
 
 Warn the user: the inventory only shows what the API token's account can see. A
-non-admin account usually misses other people's personal folders, private
-spaces/workspaces and usage stats. If the numbers look low, ask for an admin token.
+scoped account may miss other people's personal folders, private spaces/workspaces
+and usage stats. If expected content is missing, stop and ask its owner for the
+minimum required access or a supported export. Source skills may describe broader
+API requirements; do not obtain an admin token without explicitly agreed need and scope.
 
 ## 2. Extract
 
@@ -179,7 +181,7 @@ and open a new PR.
 - [ ] Source skill loaded; credentials only in env / `.env` / `.unshackle/`
 - [ ] On a `unshackle/...` branch, not `main`
 - [ ] `unshackle.toml` paths and warehouse type correct (dbt repo checked)
-- [ ] Inventory reviewed; scope agreed with the user; admin-visibility caveat raised
+- [ ] Inventory reviewed; scope agreed with the user; scoped-visibility limits reviewed
       (manual import: the report's "imported manually" gaps shared with the user)
 - [ ] Extract + build ran; report warnings read
 - [ ] `unshackle todo` worked through; remaining TODOs have a reason

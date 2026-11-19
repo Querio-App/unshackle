@@ -10,7 +10,7 @@ unshackle.toml                       workspace config + [paths]
 semantic/*.ossie.yaml             Apache Ossie semantic models, one document per model
 catalog/<datasource>/<schema>/<table>.yml
 knowledge/*.md                    markdown with frontmatter
-queries/*.sql | *.py              verified queries with a comment header
+queries/*.sql | *.py              reference queries (verify before reuse) with a comment header
 queries/models/*.sql              SQL models for pre-aggregated logic (paths.sql_models)
 notebooks/<name>.ipynb            dashboards as Jupyter notebooks (SQL + Altair)
 policies/schema.cedarschema       Cedar schema
@@ -210,7 +210,7 @@ source: looker
 
 ## queries/
 
-Verified queries. SQL uses `--` headers, Python uses `#`. `metric: true` marks a query
+Reference queries (verify before reuse). SQL uses `--` headers, Python uses `#`. `metric: true` marks a query
 that is the definition of a number (use it when Ossie or MetricFlow can't express it).
 
 ```sql

@@ -4,6 +4,12 @@ Use HTTP when several clients need the same Git-managed context and warehouse ro
 Use local stdio when the repository or extracted data is only on your machine. Client
 configurations and security details are in [MCP setup](../mcp.md).
 
+Start with **your context repository and your read-only warehouse role**. Finish the
+[local first-question check](../mcp.md) before sharing access. Review context files for
+sensitive comments and queries, and use a repository-scoped read-only deploy key for
+private Git. Choose a PostgreSQL read replica for shared production access when available.
+The server does not implement per-user authorization or enforce policy files.
+
 Required secrets:
 
 - `UNSHACKLE_WAREHOUSE_URL`: SQLAlchemy URL for a read-only role. PostgreSQL uses
@@ -19,7 +25,12 @@ use a separately mounted SSH key/agent and known_hosts. Git uses no interactive
 prompts or credential helpers. HTTPS public repositories need only the two secrets.
 
 ```sh
-uv pip install 'unshackle[mcp]'
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install 'unshackle[mcp]'
+# Load UNSHACKLE_WAREHOUSE_URL privately from your secret store first.
+set +x
+export UNSHACKLE_MCP_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 unshackle mcp --transport http --host 127.0.0.1 --port 8000 \
   --repo-url https://github.com/example/analytics-context.git --repo-ref main
 ```
@@ -43,8 +54,9 @@ The image includes PostgreSQL (psycopg), DuckDB and SQLite drivers. Other wareho
 are not supported for timed MCP queries yet. It runs as UID/GID 10001; the Compose
 example also makes the root filesystem read-only, drops Linux capabilities, and
 allows writes only to a bounded temporary filesystem. Use the same restrictions in
-your runtime where available. To serve a pre-existing snapshot, omit REPO_URL and
-mount it read-only at `/repo`, with directories searchable and files readable by UID
+your runtime where available. For a mounted snapshot, use a separate `docker run` or
+Compose configuration: the supplied Compose file requires REPO_URL. Omit REPO_URL in
+your configuration and mount the snapshot read-only at `/repo`, with directories searchable and files readable by UID
 10001; never mount your whole home directory. With Colima, place bind-mounted context
 under a shared host path (normally your home directory), not an unshared macOS temp directory.
 
@@ -71,34 +83,28 @@ policies or prevent side effects of database functions. Local DuckDB/SQLite exec
 with the server process's filesystem permissions and are not a sandbox. Prefer a
 read-only PostgreSQL role and production read replica for shared deployments.
 
-## Retained team demo
+## Optional synthetic demos
 
-For a shared fictional warehouse, use the [Dunder Mifflin team demo](team-demo.md)
-and [Claude web/Desktop/Code onboarding](claude-team-demo.md). Unlike the temporary
-provider acceptance runs, this demo stays running until its owner shuts it down.
+For fictional data only, use the [persistent Dunder Mifflin team demo](team-demo.md)
+and its [Claude onboarding](claude-team-demo.md). Keep its ownership/state private;
+it stays running until its owner shuts it down.
 
-## Platform guides
+Provider examples provision isolated synthetic databases and include scoped teardown:
 
 - [Railway](railway.md)
 - [AWS ECS Fargate](aws.md)
 - [Google Cloud Run](cloud-run.md)
 
-Each guide separates account/signup/billing steps from repeatable deployment, uses
-an isolated synthetic warehouse, and includes update and scoped teardown commands.
-Read the resource/cost section before executing it. These commands create billable
-resources when run. Provider CLIs can be
-installed and their help checked before authentication. Interactive login/MFA needs
-the account holder; a configured profile alone does not prove usable access.
-
-See the [provider validation matrix](validation.md) for exact local checks and live
-steps still untested. Prior [client acceptance](../mcp-acceptance.md) was local.
-Do not count a recipe, SDK probe, or CLI exit status as a successful hosted client run.
+These helpers are not general warehouse provisioners. Do not point fixture seeders at
+your own warehouse. For your own data, use the CLI/container setup above and supply your
+networking, TLS and secret store. Starting a provider demo creates billable resources;
+review its scope and prerequisites before running it.
 
 ## Connect clients
 
-Complete the selected provider guide first. It supplies `UNSHACKLE_MCP_URL` (the
-public HTTPS endpoint ending `/mcp`) and a private token file or secret-store read
-command. Export `UNSHACKLE_MCP_TOKEN` in the client process environment without
+Obtain the server’s HTTPS endpoint ending `/mcp` and its token from the deployment
+owner through a private channel. Clients need no warehouse credentials. Set
+`UNSHACKLE_MCP_URL` and load the bearer from a private token file or secret store. Export `UNSHACKLE_MCP_TOKEN` in the client process environment without
 echoing it; disable shell tracing. Do not put the token in command arguments, Git,
 shell history, screenshots, or shared logs. If the guide produced a token file:
 
@@ -108,7 +114,7 @@ export UNSHACKLE_MCP_TOKEN="$(cat "$MCP_TOKEN_FILE")"
 export UNSHACKLE_MCP_URL='https://your-deployment.example/mcp'
 ```
 
-Replace the illustrative URL with the guide's output. The clients need their own
+Replace the illustrative URL with your deployment URL. The clients need their own
 installed, authenticated model accounts; see [Claude Code setup](https://code.claude.com/docs/en/setup),
 [Codex CLI](https://developers.openai.com/codex/cli/), and
 [Cursor CLI installation](https://cursor.com/docs/cli/installation).
@@ -155,43 +161,40 @@ MCP configuration:
 
 [Cursor interpolates environment variables in URL and headers](https://cursor.com/docs/mcp#config-interpolation).
 A desktop app already running may not inherit newly exported shell variables;
-restart it from the configured shell, or use the CLI below. Approve the MCP tools
+restart it from the configured shell. Approve the MCP tools
 when prompted. Cursor remote servers do not use `envFile`.
 
-## Record hosted acceptance
+## Check access and the first answer
 
-Run the provider's auth/SDK/role probe first: no bearer must yield 401, valid bearer
-must initialize MCP and expose overview/search/read/run_query, and all five fixture
-answers must match [questions.json](../../examples/mcp-demo/questions.json).
-Include a direct database write denial, row cap, native timeout and successful query
-after cancellation. A health probe alone does not check SQL authorization.
+Confirm a request without a token receives 401. Then use your chosen client to call
+`overview`, find/read a known definition, and run one small query with an independently
+known answer. `overview` is a context check, not a warehouse connection test. Confirm
+read-only privileges at the database role, including functions it can invoke; SQL
+parsing alone does not prevent side effects. Do not test writes against business data.
 
-Then run each real client against the same hosted URL. From this source checkout,
-with the provider-generated context folder available and the clients authenticated:
+A result table is optional host behavior; JSON/text results remain usable. If a token
+holder should see less than this server's warehouse role, stop: configure a separate
+restricted role/server or choose an authorization design that supports that requirement.
+A three-client benchmark is not needed to onboard a teammate. Optional synthetic
+client checks are documented with the [runnable example](../../examples/mcp-demo/README.md).
 
-```sh
-umask 077
-export MCP_CONTEXT_DIR='/absolute/path/to/generated-context'
-export MCP_EVIDENCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/unshackle-hosted.XXXXXX")"
-for client in claude codex cursor; do
-  .venv/bin/python examples/mcp-demo/client_matrix.py "$client" \
-    --repo "$MCP_CONTEXT_DIR" --executable "$PWD/.venv/bin/unshackle" \
-    --http-url "$UNSHACKLE_MCP_URL" --output "$MCP_EVIDENCE_DIR/$client"
-done
-```
+## Updates, access and shutdown
 
-The HTTP mode uses the remote server; the required local repo/executable arguments
-are retained for the shared harness interface. It records client versions, source
-commit and transport, and creates temporary client configurations without changing
-persistent settings. Raw output stays private. Compare all five actual answers with
-independent expected answers, and inspect successful context-tool and `run_query`
-calls. A zero exit code or self-reported answer is insufficient. Record denied calls
-and retries separately. Sanitize transcripts before publishing; never publish token,
-warehouse URL, account identifiers or unrelated private data.
+Publish reviewed context changes through your repository's normal review process.
+Moving refs refresh on the configured interval; a pinned SHA requires changing the
+ref and restarting the server. Confirm changed text through `search`/`read` and rerun
+an affected question. To roll back, restart with a reviewed earlier context ref; this
+does not roll back the runtime image or warehouse. See [maintenance](../maintain.md).
 
-Record provider/region, exact image digest/source SHA, context SHA, client versions,
-auth/probe results, expected-versus-actual answers, update/refresh behavior and
-teardown verification in the [validation matrix](validation.md). SDK smoke is separate
-from the three model/client runs. Finally execute the selected guide's scoped
-teardown, confirm every owned billable resource is gone, remove only demo client
-registrations/private files, and unset `UNSHACKLE_MCP_TOKEN`.
+Runtime updates use a reviewed package/image revision and preserve the same context
+and secret configuration. Restart periodically to reclaim retained snapshots. Generate
+a new random token in your secret store, restart all instances with it, update clients,
+and confirm the old token returns 401 after old instances drain. Removing one client
+registration does not revoke a copied token; rotation revokes shared access for all.
+
+Stop a foreground process with Ctrl-C. For the Compose example, from the same checkout
+and project run `docker compose -f deploy/compose.yml down`. For a hosted deployment,
+use its saved resource inventory and provider teardown section; inspect the exact
+project/services/storage before deletion. Client removal alone does not stop billing.
+Never run a demo's teardown against a retained or unrelated environment. Remove only
+that deployment's local connector entries and private credentials after shutdown.

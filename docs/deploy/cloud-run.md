@@ -1,15 +1,8 @@
-# Google Cloud Run: CLI deployment rehearsal
+# Optional synthetic demo on Google Cloud Run
 
-**Live validation is partial.** A new disposable project, billing linkage, APIs,
-registry, Cloud SQL fixture, scoped IAM and secrets were created successfully; the
-amd64 image was built from the signed provider commit and pushed. Cloud SQL read-only denial and native
-cancellation/recovery passed. Cloud Run deployment, hosted SDK/three-client checks,
-Git refresh and update remain **UNTESTED** because the GitHub account lacked
-the scope needed to delete a new context repository. No context GitHub repo was
-created. The owned SQL, registry/images, secrets and runtime account were removed
-and verified absent; the disposable project reached `DELETE_REQUESTED` (asynchronous
-shutdown, not a claim of permanent deletion or final billing closure). See the
-[sanitized run record](../../deploy/gcp/evidence/run.json) and shared [validation record](validation.md); local checks are not hosted acceptance.
+For your own context and warehouse, start with [HTTP/container hosting](README.md).
+This recipe provisions a separate fictional dataset, not an existing warehouse.
+Review the billable resources, permissions and teardown before starting.
 
 This recipe uses one **new disposable project** for one synthetic demonstration:
 Artifact Registry, Cloud Run, Cloud SQL PostgreSQL 16 and Secret Manager. Run commands
@@ -58,7 +51,7 @@ the future operator, never for an unattended preparation run:
 ```bash
 gcloud auth login
 # Optional ADC alternative: gcloud auth application-default login
-gh auth login --scopes delete_repo
+gh auth login
 ```
 
 If already signed in, inspect `gcloud auth list --filter=status:ACTIVE --format='value(account)'`
@@ -80,7 +73,7 @@ umask 077
 export CLOUDSDK_CORE_DISABLE_FILE_LOGGING=true
 export PROJECT="unshackle-demo-$(python -c 'import secrets; print(secrets.token_hex(4))')"
 export REGION=europe-west1
-export PREFIX=ush193
+export PREFIX=unshackle-demo
 export SQL_TIER=db-f1-micro
 export RUN_MEMORY=1Gi MIN_INSTANCES=1
 export GCP_STATE="$HOME/.local/state/$PROJECT"
@@ -110,7 +103,7 @@ vary by region: [SQL](https://cloud.google.com/sql/pricing),
 [CPU allocation](https://docs.cloud.google.com/run/docs/configuring/cpu-allocation).
 Budgets are alerts, not a hard spending cap. Delete the rehearsal promptly.
 
-## Provision once per disposable project — live validated, billable
+## Provision a disposable project
 
 Run provisioning commands individually and stop on any error. Fresh-project/API and
 service-account permissions can take time to propagate. If a named operation fails
@@ -194,11 +187,8 @@ is required; a generic/unsupported driver must not silently lose timeout support
 Only the reader connection string reaches Cloud Run. Admin/reader passwords and
 the bearer stay in the mode-0700 state directory, outside context and Docker inputs.
 
-Create a separate synthetic GitHub repository only after confirming the account
-can delete it. For an existing OAuth login missing `delete_repo`, the operator must
-first run `gh auth refresh -h github.com -s delete_repo`; this is interactive and is
-not part of unattended deployment. Do not create an unremovable repository while
-waiting for that grant. Replace only `REPLACE_WITH_OWNER`:
+Create a separate synthetic GitHub repository with an owner-agreed retention and
+cleanup plan. Replace only `REPLACE_WITH_OWNER`:
 
 ```bash
 export CONTEXT_GITHUB=REPLACE_WITH_OWNER/unshackle-gcp-demo
@@ -225,9 +215,8 @@ PY
 
 An exact commit SHA or tag also works; a pinned SHA never advances on polling. Check
 that the generated repository, not the unshackle source repository, is configured.
-No GitHub repository was created during this run.
 
-## Store secrets and build — validated; deploy — UNTESTED
+## Store secrets, build and deploy
 
 ```bash
 gcloud secrets create "$PREFIX-warehouse" --project "$PROJECT" \
@@ -253,7 +242,7 @@ pin numeric versions (initially 1). A successful deployment saves `token-version
 and `warehouse-version` under `GCP_STATE`; later deploys and token reloads reuse
 those versions unless explicitly overridden. The helper rejects a project that
 does not match both the chosen ID and successful-creation marker. Cloud Run resolves the image tag to a digest
-for the revision; save that digest when recording evidence. The service disables
+for the revision; keep that digest for updates and rollback. The service disables
 Google's invoker IAM check so standard MCP clients can send the application's
 bearer. **Every application HTTP route still requires that bearer.** A missing or
 wrong token must produce application 401, while the correct token must complete
@@ -298,7 +287,7 @@ bash deploy/gcp/deploy.sh
 `ls-remote` above checks `main`; substitute your branch/tag if changing `REPO_REF`.
 The wrapper copies root-owned secret mounts to the runtime user's `.ssh`, chmods
 the key 0600 and requires strict host checking. Private fetch must succeed at startup
-and again on refresh before claiming acceptance. If using a non-GitHub host, supply
+and again after a context update. If using a non-GitHub host, supply
 its independently verified `known_hosts` entry and deploy-key configuration.
 See [GitHub deploy keys](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
 and [GitHub metadata API](https://docs.github.com/en/rest/meta/meta#get-github-meta-information).
@@ -335,14 +324,12 @@ Refunded 40 and cancelled 30 are excluded. The verifier reads the existing
 [`questions.json`](../../examples/mcp-demo/questions.json); expected answers are
 not placed in the generated context or client prompt.
 
-Follow [exact Claude Code, Codex and Cursor configurations](README.md#connect-clients)
-and [the existing real-client harness/evidence procedure](README.md#record-hosted-acceptance).
-A passing SDK probe does not count as three hosted client runs. Client sign-in is a
-separate one-time step, and model calls can consume a subscription. Keep raw
-transcripts/configurations private. Record source SHA, context SHA, image digest,
-revision, CLI/client versions and actual answers without publishing credentials.
+Use the [HTTP client configurations](README.md#connect-clients) to connect your chosen
+client and ask the paid-revenue question. Inspect the successful SQL result. Optional
+[client harness checks](../../examples/mcp-demo/README.md) consume model usage and save
+outputs outside Git.
 
-## Logs, update and troubleshooting — cloud commands UNTESTED
+## Logs, update and troubleshooting
 
 ```bash
 gcloud run services logs read "$PREFIX-mcp" --project "$PROJECT" --region "$REGION" --limit 80
@@ -391,9 +378,7 @@ the Postgres role password, adding a matching warehouse secret version and setti
 
 ## Scoped teardown — destructive
 
-SQL, registry, secrets, IAM cleanup and project shutdown were validated live.
-Cloud Run and GitHub deletion commands were not exercised because those resources
-were never created. These commands delete only this rehearsal's named resources.
+These commands delete only this demo's named resources.
 Stop any proxy started by this session, remove any configured client entry, then review the saved project
 ID against the intended disposable project. Do not use an all-project/account loop.
 
@@ -442,8 +427,8 @@ by their recorded exact names. No local Postgres container is created by the clo
 recipe; the opt-in test cleans its own container and anonymous data volumes in nested
 `finally` blocks and verifies the captured volume IDs are absent.
 
-Finally remove the exact private state directory (after preserving sanitized
-evidence) and unset the token:
+After confirming remote cleanup, remove the exact private state directory and
+unset the token:
 
 ```bash
 python - <<'PY'

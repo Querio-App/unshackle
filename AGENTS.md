@@ -5,8 +5,9 @@ There are two ways you might be here.
 
 ## Migrating a customer's BI tool
 
-You're running inside the customer's repo with `unshackle` installed. Load
-`skills/migrate/SKILL.md` and follow it. The other skills:
+In an initialized customer's repo, load `migration/skills/migrate/SKILL.md`.
+In this source checkout, load `skills/migrate/SKILL.md`. Skill paths below are
+relative to this checkout; customer copies live under `migration/skills/`. The other skills:
 
 | Skill | Use it for |
 | --- | --- |
@@ -33,6 +34,11 @@ Folders in the customer's repo (each appears only once something is written to i
 Rules: credentials stay in the environment or the repo's git-ignored `.env`, never in
 tracked files. Work on a branch and
 open a pull request. Never delete a `TODO(unshackle)` without resolving it.
+
+For warehouse/dbt/SQL imports, local questions, hosting and maintenance, route through
+[documentation by task](docs/index.md). Imports create reference context, not verified
+answers. Request only the missing scoped access when inventory is incomplete; stop
+before any privilege expansion. Preserve TODOs and hand edits.
 
 ## Working on unshackle itself
 

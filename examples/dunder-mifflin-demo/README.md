@@ -12,7 +12,6 @@ shipping and reviews. Scenario and historical revenue are separate datasets.
 - `questions.json`: eight questions, SQL, independent arithmetic and expected results.
 - `check.py`: real HTTPS MCP SDK acceptance and safety checks.
 - `client_check.py`: actual Claude Code run through the existing isolated harness.
-- `evidence.json`: sanitized provenance and live outcomes, without credentials/IDs.
 
 Only generated `context/` belongs in the public context repository. Surrounding files
 contain secrets and must stay private. This demo stays running until its owner chooses

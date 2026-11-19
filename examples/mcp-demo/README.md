@@ -1,4 +1,4 @@
-# Synthetic MCP acceptance example
+# Try MCP with fictional data
 
 Three fictional customers and six orders demonstrate warehouse, dbt and SQL/Python
 imports in one context repo. `questions.json` contains five questions, reference SQL,
@@ -50,12 +50,12 @@ remains with each installed client. Codex ignores user config; Cursor uses a
 [temporary config directory](https://cursor.com/docs/cli/reference/configuration);
 Claude loads only the explicit MCP configuration and no built-in tools.
 
-`docs/mcp-acceptance.md` distinguishes offline checks, actual client runs, and hosted
-or drift evidence. A local HTTP SDK test is not Railway or six-client acceptance.
-
 For an already running local HTTP server, set `UNSHACKLE_MCP_TOKEN` in the harness
 environment and add `--http-url http://127.0.0.1:8765/mcp` to each client invocation.
 The token is written only to temporary private MCP configuration (Claude/Cursor)
 or referenced through its environment variable (Codex). The harness deletes those
 configurations afterward. HTTP evidence records whether the endpoint was local;
 never label a loopback run as hosted deployment acceptance.
+
+Next: [use your own context locally](../../docs/mcp.md) or
+[share through HTTP](../../docs/deploy/README.md).
