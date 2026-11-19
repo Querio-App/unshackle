@@ -71,6 +71,12 @@ policies or prevent side effects of database functions. Local DuckDB/SQLite exec
 with the server process's filesystem permissions and are not a sandbox. Prefer a
 read-only PostgreSQL role and production read replica for shared deployments.
 
+## Retained team demo
+
+For a shared fictional warehouse, use the [Dunder Mifflin team demo](team-demo.md)
+and [Claude web/Desktop/Code onboarding](claude-team-demo.md). Unlike the temporary
+provider acceptance runs, this demo stays running until its owner shuts it down.
+
 ## Platform guides
 
 - [Railway](railway.md)
