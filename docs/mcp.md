@@ -79,8 +79,15 @@ Client references: [Claude Code](https://code.claude.com/docs/en/mcp),
   these server limits. The deadline starts after connection establishment; configure
   driver connection timeouts separately (for PostgreSQL append `?connect_timeout=10`).
   Queries fetch at most limit+1 rows, expose `truncated`, and cancel execution natively.
-  Decimal values are strings to preserve precision, dates use ISO strings, nulls and
-  non-finite floats become JSON null, and binary values are hex strings.
+  Decimal values and integers outside JavaScript’s safe range (±(2**53−1)) are strings
+  to preserve precision. Safe integers and booleans keep their JSON types. Dates use
+  ISO strings, nulls/non-finite floats become JSON null, and binary values are hex strings.
+
+Apps-capable clients can display an [interactive result table](mcp-result-table.md)
+from the actual `run_query` response. It sorts, searches and exports only returned
+rows, with a visible truncation notice; clients without Apps keep JSON/text results.
+The bundled `ui://unshackle/query-results/v1.html` resource is separate from repository
+files and contains no credentials or warehouse access of its own.
 
 The same files are resources under `unshackle://repo/<path>`. Layout overrides in
 `unshackle.toml` and dbt's `models/semantic` are respected. Only semantic, catalog,

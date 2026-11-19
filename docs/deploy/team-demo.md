@@ -11,6 +11,11 @@ instruction: the repository is intentionally retained under new user authorizati
 with a dedicated branch preserving its original main/history. Missing GitHub
 `delete_repo` scope is not a blocker and repository deletion is not part of shutdown.
 
+The [interactive query table](../mcp-result-table.md) lets an Apps-capable client
+sort, search and export returned rows directly. After an app update, start a new
+conversation; reconnect the connector if its cached tool metadata still omits the UI.
+The same endpoint and bearer credential continue to work.
+
 ## Dataset and prompts
 
 The [generator](../../examples/dunder-mifflin-demo/fixture.py) reuses all five existing
