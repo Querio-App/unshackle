@@ -1,0 +1,158 @@
+[
+  {
+    "id": "q1",
+    "question": "What is total recognized scenario revenue in USD for 2025?",
+    "sql": "SELECT SUM(net_usd) FROM orders WHERE status='completed'",
+    "expected": [
+      [
+        92664
+      ]
+    ],
+    "derivation": "sum months=78; effective rep weights=1+1.8+3+3.6+5+5.4=19.8; product prices sum60. 78*19.8*60=92664."
+  },
+  {
+    "id": "q2",
+    "question": "What is recognized scenario revenue by branch, ordered by branch name?",
+    "sql": "SELECT branch_name,SUM(net_usd) FROM orders o JOIN customers c USING(customer_id) JOIN employees e USING(employee_id) JOIN branches b USING(branch_id) WHERE o.status='completed' GROUP BY branch_name ORDER BY branch_name",
+    "expected": [
+      [
+        "Nashua",
+        48672
+      ],
+      [
+        "Scranton",
+        13104
+      ],
+      [
+        "Stamford",
+        30888
+      ]
+    ],
+    "derivation": "Branch weights 10.4,2.8,6.6 multiplied by 78*60=4680."
+  },
+  {
+    "id": "q3",
+    "question": "What is recognized scenario revenue by calendar month YYYY-MM, ordered by month?",
+    "sql": "SELECT substr(CAST(ordered_at AS VARCHAR),1,7),SUM(net_usd) FROM orders WHERE status='completed' GROUP BY 1 ORDER BY 1",
+    "expected": [
+      [
+        "2025-01",
+        1188
+      ],
+      [
+        "2025-02",
+        2376
+      ],
+      [
+        "2025-03",
+        3564
+      ],
+      [
+        "2025-04",
+        4752
+      ],
+      [
+        "2025-05",
+        5940
+      ],
+      [
+        "2025-06",
+        7128
+      ],
+      [
+        "2025-07",
+        8316
+      ],
+      [
+        "2025-08",
+        9504
+      ],
+      [
+        "2025-09",
+        10692
+      ],
+      [
+        "2025-10",
+        11880
+      ],
+      [
+        "2025-11",
+        13068
+      ],
+      [
+        "2025-12",
+        14256
+      ]
+    ],
+    "derivation": "Each month m contributes m*19.8*60=1188*m."
+  },
+  {
+    "id": "q4",
+    "question": "Which rep leads recognized scenario revenue, and what is their revenue in USD?",
+    "sql": "SELECT employee_name,SUM(net_usd) AS revenue FROM orders o JOIN customers c USING(customer_id) JOIN employees e USING(employee_id) JOIN branches b USING(branch_id) WHERE o.status='completed' GROUP BY employee_name ORDER BY revenue DESC,employee_name LIMIT 1",
+    "expected": [
+      [
+        "Danny Cordray",
+        25272
+      ]
+    ],
+    "derivation": "Rep6 effective weight5.4 is largest;5.4*4680=25272."
+  },
+  {
+    "id": "q5",
+    "question": "What are recognized scenario profit in USD and gross margin as a fraction?",
+    "sql": "SELECT SUM(net_usd-cost_usd),ROUND(1.0*SUM(net_usd-cost_usd)/nullif(SUM(net_usd),0),6) FROM orders WHERE status='completed'",
+    "expected": [
+      [
+        37065.6,
+        0.4
+      ]
+    ],
+    "derivation": "Allocated cost60% of net; profit92664*0.4=37065.6 and margin0.4."
+  },
+  {
+    "id": "q6",
+    "question": "What are excluded scenario order count and excluded net USD, by status, ordered by status?",
+    "sql": "SELECT status,COUNT(*),SUM(net_usd) FROM orders WHERE status<>'completed' GROUP BY status ORDER BY status",
+    "expected": [
+      [
+        "cancelled",
+        12,
+        24000
+      ],
+      [
+        "returned",
+        12,
+        12000
+      ]
+    ],
+    "derivation": "One cancelled2000 and returned1000 each month;12 months."
+  },
+  {
+    "id": "q7",
+    "question": "Which customer leads recognized scenario revenue, and how much in USD?",
+    "sql": "SELECT customer_name,SUM(net_usd) AS revenue FROM orders o JOIN customers c USING(customer_id) JOIN employees e USING(employee_id) JOIN branches b USING(branch_id) WHERE o.status='completed' GROUP BY customer_name ORDER BY revenue DESC,customer_name LIMIT 1",
+    "expected": [
+      [
+        "Example Customer 12",
+        13608
+      ]
+    ],
+    "derivation": "Even months sum42 vs odd36. Highest rep6 weight5.4 times60 times42=13608."
+  },
+  {
+    "id": "q8",
+    "question": "How many rows are in historical accounts, orders, products, reviews and shippings, in that order?",
+    "sql": "SELECT (SELECT COUNT(*) FROM history_accounts),(SELECT COUNT(*) FROM history_orders),(SELECT COUNT(*) FROM history_products),(SELECT COUNT(*) FROM history_reviews),(SELECT COUNT(*) FROM history_shippings)",
+    "expected": [
+      [
+        181,
+        3503,
+        15,
+        1655,
+        2812
+      ]
+    ],
+    "derivation": "Independent checked-in dataset README row counts; all rows retained."
+  }
+]

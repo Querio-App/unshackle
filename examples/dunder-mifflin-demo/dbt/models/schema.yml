@@ -1,0 +1,33 @@
+version: 2
+models:
+- name: orders
+  description: 2025 scenario orders; only completed counts as recognized revenue.
+    See knowledge/team-demo.md for relationships.
+semantic_models:
+- name: orders
+  model: ref('orders')
+  defaults:
+    agg_time_dimension: ordered_at
+  entities:
+  - name: order
+    type: primary
+    expr: order_id
+  - name: customer
+    type: foreign
+    expr: customer_id
+  - name: product
+    type: foreign
+    expr: product_id
+  dimensions:
+  - name: ordered_at
+    type: time
+    type_params:
+      time_granularity: day
+  - name: status
+    type: categorical
+  measures:
+  - name: recognized_revenue
+    agg: sum
+    expr: CASE WHEN status = 'completed' THEN net_usd ELSE 0 END
+    description: Scenario recognized revenue USD; excludes returned and cancelled.
+    create_metric: true
