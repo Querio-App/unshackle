@@ -8,8 +8,8 @@ Required secrets:
 
 - `UNSHACKLE_WAREHOUSE_URL`: SQLAlchemy URL for a read-only role. PostgreSQL uses
   `postgresql+psycopg://.../database?connect_timeout=10` (add TLS parameters as required).
-- `UNSHACKLE_MCP_TOKEN`: random ASCII bearer token, at least 32 characters. Generate
-  with `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
+- `UNSHACKLE_MCP_TOKEN`: random ASCII bearer token, at least 32 characters. The
+  provider recipes generate it into a private file or secret store without printing it.
 
 The context repository URL/ref/poll interval are ordinary configuration:
 `UNSHACKLE_REPO_URL`, `UNSHACKLE_REPO_REF` (default `main`), and
@@ -77,5 +77,115 @@ read-only PostgreSQL role and production read replica for shared deployments.
 - [AWS ECS Fargate](aws.md)
 - [Google Cloud Run](cloud-run.md)
 
-The guides are deployment recipes, not claims of executed cloud acceptance. Client
-and Railway acceptance are recorded separately by the epic acceptance slice.
+Each guide separates account/signup/billing steps from repeatable deployment, uses
+an isolated synthetic warehouse, and includes update and scoped teardown commands.
+Read the resource/cost section before executing it. These commands create billable
+resources when run; documentation preparation creates none. Provider CLIs can be
+installed and their help checked before authentication. Interactive login/MFA needs
+the account holder; a configured profile alone does not prove usable access.
+
+See the [provider validation matrix](validation.md) for exact local checks and live
+steps still untested. Prior [client acceptance](../mcp-acceptance.md) was local.
+Do not count a recipe, SDK probe, or CLI exit status as a successful hosted client run.
+
+## Connect clients
+
+Complete the selected provider guide first. It supplies `UNSHACKLE_MCP_URL` (the
+public HTTPS endpoint ending `/mcp`) and a private token file or secret-store read
+command. Export `UNSHACKLE_MCP_TOKEN` in the client process environment without
+echoing it; disable shell tracing. Do not put the token in command arguments, Git,
+shell history, screenshots, or shared logs. If the guide produced a token file:
+
+```sh
+set +x
+export UNSHACKLE_MCP_TOKEN="$(cat "$MCP_TOKEN_FILE")"
+export UNSHACKLE_MCP_URL='https://your-deployment.example/mcp'
+```
+
+Replace the illustrative URL with the guide's output. The clients need their own
+installed, authenticated model accounts; see [Claude Code setup](https://code.claude.com/docs/en/setup),
+[Codex CLI](https://developers.openai.com/codex/cli/), and
+[Cursor CLI installation](https://cursor.com/docs/cli/installation).
+Login and model requests may need browser interaction and consume your plan.
+
+For **Claude Code**, save this JSON as `unshackle.mcp.json` in a dedicated client
+folder (it contains environment references, not credentials), then launch from the
+shell holding the variables:
+
+```json
+{"mcpServers":{"unshackle":{"type":"http","url":"${UNSHACKLE_MCP_URL}","headers":{"Authorization":"Bearer ${UNSHACKLE_MCP_TOKEN}"}}}}
+```
+
+```sh
+claude --strict-mcp-config --mcp-config ./unshackle.mcp.json
+```
+
+Use `/mcp` to inspect connectivity and approve the four unshackle tools when
+prompted. [Claude's environment expansion](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcpjson)
+keeps this configuration reusable.
+
+For **Codex CLI**, register the endpoint once; only the environment variable's name
+is persisted. Start Codex from the same environment:
+
+```sh
+codex mcp add unshackle --url "$UNSHACKLE_MCP_URL" \
+  --bearer-token-env-var UNSHACKLE_MCP_TOKEN
+codex
+# After the demo, remove only this registration:
+# codex mcp remove unshackle
+```
+
+Use a different server name if `unshackle` already exists. The
+[Codex MCP configuration](https://developers.openai.com/codex/mcp/)
+uses bearer authentication here; this server does not offer OAuth login.
+
+For **Cursor**, put this in a new client folder's `.cursor/mcp.json`, then open that
+folder from an environment containing the variables. Do not overwrite an existing
+MCP configuration:
+
+```json
+{"mcpServers":{"unshackle":{"url":"${env:UNSHACKLE_MCP_URL}","headers":{"Authorization":"Bearer ${env:UNSHACKLE_MCP_TOKEN}"}}}}
+```
+
+[Cursor interpolates environment variables in URL and headers](https://cursor.com/docs/mcp#config-interpolation).
+A desktop app already running may not inherit newly exported shell variables;
+restart it from the configured shell, or use the CLI below. Approve the MCP tools
+when prompted. Cursor remote servers do not use `envFile`.
+
+## Record hosted acceptance
+
+Run the provider's auth/SDK/role probe first: no bearer must yield 401, valid bearer
+must initialize MCP and expose overview/search/read/run_query, and all five fixture
+answers must match [questions.json](../../examples/mcp-demo/questions.json).
+Include a direct database write denial, row cap, native timeout and successful query
+after cancellation. A health probe alone does not check SQL authorization.
+
+Then run each real client against the same hosted URL. From this source checkout,
+with the provider-generated context folder available and the clients authenticated:
+
+```sh
+umask 077
+export MCP_CONTEXT_DIR='/absolute/path/to/generated-context'
+export MCP_EVIDENCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/unshackle-hosted.XXXXXX")"
+for client in claude codex cursor; do
+  .venv/bin/python examples/mcp-demo/client_matrix.py "$client" \
+    --repo "$MCP_CONTEXT_DIR" --executable "$PWD/.venv/bin/unshackle" \
+    --http-url "$UNSHACKLE_MCP_URL" --output "$MCP_EVIDENCE_DIR/$client"
+done
+```
+
+The HTTP mode uses the remote server; the required local repo/executable arguments
+are retained for the shared harness interface. It records client versions, source
+commit and transport, and creates temporary client configurations without changing
+persistent settings. Raw output stays private. Compare all five actual answers with
+independent expected answers, and inspect successful context-tool and `run_query`
+calls. A zero exit code or self-reported answer is insufficient. Record denied calls
+and retries separately. Sanitize transcripts before publishing; never publish token,
+warehouse URL, account identifiers or unrelated private data.
+
+Record provider/region, exact image digest/source SHA, context SHA, client versions,
+auth/probe results, expected-versus-actual answers, update/refresh behavior and
+teardown verification in the [validation matrix](validation.md). SDK smoke is separate
+from the three model/client runs. Finally execute the selected guide's scoped
+teardown, confirm every owned billable resource is gone, remove only demo client
+registrations/private files, and unset `UNSHACKLE_MCP_TOKEN`.

@@ -1,6 +1,6 @@
 # MCP acceptance evidence
 
-Epic #193 is **not fully accepted**: Railway deployment/client runs remain blocked.
+Epic #193 is **not fully accepted**: hosted deployment/client runs remain unverified.
 All five questions passed with three actual clients over stdio and authenticated
 local HTTP. A real Postgres rename produced the draft drift evidence PR below.
 Local HTTP is not Railway; no scheduled GitHub Actions execution is claimed.
@@ -88,3 +88,12 @@ remaining live gate, deploy the reviewed code and fixture to Railway, repeat all
 three clients with the same five questions over bearer-authenticated HTTP, and
 record deployment/source/version evidence. Actual scheduled workflow execution
 also remains unverified; PR #207 proves manual workflow-equivalent generation.
+
+## Cloud deployment follow-up
+
+CLI-first preparation covers [Railway](deploy/railway.md), [GCP Cloud Run](deploy/cloud-run.md)
+and [AWS ECS Fargate](deploy/aws.md). The [provider validation matrix](deploy/validation.md)
+separates local preparation evidence from authentication, deployment, actual clients,
+updates and teardown. No cloud acceptance is inferred from the six local runs above.
+See [hosted acceptance commands](deploy/README.md#record-hosted-acceptance) for the
+repeatable client harness and evidence requirements after authorized deployment.
