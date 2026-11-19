@@ -215,6 +215,15 @@ def apply(bundle: Bundle, repo: Path, dry_run: bool = False) -> BuildResult:
         ir_path = repo / "migration" / "ir" / f"{bundle.tool}.json"
         ir_path.parent.mkdir(parents=True, exist_ok=True)
         ir_path.write_text(bundle.to_json())
+        # Persist the writer's active selection: a retained stale suffix is not a delivery.
+        touched = set(target.result.written + target.result.unchanged + target.result.kept_hand_edits)
+        delivery_paths = {
+            rel: actual for rel in schedules.file_paths(bundle, target.layout)
+            if (actual := target.result.renamed.get(rel, rel)) in touched
+        }
+        paths_file = repo / "migration" / "schedule_paths" / f"{bundle.tool}.json"
+        paths_file.parent.mkdir(parents=True, exist_ok=True)
+        paths_file.write_text(json.dumps(delivery_paths, indent=2) + "\n")
     target.save()
     loaded = "" if dry_run else load_local_db(bundle, repo)
     report = write_report(repo, [bundle], target.result, dry_run=dry_run)
@@ -309,17 +318,20 @@ def load_bundles(repo: Path) -> list[Bundle]:
     return [Bundle.from_json(p.read_text()) for p in sorted(ir_dir.glob("*.json"))]
 
 
-def _delivered_unresolved(target: Target, rel: str, source_ref: str) -> int | str:
+def _delivered_unresolved(target: Target, rel: str, source_ref: str, paths: dict[str, str] | None) -> int | str:
     """Read the delivered bindings, including files the writer preserved by hand."""
     import yaml
 
-    owner = target.lock.owners.get(rel)
     try:
-        if owner and owner != target.tool:
-            renamed = target._rename_for_tool(rel)
-            # Differing content is suffixed; identical content can share the base file.
-            if target.read(renamed) is not None:
-                rel = renamed
+        if paths is not None:
+            rel = paths.get(rel)
+            if not isinstance(rel, str):
+                return "unknown"
+        else:
+            # Older builds did not record active paths. A suffix may be retained stale.
+            owner = target.lock.owners.get(rel)
+            if owner and owner != target.tool and target.read(target._rename_for_tool(rel)) is not None:
+                return "unknown"
         doc = yaml.safe_load(target.read(rel) or "")
     except (yaml.YAMLError, UnsafePath):
         return "unknown"
@@ -395,12 +407,14 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
     subscriptions = []
     for b in stored.values():
         target = Target(repo, tool=b.tool)
+        paths_file = repo / "migration" / "schedule_paths" / f"{b.tool}.json"
+        delivery_paths = json.loads(paths_file.read_text()) if paths_file.exists() else None
         dash_names = {d.source_ref: d.name for d in b.dashboards}
         for rel, s in schedules.file_paths(b, target.layout).items():
             email_channels = [c for c in s.channels if c.type == "email"]
             contacts = sum(len(c.details.get("recipient_emails") or []) for c in email_channels)
             unknown_recipients = sum(1 for c in s.channels if c.recipients is None)
-            unresolved = _delivered_unresolved(target, rel, s.source_ref)
+            unresolved = _delivered_unresolved(target, rel, s.source_ref, delivery_paths)
             subscriptions.append(
                 f"| {b.tool} | {s.name.replace('|', '/')} | "
                 f"{(dash_names.get(s.dashboard_ref) or s.dashboard_ref or '(unknown)').replace('|', '/')} | "

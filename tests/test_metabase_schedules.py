@@ -76,6 +76,7 @@ def test_schedule_writer_uses_layout_and_preserves_hand_edits(tmp_path):
     dry = build.apply(bundle, tmp_path, dry_run=True)
     path = tmp_path / "delivery/metabase-pulse-42.yml"
     assert "delivery/metabase-pulse-42.yml" in dry.writes.written and not path.exists()
+    assert not (tmp_path / "migration/schedule_paths/metabase.json").exists()
     build.apply(bundle, tmp_path)
     doc = yaml.safe_load(path.read_text())
     assert doc["notebook"] == "reports/renamed-report.ipynb"
@@ -292,6 +293,8 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     ).read_text()
     manual = notebook.read_text().replace("tile_engine", "manual_engine")
     notebook.write_text(manual)
+    paths_file = tmp_path / "migration/schedule_paths/metabase.json"
+    paths_before = paths_file.read_text()
     pulse["parameters"][0]["value"] = ["East"]
     store.put_json("pulses/42.json", pulse)
     bundle = MetabaseSource().parse(store)
@@ -300,6 +303,7 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     assert "notebooks/client-reporting.ipynb" in result.writes.kept_hand_edits
     assert notebook.read_text() == manual
     if dry_run:
+        assert paths_file.read_text() == paths_before
         from unshackle.build import render_all
         from unshackle.target.writer import Target
 
@@ -395,6 +399,51 @@ def test_report_reads_identical_delivery_shared_by_tools(tmp_path):
     report = build.write_report(tmp_path).read_text()
     for tool in ("metabase", "other"):
         assert f"| {tool} | Example | (unknown) | 0 | 0 | 0 | 0 | 1 |" in report
+
+
+def test_report_uses_active_shared_delivery_instead_of_stale_suffix(tmp_path):
+    shared = Schedule("Example", "shared", parameter_bindings=[{"filter_names": [], "status": "unresolved"}])
+    other = Bundle(tool="other", schedules=[shared])
+    build.apply(other, tmp_path)
+    build.apply(Bundle(tool="metabase", schedules=[Schedule(
+        "Different", "shared", parameter_bindings=[{"filter_names": [], "status": "translated"}],
+    )]), tmp_path)
+    stale = tmp_path / "schedules/shared.metabase.yml"
+    manual = stale.read_text() + "# retained hand edit\n"
+    stale.write_text(manual)
+    bundle = Bundle(tool="metabase", schedules=[shared])
+    source_ir = bundle.to_json()
+    result = build.apply(bundle, tmp_path)
+    assert "schedules/shared.yml" in result.writes.unchanged
+    assert "schedules/shared.metabase.yml" in result.writes.kept_stale
+    assert stale.read_text() == manual
+    assert yaml.safe_load((tmp_path / "schedules/shared.yml").read_text())["parameter_bindings"][0]["status"] == "unresolved"
+    expected = "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | 1 |"
+    assert expected in result.report_path.read_text()
+    assert expected in build.write_report(tmp_path).read_text()
+    build.apply(other, tmp_path)
+    assert expected in build.write_report(tmp_path).read_text()
+    assert bundle.to_json() == source_ir
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_report_without_path_metadata_is_conservative(tmp_path, ambiguous):
+    schedule = Schedule("Example", "shared", parameter_bindings=[{"filter_names": [], "status": "unresolved"}])
+    if ambiguous:
+        build.apply(Bundle(tool="other", schedules=[Schedule("Other", "shared")]), tmp_path)
+    build.apply(Bundle(tool="metabase", schedules=[schedule]), tmp_path)
+    (tmp_path / "migration/schedule_paths/metabase.json").unlink()
+    count = "unknown" if ambiguous else "1"
+    assert f"| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | {count} |" in build.write_report(tmp_path).read_text()
+
+
+def test_report_does_not_read_delivery_path_outside_repo(tmp_path):
+    repo = tmp_path / "repo"
+    bundle = Bundle(tool="metabase", schedules=[Schedule("Example", "shared")])
+    build.apply(bundle, repo)
+    (tmp_path / "outside.yml").write_text("source: shared\nparameter_bindings: []\n")
+    (repo / "migration/schedule_paths/metabase.json").write_text(json.dumps({"schedules/shared.yml": "../outside.yml"}))
+    assert "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | unknown |" in build.write_report(repo).read_text()
 
 
 @pytest.mark.parametrize("value", [7, {}, "region-a", False])
