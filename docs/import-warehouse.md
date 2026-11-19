@@ -3,6 +3,7 @@
 Set `UNSHACKLE_WAREHOUSE_URL` in your environment or ignored `.env`, then run:
 
 ```sh
+unshackle init --repo .
 unshackle import warehouse --repo .
 ```
 

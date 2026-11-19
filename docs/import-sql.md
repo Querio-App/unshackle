@@ -1,6 +1,7 @@
 # Import SQL and embedded Python queries
 
 ```sh
+unshackle init --repo .
 unshackle import sql ./inputs/queries ./inputs/analysis --repo .
 ```
 

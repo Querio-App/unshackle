@@ -1,6 +1,7 @@
 # Import a plain dbt project
 
 ```sh
+unshackle init --repo ./context-repo
 unshackle import dbt ./dbt-project --repo ./context-repo
 ```
 

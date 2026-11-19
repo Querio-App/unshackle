@@ -13,9 +13,11 @@ Run from your context repository. Use an existing virtual environment if you hav
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install 'unshackle[mcp]'
+unshackle init
 ```
 
-Set `UNSHACKLE_WAREHOUSE_URL` in the process environment or this repository's ignored
+`init` preserves existing files and supplies agent guidance, copied skills and ignore
+rules if your context came from a non-BI import. Set `UNSHACKLE_WAREHOUSE_URL` in the process environment or this repository's ignored
 `.env`. Use a read-only warehouse role. PostgreSQL uses
 `postgresql+psycopg://.../database?connect_timeout=10`; psycopg is included in the MCP
 extra. SQLite and DuckDB queries are also supported. Other MCP query drivers are
@@ -59,21 +61,22 @@ For failures, follow [troubleshooting](maintain.md#troubleshoot-before-retrying)
 
 ## Other clients and shared HTTP
 
-Use absolute executable and repository paths. Keep secrets in the environment or
-ignored `.env`, never in tracked client configuration.
+Replace both absolute executable and repository paths below with yours, as in the
+Claude registration. Keep secrets in the environment or ignored `.env`, never in
+tracked client configuration.
 
 Cursor, in `.cursor/mcp.json` (no secrets in this tracked configuration):
 
 ```json
-{"mcpServers":{"unshackle":{"command":"unshackle","args":["mcp","--repo","/absolute/path/to/repo"]}}}
+{"mcpServers":{"unshackle":{"command":"/absolute/path/to/context-repo/.venv/bin/unshackle","args":["mcp","--repo","/absolute/path/to/context-repo"]}}}
 ```
 
 Codex, in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.unshackle]
-command = "unshackle"
-args = ["mcp", "--repo", "/absolute/path/to/repo"]
+command = "/absolute/path/to/context-repo/.venv/bin/unshackle"
+args = ["mcp", "--repo", "/absolute/path/to/context-repo"]
 ```
 
 For HTTP, use the [hosted client instructions](deploy/README.md#connect-clients).

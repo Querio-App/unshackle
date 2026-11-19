@@ -17,7 +17,9 @@ unless a guide says otherwise; `--repo` selects another destination.
 
 These imports write context immediately. They do not establish numerical parity.
 Combine them when they describe the same warehouse, with inputs kept separately
-from generated output.
+from generated output. Run `unshackle init --repo <destination>` first to create
+agent guidance, copied skills and ignore rules; non-BI imports alone do not scaffold
+these files. Initialization preserves existing files.
 
 | Input | What it gives you | What it does not do |
 | --- | --- | --- |
