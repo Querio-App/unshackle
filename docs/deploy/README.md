@@ -80,7 +80,7 @@ read-only PostgreSQL role and production read replica for shared deployments.
 Each guide separates account/signup/billing steps from repeatable deployment, uses
 an isolated synthetic warehouse, and includes update and scoped teardown commands.
 Read the resource/cost section before executing it. These commands create billable
-resources when run; documentation preparation creates none. Provider CLIs can be
+resources when run. Provider CLIs can be
 installed and their help checked before authentication. Interactive login/MFA needs
 the account holder; a configured profile alone does not prove usable access.
 
