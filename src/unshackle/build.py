@@ -222,8 +222,9 @@ def apply(bundle: Bundle, repo: Path, dry_run: bool = False) -> BuildResult:
             if (actual := target.result.renamed.get(rel, rel)) in touched
         }
         paths_file = repo / "migration" / "schedule_paths" / f"{bundle.tool}.json"
-        paths_file.parent.mkdir(parents=True, exist_ok=True)
-        paths_file.write_text(json.dumps(delivery_paths, indent=2) + "\n")
+        if bundle.schedules or paths_file.exists():
+            paths_file.parent.mkdir(parents=True, exist_ok=True)
+            paths_file.write_text(json.dumps(delivery_paths, indent=2) + "\n")
     target.save()
     loaded = "" if dry_run else load_local_db(bundle, repo)
     report = write_report(repo, [bundle], target.result, dry_run=dry_run)

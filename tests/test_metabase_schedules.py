@@ -446,6 +446,19 @@ def test_report_does_not_read_delivery_path_outside_repo(tmp_path):
     assert "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | unknown |" in build.write_report(repo).read_text()
 
 
+def test_schedule_path_metadata_is_limited_to_schedule_builds(tmp_path):
+    bundle = Bundle(tool="metabase")
+    paths_file = tmp_path / "migration/schedule_paths/metabase.json"
+    build.apply(bundle, tmp_path)
+    assert not paths_file.exists()
+    bundle.schedules = [Schedule("Example", "shared")]
+    build.apply(bundle, tmp_path)
+    assert json.loads(paths_file.read_text()) == {"schedules/shared.yml": "schedules/shared.yml"}
+    bundle.schedules = []
+    build.apply(bundle, tmp_path)
+    assert json.loads(paths_file.read_text()) == {}
+
+
 @pytest.mark.parametrize("value", [7, {}, "region-a", False])
 def test_malformed_parameters_container_is_retained_without_aborting_parse(tmp_path, value):
     store, _ = parse(tmp_path)
