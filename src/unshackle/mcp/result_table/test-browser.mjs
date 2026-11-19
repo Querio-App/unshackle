@@ -53,9 +53,9 @@ test('safe positional rendering, exact numeric/date sorting, keyboard, filter, h
   assert.equal(await frame.locator('#body tr').count(),4);
   await frame.locator('#head button').nth(1).focus();
   await page.keyboard.press('Enter');
-  assert.deepEqual(await column(frame,2),['1.234567890123456789','9007199254740992','9007199254740993','NULL']);
+  assert.deepEqual(await column(frame,2),['1.234567890123456789','9,007,199,254,740,992','9,007,199,254,740,993','NULL']);
   await page.keyboard.press('Space');
-  assert.deepEqual(await column(frame,2),['9007199254740993','9007199254740992','1.234567890123456789','NULL']);
+  assert.deepEqual(await column(frame,2),['9,007,199,254,740,993','9,007,199,254,740,992','1.234567890123456789','NULL']);
   await frame.locator('#head button').nth(2).click();
   assert.deepEqual(await column(frame,3),['-1.0000000000000000002','-1.0000000000000000001','2','10']);
   await frame.locator('#head button').nth(3).click();
@@ -109,5 +109,22 @@ test('UI cap, empty results, text fallback, malformed/file pointer clears stale 
   await frame.locator('#count').filter({hasText:'smaller SQL LIMIT'}).waitFor();
   assert.equal(await frame.locator('#show-csv').isDisabled(),true);
   assert.equal(await frame.locator('#body tr').count(),0); await page.close();
+});
+test('precision-preserving formatting only with reliable values or explicit USD hint',async()=>{
+  const {page,frame} = await mount(result(['amount_usd','revenue','ratio','date','identifier'],[
+    ['12345678901234567890.123456789','1234.50',0.4,'2026-11-19','001234'],
+    [-1234.5,'-1234.50',0.25,'2026-01-01','001235']
+  ]));
+  assert.deepEqual(await column(frame,1),['$12,345,678,901,234,567,890.123456789','-$1,234.5']);
+  assert.deepEqual(await column(frame,2),['1,234.50','-1,234.50']);
+  assert.deepEqual(await column(frame,3),['0.4','0.25']);
+  assert.deepEqual(await column(frame,4),['Nov 19, 2026','Jan 1, 2026']);
+  assert.deepEqual(await column(frame,5),['001234','001235']);
+  await frame.locator('#search').fill('Nov 19');
+  assert.equal(await frame.locator('#body tr').count(),1);
+  await frame.locator('#show-csv').click();
+  const csv = await frame.locator('#csv').inputValue();
+  assert.ok(csv.includes('"12345678901234567890.123456789"'));
+  assert.ok(csv.includes('"2026-11-19"')); assert.ok(!csv.includes('$')); await page.close();
 });
 test.after(async()=>{await browser.close();});

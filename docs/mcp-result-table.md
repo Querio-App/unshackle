@@ -14,11 +14,14 @@ more. There is no pagination, additional query, or full-warehouse export.
 Duplicate column names are addressed by position. NULL sorts last in either direction
 and displays as `NULL`. Empty results retain their headers.
 
-Values display exactly as received; no guessed currency, percentages or units.
+Canonical numeric values display with digit grouping without changing their precision.
+Only an explicit `*_usd` column-name suffix adds a dollar symbol; other currencies,
+percentages and units are never guessed. Valid ISO date-only values display as a
+readable calendar date in UTC. Timestamps retain their original offset/text.
 Columns containing only canonical numeric values/strings sort numerically, using
 string comparison of decimal components so large integers and high-precision decimals
 are not rounded. Leading-zero identifiers stay text. ISO date/datetime columns sort
-chronologically; mixed or other strings sort as text. Values are not reformatted.
+chronologically; mixed or other strings sort as text. CSV keeps the original unformatted values, subject to formula safety below.
 Host theme and style variables update live, with local system-font fallbacks.
 
 ## CSV scope and safety
@@ -37,7 +40,7 @@ from an empty string in CSV. Before quoting, strings beginning with `=`, `+`, `-
 `@`, including after whitespace, Unicode format characters or control characters,
 receive an apostrophe prefix to mitigate spreadsheet formulas. This also protects
 untrusted headers. Typed numeric negatives remain unchanged; negative *strings*,
-including Decimal strings, receive that safety prefix. Displayed values remain exact;
+including Decimal strings, receive that safety prefix. Displayed numeric precision remains exact;
 exported text otherwise preserves the original characters. Spreadsheet importers may
 interpret types differently; choose text import to retain precision and identifiers.
 

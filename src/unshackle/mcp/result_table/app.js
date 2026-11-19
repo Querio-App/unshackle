@@ -8,7 +8,27 @@ let sortColumn = -1, ascending = true, kinds = [], downloading = false;
 const collator = new Intl.Collator(undefined, {numeric: false, sensitivity: 'base'});
 const numeric = /^[+-]?(?:(?:0|[1-9]\d*)(?:\.\d*)?|\.\d+)(?:e[+-]?\d{1,6})?$/i;
 const iso = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
-const display = (value) => value === null ? 'NULL' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+const raw = (value) => value === null ? 'NULL' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+// Formatting uses only canonical values and an explicit *_usd column-name hint.
+// Group string digits directly: Number() would round warehouse DECIMAL values.
+function display(value, index) {
+  const text = raw(value);
+  if (value !== null && kinds[index] === 'numeric' && !/[eE]/.test(text)) {
+    const match = /^([+-]?)(\d*)(\.\d*)?$/.exec(text);
+    if (match) {
+      const integer = (match[2] || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const unit = /(?:^|_)usd$/i.test(columns[index]) ? '$' : '';
+      return match[1] + unit + integer + (match[3] || '');
+    }
+  }
+  if (kinds[index] === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const date = new Date(text + 'T00:00:00Z');
+    if (date.toISOString().slice(0,10) === text) {
+      return new Intl.DateTimeFormat('en', {year:'numeric', month:'short', day:'numeric', timeZone:'UTC'}).format(date);
+    }
+  }
+  return text;
+}
 function columnKind(index) {
   const values = rows.map(row => row[index]).filter(value => value !== null);
   if (values.length && values.every(value => (typeof value === 'number' && Number.isFinite(value)) ||
@@ -39,11 +59,11 @@ function compare(a, b) {
   if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
   const order = kinds[sortColumn] === 'numeric' ? compareNumeric(x,y)
     : kinds[sortColumn] === 'date' ? Date.parse(x)-Date.parse(y)
-    : collator.compare(display(x), display(y));
+    : collator.compare(raw(x), raw(y));
   return ascending ? order : -order;
 }
 function csvCell(value) {
-  let text = value === null ? '' : display(value);
+  let text = value === null ? '' : raw(value);
   // Quote alone doesn't prevent spreadsheet formulas. Include invisible/control prefixes.
   if (typeof value !== 'number' && /^[\s\p{Cc}\p{Cf}]*[=+\-@]/u.test(text)) text = "'" + text;
   return '"' + text.replaceAll('"', '""') + '"';
@@ -52,7 +72,7 @@ function csv() { return [columns, ...visible].map(row => row.map(csvCell).join('
 function showCsv() { $('csv-panel').hidden = false; $('csv').value = csv(); }
 function render() {
   const term = $('search').value.toLocaleLowerCase();
-  visible = rows.filter(row => row.some(value => display(value).toLocaleLowerCase().includes(term)));
+  visible = rows.filter(row => row.some((value,index) => raw(value).toLocaleLowerCase().includes(term) || display(value,index).toLocaleLowerCase().includes(term)));
   if (sortColumn >= 0) visible.sort(compare);
   $('count').textContent = `${visible.length} of ${returned} returned rows shown.` +
     (returned > MAX_ROWS ? ` Table and CSV limited to the first ${MAX_ROWS} returned rows.` : '') +
@@ -75,7 +95,7 @@ function render() {
   visible.forEach(row => {
     const tr = document.createElement('tr');
     row.forEach((value,index) => {
-      const td = document.createElement('td'); td.textContent = display(value);
+      const td = document.createElement('td'); td.textContent = display(value,index);
       if (value === null) td.classList.add('null');
       if (kinds[index] === 'numeric') td.classList.add('numeric');
       tr.append(td);
