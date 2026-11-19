@@ -118,7 +118,7 @@ def test_real_postgres_seed_and_http_probe(tmp_path, private_state, monkeypatch)
         volumes = [mount["Name"] for mount in mounts if mount["Type"] == "volume"]
         assert volumes, "Expected the Postgres data volume to be included in cleanup"
         for _ in range(120):
-            ready = subprocess.run(["docker", "exec", name, "pg_isready", "-U", "postgres", "-d", "example"], capture_output=True)
+            ready = subprocess.run(["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "example"], capture_output=True)
             if ready.returncode == 0:
                 break
             time.sleep(0.25)
