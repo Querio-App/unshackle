@@ -132,7 +132,7 @@ export CONTEXT="$STATE/fixture/context"
 child environment. The helper uses the existing fictional customers/orders,
 warehouse/dbt/SQL importers, and creates `example_reader`: SELECT on just those two
 tables, no database/schema creation, no temp tables, and read-only transactions.
-It checks UPDATE denial with read-only mode disabled; transaction defaults alone
+It checks UPDATE/DELETE/CREATE/TEMP denial with read-only mode disabled; transaction defaults alone
 are not authorization. It refuses an existing reader role or nonempty database.
 The private warehouse URL uses `postgresql+psycopg`, the included driver with native
 cancellation, and `connect_timeout=10`. Both connections require TLS. `sslmode=require`
@@ -249,7 +249,7 @@ It rejects HTTP and redirects, requires 401 for missing/wrong bearer, initialize
 MCP protocol `2025-11-25`, sends `notifications/initialized`, lists tools/resources,
 reads context/notebooks, rejects `.env`, verifies `example_reader` and read-only
 mode, checks a two-row cap, rejects a DELETE, and runs `pg_sleep(35)` to check the
-30-second deadline followed by a successful query. The fixture seed separately
+30-second deadline followed by a successful query and zero active sleep queries. The fixture seed separately
 proved database write denial, beyond the MCP SQL parser. Native psycopg cancellation
 and Postgres statement timeout bound execution; connection time has its own timeout.
 
@@ -292,10 +292,34 @@ at first startup prevents the server from starting.
 For a context update, commit/push a harmless file change under `knowledge/`, wait
 at least 60 seconds, then confirm it via MCP `search`/`read`; the branch `main` tracks
 updates, while a pinned commit intentionally does not. Revert the change and check
-refresh again. For application updates, select a reviewed new source commit, create
-a **new** upload directory from `git archive`, and run the same `railway up` command
-against the saved project/service/environment. Record both source and context SHAs,
-and repeat probe/client checks. To roll back, upload the previous recorded SHA.
+refresh again. For application updates, select a reviewed new source commit, create a **new**
+upload directory, apply the same Dockerfile adaptation, and target the saved service:
+
+```bash
+export SOURCE_SHA="$(git rev-parse HEAD)"   # after selecting the reviewed revision
+export UPDATE_UPLOAD="$(mktemp -d "$STATE/upload-update.XXXXXX")"
+git archive "$SOURCE_SHA" | tar -x -C "$UPDATE_UPLOAD"
+git show "$SOURCE_SHA:Dockerfile" | sed '/^VOLUME \["\/tmp"\]$/d' > "$UPDATE_UPLOAD/Dockerfile"
+railway up "$UPDATE_UPLOAD" --path-as-root --project "$RW_PROJECT" \
+  --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT" --ci
+railway service list
+python deploy/railway/check.py
+```
+
+Record both source and context SHAs, and repeat probe/client checks. To roll back, use the initial recorded SHA and the same adaptation (the rollback
+sequence is locally checked; an actual Railway rollback was not exercised):
+
+```bash
+export SOURCE_SHA="$(cat "$STATE/source-sha")"
+export ROLLBACK_UPLOAD="$(mktemp -d "$STATE/upload-rollback.XXXXXX")"
+git archive "$SOURCE_SHA" | tar -x -C "$ROLLBACK_UPLOAD"
+git show "$SOURCE_SHA:Dockerfile" | sed '/^VOLUME \["\/tmp"\]$/d' > "$ROLLBACK_UPLOAD/Dockerfile"
+railway up "$ROLLBACK_UPLOAD" --path-as-root --project "$RW_PROJECT" \
+  --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT" --ci
+railway service list
+python deploy/railway/check.py
+```
+
 Restart periodically to reclaim old Git snapshots if context changes frequently.
 
 For bearer rotation, create a new 0600 token file with Python's `secrets.token_urlsafe(32)`,

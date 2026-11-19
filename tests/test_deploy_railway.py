@@ -153,3 +153,33 @@ with open(os.environ['CAPTURE'], 'a') as f:
     assert [e['stdin'] for e in entries] == ["example-private-warehouse", "example-private-token"]
     assert all('example-private' not in ' '.join(e['argv']) for e in entries)
     assert all('--skip-deploys' in e['argv'] and '--stdin' in e['argv'] for e in entries)
+
+
+def test_documented_initial_update_and_rollback_uploads(tmp_path):
+    import re
+    document = (ROOT / "docs/deploy/railway.md").read_text()
+    sequences = re.findall(r'git archive "\$SOURCE_SHA"[^\n]*\n(?:[^\n]*\n)*?railway up [^\n]*\\\n[^\n]*--ci', document)
+    assert len(sequences) == 3
+    source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    original = subprocess.check_output(["git", "show", f"{source}:Dockerfile"], cwd=ROOT, text=True)
+    mock = tmp_path / "railway"
+    mock.write_text(f'''#!{sys.executable}
+import pathlib, sys
+assert sys.argv[1] == 'up'
+assert '--path-as-root' in sys.argv and '--project' in sys.argv
+assert '--service' in sys.argv and '--environment' in sys.argv
+p = pathlib.Path(sys.argv[2])
+assert 'VOLUME ' not in (p/'Dockerfile').read_text()
+assert (p/'deploy/entrypoint.sh').is_file() and (p/'src/unshackle/cli.py').is_file()
+''')
+    mock.chmod(0o700)
+    for index, sequence in enumerate(sequences):
+        state = tmp_path / str(index)
+        upload = state / "upload"
+        upload.mkdir(parents=True)
+        subprocess.run(["bash", "-euo", "pipefail", "-c", sequence], check=True, cwd=ROOT,
+                       env={**os.environ, "PATH": str(tmp_path)+os.pathsep+os.environ["PATH"],
+                            "STATE": str(state), "SOURCE_SHA": source, "UPDATE_UPLOAD": str(upload),
+                            "ROLLBACK_UPLOAD": str(upload), "RW_PROJECT": "example-project",
+                            "RW_SERVICE": "example-mcp", "RW_ENVIRONMENT": "production"})
+        assert (upload / "Dockerfile").read_text() == original.replace('VOLUME ["/tmp"]\n', '')
