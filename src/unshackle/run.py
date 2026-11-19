@@ -51,9 +51,7 @@ def query(sql: str, params: dict[str, Any], url: str | None = None, *,
             raw = conn.connection.driver_connection
             cancel = None
             if timeout is not None:
-                if dialect == "sqlite":
-                    cancel = raw.interrupt
-                elif dialect == "duckdb":
+                if dialect in {"sqlite", "duckdb"}:
                     cancel = raw.interrupt
                 elif dialect == "postgresql" and callable(getattr(raw, "cancel", None)):
                     cancel = raw.cancel
