@@ -46,6 +46,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unshackle"]
+exclude = ["src/unshackle/mcp/result_table/node_modules/**"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "skills" = "unshackle/_data/skills"

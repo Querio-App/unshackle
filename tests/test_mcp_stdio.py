@@ -17,7 +17,7 @@ def test_stdio_protocol_tools_resources_and_query(tmp_path):
                 await session.initialize()
                 assert {t.name for t in (await session.list_tools()).tools} == {'overview', 'search', 'read', 'run_query'}
                 resources = (await session.list_resources()).resources
-                assert len(resources) == 1
+                assert len(resources) == 2
                 assert 'Revenue' in (await session.read_resource(resources[0].uri)).contents[0].text
                 result = await session.call_tool('read', {'path': 'knowledge/note.md'})
                 assert result.structuredContent['has_todo']

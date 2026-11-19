@@ -15,6 +15,7 @@ from mcp.server.lowlevel.helper_types import ReadResourceContents
 
 from .query import DEFAULT_LIMIT, DEFAULT_TIMEOUT, MAX_LIMIT, run_query as execute
 from .repository import Repository
+from . import result_ui
 
 
 def create_server(repo: Path | Callable[[], Path], *, max_rows: int = MAX_LIMIT,
@@ -28,9 +29,14 @@ def create_server(repo: Path | Callable[[], Path], *, max_rows: int = MAX_LIMIT,
     class Server(FastMCP):
         async def list_resources(self):
             return [Resource(uri='unshackle://repo/' + quote(p, safe='/'), name=p, mimeType='application/json')
-                    for p in repository().files()]
+                    for p in repository().files()] + [Resource(
+                        uri=result_ui.UI_URI, name='Query results table', mimeType=result_ui.UI_MIME,
+                        **{'_meta': result_ui.metadata()})]
 
         async def read_resource(self, uri):
+            if str(uri) == result_ui.UI_URI:
+                return [ReadResourceContents(content=result_ui.html(), mime_type=result_ui.UI_MIME,
+                                             meta=result_ui.metadata())]
             parsed = urlsplit(str(uri))
             if parsed.scheme != 'unshackle' or parsed.netloc != 'repo' or parsed.query or parsed.fragment:
                 raise ValueError('Unknown repository resource')
@@ -57,7 +63,7 @@ def create_server(repo: Path | Callable[[], Path], *, max_rows: int = MAX_LIMIT,
 
     query_slots = anyio.CapacityLimiter(4)
 
-    @server.tool()
+    @server.tool(meta={'ui': {'resourceUri': result_ui.UI_URI}, 'ui/resourceUri': result_ui.UI_URI})
     async def run_query(sql: str, limit: int = min(DEFAULT_LIMIT, max_rows)) -> dict[str, Any]:
         """Run one SELECT/WITH, with a row cap and cancellable execution deadline."""
         return await anyio.to_thread.run_sync(partial(execute, sql, limit, max_rows=max_rows, timeout=timeout), limiter=query_slots)
