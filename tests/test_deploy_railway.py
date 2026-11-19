@@ -110,3 +110,46 @@ def test_real_postgres_seed_permissions_context_and_http(tmp_path, monkeypatch):
             subprocess.run(["docker", "rm", "-fv", name], check=True, capture_output=True)
         shutil.rmtree(output, ignore_errors=True)
         shutil.rmtree(tmp_path / "rerun", ignore_errors=True)
+
+
+def test_documented_shell_syntax_and_railway_build_input(tmp_path):
+    import re
+    document = (ROOT / "docs/deploy/railway.md").read_text()
+    for block in re.findall(r"```bash\n(.*?)\n```", document, re.S):
+        subprocess.run(["bash", "-n"], input=block, text=True, check=True)
+    original = (ROOT / "Dockerfile").read_text()
+    assert original.count('VOLUME ["/tmp"]\n') == 1
+    # Execute the exact provider adaptation: all other image instructions survive.
+    result = subprocess.run(["sed", '/^VOLUME \\["\\/tmp"\\]$/d'], input=original,
+                            text=True, check=True, capture_output=True)
+    assert result.stdout == original.replace('VOLUME ["/tmp"]\n', '')
+    assert 'USER 10001:10001' in result.stdout
+    assert 'ENTRYPOINT ["/usr/local/bin/unshackle-http"]' in result.stdout
+
+
+def test_documented_secret_commands_use_stdin_not_argv(tmp_path):
+    import json
+    import re
+    state = tmp_path / "state"
+    (state / "fixture").mkdir(parents=True)
+    (state / "fixture/warehouse-url").write_text("example-private-warehouse")
+    (state / "fixture/mcp-token").write_text("example-private-token")
+    executable = tmp_path / "railway"
+    executable.write_text(f'''#!{sys.executable}
+import json, os, sys
+with open(os.environ['CAPTURE'], 'a') as f:
+    f.write(json.dumps({{"argv": sys.argv[1:], "stdin": sys.stdin.read()}}) + '\\n')
+''')
+    executable.chmod(0o700)
+    document = (ROOT / "docs/deploy/railway.md").read_text()
+    commands = re.findall(r'railway variable set[^\n]*\\\n  UNSHACKLE_(?:WAREHOUSE_URL|MCP_TOKEN) --stdin[^\n]*', document)
+    assert len(commands) == 2
+    capture = tmp_path / "commands.jsonl"
+    subprocess.run(["bash", "-e", "-c", "\n".join(commands)], check=True,
+                   env={**os.environ, "PATH": str(tmp_path)+os.pathsep+os.environ["PATH"],
+                        "STATE": str(state), "RW_SERVICE": "example-mcp", "RW_ENVIRONMENT": "production",
+                        "CAPTURE": str(capture)})
+    entries = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [e['stdin'] for e in entries] == ["example-private-warehouse", "example-private-token"]
+    assert all('example-private' not in ' '.join(e['argv']) for e in entries)
+    assert all('--skip-deploys' in e['argv'] and '--stdin' in e['argv'] for e in entries)

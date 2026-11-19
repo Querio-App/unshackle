@@ -9,7 +9,7 @@ Do not treat this recipe as executed cloud acceptance. See the
 
 This recipe creates one disposable project, one `production` environment, one MCP
 service, one Postgres service/volume and one generated synthetic GitHub context
-repository. Railway builds/uploads the image internally from the existing root
+repository. Railway builds/uploads the image internally from a Railway-compatible copy of the root
 [Dockerfile](../../Dockerfile); a Docker registry account and separate `docker push`
 are unnecessary. Source code and context are different repositories.
 
@@ -107,7 +107,7 @@ railway link --project "$RW_PROJECT" --environment "$RW_ENVIRONMENT"
 railway add --database postgres
 railway add --service "$RW_SERVICE"
 railway status
-railway service status --all
+railway service list
 railway volume list
 ```
 
@@ -207,14 +207,19 @@ railway scale --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT" \
 # Upload only tracked source, never local credential/config files or .venv.
 mkdir "$STATE/upload"
 git archive "$SOURCE_SHA" | tar -x -C "$STATE/upload"
+# Railway rejects Docker VOLUME; remove only the root image's /tmp declaration.
+git show "$SOURCE_SHA:Dockerfile" | sed '/^VOLUME \["\/tmp"\]$/d' > "$STATE/upload/Dockerfile"
 railway up "$STATE/upload" --path-as-root --project "$RW_PROJECT" \
   --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT" --ci
-railway service status --all
+railway service list
 railway domain --service "$RW_SERVICE" --port 8000 --environment "$RW_ENVIRONMENT"
 ```
 
 [up](https://docs.railway.com/cli/up) uploads the source and uses its Dockerfile for
-Railway's remote image build/push/deploy. `--ci` waits for build output, **not** hosted
+Railway's remote image build/push/deploy. Railway rejects Docker `VOLUME` instructions;
+the temporary upload removes exactly `VOLUME ["/tmp"]` while retaining the existing
+entrypoint, dependencies, non-root user and writable temporary directory. The shared
+Dockerfile remains unchanged; this server does not need a persistent `/tmp` volume. `--ci` waits for build output, **not** hosted
 acceptance. Do not use `--new` on updates. The root entrypoint binds `0.0.0.0:$PORT`
 and runs as UID/GID 10001. No persistent app volume is needed; Postgres owns the data
 volume. Runtime Git snapshots use temporary disk, retained until restart.
@@ -311,7 +316,7 @@ export RW_PROJECT="$(jq -er '.id' "$STATE/project.json")"
 export CONTEXT_REPO="$(cat "$STATE/context-repo")"
 railway link --project "$RW_PROJECT" --environment "$RW_ENVIRONMENT"
 railway status
-railway service status --all
+railway service list
 railway volume list
 railway domain list --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT"
 railway tcp-proxy list --service "$RW_DB_SERVICE" --environment "$RW_ENVIRONMENT"
