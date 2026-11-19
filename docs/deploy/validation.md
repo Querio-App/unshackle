@@ -20,7 +20,7 @@ hosted client behavior; each row below records only the evidence obtained.
 | Codex CLI hosted five-answer run | [5/5](../../deploy/railway/evidence/codex-railway-http.json) | Not run | Not run |
 | Cursor hosted five-answer run | [5/5](../../deploy/railway/evidence/cursor-railway-http.json) | Not run | Not run |
 | Service update and Git refresh | Update passed; marker add/revert refreshed without restart | Not run | Not run hosted |
-| Scoped teardown/resource absence | Railway project absent; context repository deletion blocked by GitHub scope | Owned services/resources absent; project `DELETE_REQUESTED` | No cloud resources created |
+| Scoped teardown/resource absence | Railway project absent; context repository subsequently retained for the team demo | Owned services/resources absent; project `DELETE_REQUESTED` | No cloud resources created |
 
 Railway evidence includes [deployment, refresh and cleanup results](../../deploy/railway/evidence/live-run.json).
 All three clients used the initial image; the final update was checked separately
@@ -38,10 +38,16 @@ is asynchronous. No GCP billing total was observed.
 
 Before resuming, the account holder can grant GitHub's `delete_repo` scope with
 `gh auth refresh -h github.com -s delete_repo`, or arrange deletion of only the
-recorded temporary context repository. The same missing permission prevents final
-Railway context-repository cleanup. Credentials need not be shared. Use a new
+recorded temporary GCP context repository if one is created. Credentials need not be shared. Use a new
 isolated GCP rehearsal after the prior project shutdown; follow the guide and
 complete the remaining hosted gates before changing these statuses.
+
+The owner subsequently authorized a separate [persistent Dunder Mifflin demo](team-demo.md).
+It reuses the original Railway synthetic context repository on a dedicated branch,
+preserving the rehearsal history. That repository is now intentionally retained,
+not awaiting deletion. The old Railway cloud project was removed; the new demo
+resources remain running by request. Do not run the old context-deletion command
+against this retained repository. Its new acceptance is separate from this matrix.
 
 The GCP test cleanup and shared local fixture generator now remove their own
 anonymous Postgres volumes, with exact-volume verification. Possible volumes from
