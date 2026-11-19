@@ -309,6 +309,30 @@ def load_bundles(repo: Path) -> list[Bundle]:
     return [Bundle.from_json(p.read_text()) for p in sorted(ir_dir.glob("*.json"))]
 
 
+def _delivered_unresolved(target: Target, rel: str, source_ref: str) -> int | str:
+    """Read the delivered bindings, including files the writer preserved by hand."""
+    import yaml
+
+    owner = target.lock.owners.get(rel)
+    try:
+        if owner and owner != target.tool:
+            renamed = target._rename_for_tool(rel)
+            # Differing content is suffixed; identical content can share the base file.
+            if target.read(renamed) is not None:
+                rel = renamed
+        doc = yaml.safe_load(target.read(rel) or "")
+    except (yaml.YAMLError, UnsafePath):
+        return "unknown"
+    if not isinstance(doc, dict) or doc.get("source") != source_ref:
+        return "unknown"
+    bindings = doc.get("parameter_bindings")
+    if not isinstance(bindings, list) or any(
+        not isinstance(p, dict) or p.get("status") not in ("translated", "default", "unresolved") for p in bindings
+    ):
+        return "unknown"
+    return sum(p["status"] == "unresolved" for p in bindings)
+
+
 def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteResult | None = None, dry_run: bool = False) -> Path:
     stored = {b.tool: b for b in load_bundles(repo)}
     for b in bundles or []:
@@ -370,12 +394,13 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
             lines += [f"### {d.name} ({tool})", "", *[f"- {x}" for x in d.not_migrated], ""]
     subscriptions = []
     for b in stored.values():
+        target = Target(repo, tool=b.tool)
         dash_names = {d.source_ref: d.name for d in b.dashboards}
-        for s in b.schedules:
+        for rel, s in schedules.file_paths(b, target.layout).items():
             email_channels = [c for c in s.channels if c.type == "email"]
             contacts = sum(len(c.details.get("recipient_emails") or []) for c in email_channels)
             unknown_recipients = sum(1 for c in s.channels if c.recipients is None)
-            unresolved = sum(1 for p in s.parameter_bindings if p.get("status") == "unresolved")
+            unresolved = _delivered_unresolved(target, rel, s.source_ref)
             subscriptions.append(
                 f"| {b.tool} | {s.name.replace('|', '/')} | "
                 f"{(dash_names.get(s.dashboard_ref) or s.dashboard_ref or '(unknown)').replace('|', '/')} | "
@@ -393,6 +418,7 @@ def write_report(repo: Path, bundles: list[Bundle] | None = None, writes: WriteR
             "",
             "Contacts found: deduped email targets extracted from each email channel's recipient_emails field.",
             "Unknown recipient lists: channels where recipients were not returned by the source API.",
+            "Unresolved params: counted from delivered schedule files; unknown if a matching file or its bindings cannot be read.",
             "",
         ]
     todos = scan_todos(repo, all_generated(repo)) if not dry_run else []

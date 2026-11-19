@@ -10,7 +10,7 @@ import yaml
 
 from unshackle import build
 from unshackle.http import Client
-from unshackle.ir import Bundle, Dashboard, Tile
+from unshackle.ir import Bundle, Dashboard, DashboardFilter, Schedule, Tile
 from unshackle.raw import RawStore
 from unshackle.sources.metabase import MetabaseSource, _filter_binds, _parameter_names
 
@@ -287,6 +287,9 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     bundle.dashboards[0].tiles = [Tile("result", kind="table", sql="SELECT :engine AS region")]
     build.apply(bundle, tmp_path)
     notebook = tmp_path / "notebooks/client-reporting.ipynb"
+    assert "| metabase | Client weekly report | Client reporting | 3 | 2 | 3 | 0 | 0 |" in (
+        tmp_path / "migration/report.md"
+    ).read_text()
     manual = notebook.read_text().replace("tile_engine", "manual_engine")
     notebook.write_text(manual)
     pulse["parameters"][0]["value"] = ["East"]
@@ -309,6 +312,89 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     assert binding["status"] == "unresolved" and binding["notebook_names"] == []
     assert binding["value"] == ["East"] and binding["filter_names"] == ["engine"]
     assert "kept notebook" in doc["todo"] and "reconcile" in binding["todo"]
+    assert bundle.schedules[0].parameter_bindings[0]["status"] == "translated"
+    if not dry_run:
+        expected = "| metabase | Client weekly report | Client reporting | 3 | 2 | 3 | 0 | 1 |"
+        assert expected in result.report_path.read_text()
+        assert expected in build.write_report(tmp_path).read_text()
+        stored = build.load_bundles(tmp_path)[0]
+        assert stored.schedules[0].parameter_bindings[0]["status"] == "translated"
+
+
+def test_report_reads_preserved_delivery_with_layout_and_collisions(tmp_path):
+    (tmp_path / "unshackle.toml").write_text('[paths]\nschedules = "delivery"\nnotebooks = "reports"\n')
+    other = Bundle(tool="other", schedules=[Schedule(
+        "Other", "shared:subscription", parameter_bindings=[
+            {"filter_names": [], "status": "unresolved"}, {"filter_names": [], "status": "unresolved"},
+        ],
+    )])
+    build.apply(other, tmp_path)
+    bundle = Bundle(tool="metabase", dashboards=[Dashboard(
+        "Example", "example", source_ref="dashboard", filters=[DashboardFilter("region")],
+    )], schedules=[
+        Schedule("Translated", "shared:subscription", "dashboard", parameters={"region": "West"},
+                 parameter_bindings=[{"filter_names": ["region"], "status": "translated", "value": "West"}]),
+        Schedule("Unresolved", "shared/subscription", "dashboard", parameter_bindings=[
+            {"filter_names": [], "status": "unresolved", "todo": "source mapping unavailable"},
+        ]),
+        Schedule("No bindings", "shared:empty", "dashboard"),
+    ])
+    source_ir = bundle.to_json()
+    result = build.apply(bundle, tmp_path)
+    assert result.writes.renamed["delivery/shared-subscription.yml"] == "delivery/shared-subscription.metabase.yml"
+    notebook = tmp_path / "reports/example.ipynb"
+    manual = notebook.read_text().replace('"nbformat_minor": 5', '"nbformat_minor": 4')
+    assert manual != notebook.read_text()
+    notebook.write_text(manual)
+    delivery = tmp_path / "delivery/shared-subscription.metabase.yml"
+    doc = yaml.safe_load(delivery.read_text())
+    doc["parameter_bindings"][0]["status"] = "default"
+    protected = yaml.safe_dump(doc) + "# hand edit\n"
+    delivery.write_text(protected)
+
+    result = build.apply(bundle, tmp_path)
+    assert notebook.read_text() == manual and delivery.read_text() == protected
+    assert "delivery/shared-subscription.metabase.yml" in result.writes.kept_hand_edits
+    unresolved = yaml.safe_load((tmp_path / "delivery/shared-subscription-2.yml").read_text())
+    assert unresolved["source"] == "shared/subscription"
+    assert unresolved["parameter_bindings"][0]["status"] == "unresolved"
+    assert "source mapping unavailable" in unresolved["parameter_bindings"][0]["todo"]
+    assert "kept notebook" in unresolved["todo"]
+    assert yaml.safe_load((tmp_path / "delivery/shared-empty.yml").read_text())["parameter_bindings"] == []
+    assert yaml.safe_load((tmp_path / "delivery/shared-subscription.yml").read_text())["name"] == "Other"
+    for report in (result.report_path.read_text(), build.write_report(tmp_path).read_text()):
+        assert "| metabase | Translated | Example | 0 | 0 | 0 | 0 | 0 |" in report
+        assert "| metabase | Unresolved | Example | 0 | 0 | 0 | 0 | 1 |" in report
+        assert "| metabase | No bindings | Example | 0 | 0 | 0 | 0 | 0 |" in report
+        assert "| other | Other | (unknown) | 0 | 0 | 0 | 0 | 2 |" in report
+    assert bundle.to_json() == source_ir
+    assert next(b for b in build.load_bundles(tmp_path) if b.tool == "metabase").to_json() == source_ir
+
+
+@pytest.mark.parametrize("contents", [None, "invalid: [", "{}", "parameter_bindings: []\nsource: another",
+                                      "source: shared\nparameter_bindings: [{}]",
+                                      "source: shared\nparameter_bindings: [{status: []}]"])
+def test_report_marks_unreadable_delivery_bindings_unknown(tmp_path, contents):
+    bundle = Bundle(tool="metabase", schedules=[Schedule("Example", "shared")])
+    build.apply(bundle, tmp_path)
+    delivery = tmp_path / "schedules/shared.yml"
+    if contents is None:
+        delivery.unlink()
+    else:
+        delivery.write_text(contents)
+    assert "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | unknown |" in build.write_report(tmp_path).read_text()
+
+
+def test_report_reads_identical_delivery_shared_by_tools(tmp_path):
+    schedule = Schedule("Example", "shared", parameter_bindings=[{"filter_names": [], "status": "unresolved"}])
+    build.apply(Bundle(tool="other", schedules=[schedule]), tmp_path)
+    result = build.apply(Bundle(tool="metabase", schedules=[schedule]), tmp_path)
+    assert "schedules/shared.yml" in result.writes.unchanged
+    assert not result.writes.renamed
+    assert not (tmp_path / "schedules/shared.metabase.yml").exists()
+    report = build.write_report(tmp_path).read_text()
+    for tool in ("metabase", "other"):
+        assert f"| {tool} | Example | (unknown) | 0 | 0 | 0 | 0 | 1 |" in report
 
 
 @pytest.mark.parametrize("value", [7, {}, "region-a", False])
