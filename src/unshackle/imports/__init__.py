@@ -5,7 +5,6 @@ from typing import Sequence
 
 from unshackle.ir import Bundle
 
-TOOLS = ("warehouse", "dbt", "sql")
 
 
 def parse(tool: str, paths: Sequence[Path], *, url: str | None = None) -> Bundle:
