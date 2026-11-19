@@ -1,0 +1,13 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Unshackle disposable acceptance image repository
+Resources:
+  Images:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: {Ref: 'AWS::StackName'}
+      ImageTagMutability: IMMUTABLE
+      EmptyOnDelete: true
+      ImageScanningConfiguration: {ScanOnPush: true}
+Outputs:
+  ImageRepository:
+    Value: {Fn::GetAtt: [Images, RepositoryUri]}
