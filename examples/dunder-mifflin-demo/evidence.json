@@ -1,0 +1,759 @@
+{
+  "date": "2026-11-19",
+  "persistent": true,
+  "source_commit": "10038ec9f2c0a5465f1fb8eb3acaafb3b08bb960",
+  "runtime_src_tree": "5f9fa8c52a1e761b8b1f13b0b2009cf430a9d129",
+  "root_dockerfile_sha256": "606873a3f2f821ad428b4f5c2ea04bbe54f2a631a198d93903e1477d42d0c7a4",
+  "provider_dockerfile_sha256": "29e01e0fbe01d8a4a5ced3ed2cc52509b0bd4b860ee8c13faed3f1e03f360584",
+  "image_digest": "sha256:a06d9e8a0710813b699d8be57bdd6cd458ee8983ac1e0aa992eb44d14fed18d4",
+  "context_commit": "74124d3f2fc9a5de460dc48d8dcc7bceae740c77",
+  "questions_sha256": "e9d8b44dd08d02cf54968b7e24b0ffe64a1e8018e0e934e3ee978bc51856abb5",
+  "dataset": {
+    "physical_tables": 10,
+    "logical_dbt_catalog_entries": 1,
+    "historical_orders": 3503,
+    "scenario_orders": 240
+  },
+  "https_sdk": {
+    "protocol": "2025-11-25",
+    "questions": {
+      "q1": [
+        [
+          "92664.00"
+        ]
+      ],
+      "q2": [
+        [
+          "Nashua",
+          "48672.00"
+        ],
+        [
+          "Scranton",
+          "13104.00"
+        ],
+        [
+          "Stamford",
+          "30888.00"
+        ]
+      ],
+      "q3": [
+        [
+          "2025-01",
+          "1188.00"
+        ],
+        [
+          "2025-02",
+          "2376.00"
+        ],
+        [
+          "2025-03",
+          "3564.00"
+        ],
+        [
+          "2025-04",
+          "4752.00"
+        ],
+        [
+          "2025-05",
+          "5940.00"
+        ],
+        [
+          "2025-06",
+          "7128.00"
+        ],
+        [
+          "2025-07",
+          "8316.00"
+        ],
+        [
+          "2025-08",
+          "9504.00"
+        ],
+        [
+          "2025-09",
+          "10692.00"
+        ],
+        [
+          "2025-10",
+          "11880.00"
+        ],
+        [
+          "2025-11",
+          "13068.00"
+        ],
+        [
+          "2025-12",
+          "14256.00"
+        ]
+      ],
+      "q4": [
+        [
+          "Danny Cordray",
+          "25272.00"
+        ]
+      ],
+      "q5": [
+        [
+          "37065.60",
+          "0.400000"
+        ]
+      ],
+      "q6": [
+        [
+          "cancelled",
+          12,
+          "24000.00"
+        ],
+        [
+          "returned",
+          12,
+          "12000.00"
+        ]
+      ],
+      "q7": [
+        [
+          "Example Customer 12",
+          "13608.00"
+        ]
+      ],
+      "q8": [
+        [
+          181,
+          3503,
+          15,
+          1655,
+          2812
+        ]
+      ]
+    },
+    "deadline_seconds": 15.21,
+    "auth_401": true,
+    "tools_resources_context": true,
+    "cap": 1000,
+    "native_cancel_recovery": true,
+    "lingering_queries": 0
+  },
+  "direct_reader_role": {
+    "transaction_read_only_disabled_for_denial_checks": true,
+    "denied": [
+      "UPDATE",
+      "DELETE",
+      "CREATE TABLE",
+      "CREATE TEMP TABLE"
+    ]
+  },
+  "claude_code": {
+    "version": "2.1.308",
+    "exit_code": 0,
+    "completed_sql_calls": 11,
+    "errors": 0,
+    "context_tools": [
+      "overview",
+      "read",
+      "run_query",
+      "search"
+    ],
+    "answers": [
+      {
+        "question": "q1",
+        "query_index": 3,
+        "rows": [
+          [
+            "92664.00"
+          ]
+        ],
+        "selection": "all rows"
+      },
+      {
+        "question": "q2",
+        "query_index": 4,
+        "rows": [
+          [
+            "Nashua",
+            "48672.00"
+          ],
+          [
+            "Scranton",
+            "13104.00"
+          ],
+          [
+            "Stamford",
+            "30888.00"
+          ]
+        ],
+        "selection": "all rows"
+      },
+      {
+        "question": "q3",
+        "query_index": 5,
+        "rows": [
+          [
+            "2025-01",
+            "1188.00"
+          ],
+          [
+            "2025-02",
+            "2376.00"
+          ],
+          [
+            "2025-03",
+            "3564.00"
+          ],
+          [
+            "2025-04",
+            "4752.00"
+          ],
+          [
+            "2025-05",
+            "5940.00"
+          ],
+          [
+            "2025-06",
+            "7128.00"
+          ],
+          [
+            "2025-07",
+            "8316.00"
+          ],
+          [
+            "2025-08",
+            "9504.00"
+          ],
+          [
+            "2025-09",
+            "10692.00"
+          ],
+          [
+            "2025-10",
+            "11880.00"
+          ],
+          [
+            "2025-11",
+            "13068.00"
+          ],
+          [
+            "2025-12",
+            "14256.00"
+          ]
+        ],
+        "selection": "all rows"
+      },
+      {
+        "question": "q4",
+        "query_index": 6,
+        "rows": [
+          [
+            "Danny Cordray",
+            "25272.00"
+          ]
+        ],
+        "selection": "first row of ordered top3"
+      },
+      {
+        "question": "q5",
+        "query_index": 7,
+        "rows": [
+          [
+            "37065.60",
+            "0.40000000000000000000"
+          ]
+        ],
+        "selection": "all rows"
+      },
+      {
+        "question": "q6",
+        "query_index": 8,
+        "rows": [
+          [
+            "cancelled",
+            12,
+            "24000.00"
+          ],
+          [
+            "returned",
+            12,
+            "12000.00"
+          ]
+        ],
+        "selection": "all rows"
+      },
+      {
+        "question": "q7",
+        "query_index": 9,
+        "rows": [
+          [
+            "Example Customer 12",
+            "13608.00"
+          ]
+        ],
+        "selection": "first row of ordered top3"
+      },
+      {
+        "question": "q8",
+        "query_index": 10,
+        "rows": [
+          [
+            181,
+            3503,
+            15,
+            1655,
+            2812
+          ]
+        ],
+        "selection": "all rows"
+      }
+    ],
+    "queries": [
+      {
+        "sql": "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2",
+        "result": {
+          "columns": [
+            "table_schema",
+            "table_name",
+            "table_type"
+          ],
+          "rows": [
+            [
+              "public",
+              "branches",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "customers",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "employees",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "history_accounts",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "history_orders",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "history_products",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "history_reviews",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "history_shippings",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "orders",
+              "BASE TABLE"
+            ],
+            [
+              "public",
+              "products",
+              "BASE TABLE"
+            ]
+          ],
+          "row_count": 10,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('branches','customers','employees','orders') ORDER BY 1, ordinal_position",
+        "result": {
+          "columns": [
+            "table_name",
+            "column_name",
+            "data_type"
+          ],
+          "rows": [
+            [
+              "branches",
+              "branch_id",
+              "integer"
+            ],
+            [
+              "branches",
+              "branch_name",
+              "text"
+            ],
+            [
+              "customers",
+              "customer_id",
+              "integer"
+            ],
+            [
+              "customers",
+              "customer_name",
+              "text"
+            ],
+            [
+              "customers",
+              "employee_id",
+              "integer"
+            ],
+            [
+              "employees",
+              "employee_id",
+              "integer"
+            ],
+            [
+              "employees",
+              "employee_name",
+              "text"
+            ],
+            [
+              "employees",
+              "branch_id",
+              "integer"
+            ],
+            [
+              "orders",
+              "order_id",
+              "integer"
+            ],
+            [
+              "orders",
+              "ordered_at",
+              "date"
+            ],
+            [
+              "orders",
+              "customer_id",
+              "integer"
+            ],
+            [
+              "orders",
+              "product_id",
+              "text"
+            ],
+            [
+              "orders",
+              "quantity",
+              "integer"
+            ],
+            [
+              "orders",
+              "gross_usd",
+              "numeric"
+            ],
+            [
+              "orders",
+              "discount_usd",
+              "numeric"
+            ],
+            [
+              "orders",
+              "net_usd",
+              "numeric"
+            ],
+            [
+              "orders",
+              "cost_usd",
+              "numeric"
+            ],
+            [
+              "orders",
+              "status",
+              "text"
+            ]
+          ],
+          "row_count": 18,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT status, count(*), sum(net_usd), min(ordered_at), max(ordered_at) FROM orders GROUP BY status ORDER BY status",
+        "result": {
+          "columns": [
+            "status",
+            "count",
+            "sum",
+            "min",
+            "max"
+          ],
+          "rows": [
+            [
+              "cancelled",
+              12,
+              "24000.00",
+              "2025-01-20",
+              "2025-12-20"
+            ],
+            [
+              "completed",
+              216,
+              "92664.00",
+              "2025-01-15",
+              "2025-12-15"
+            ],
+            [
+              "returned",
+              12,
+              "12000.00",
+              "2025-01-20",
+              "2025-12-20"
+            ]
+          ],
+          "row_count": 3,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT SUM(net_usd) AS revenue_usd FROM orders WHERE status='completed' AND ordered_at >= '2025-01-01' AND ordered_at < '2026-01-01'",
+        "result": {
+          "columns": [
+            "revenue_usd"
+          ],
+          "rows": [
+            [
+              "92664.00"
+            ]
+          ],
+          "row_count": 1,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT b.branch_name, SUM(o.net_usd) AS revenue_usd FROM orders o JOIN customers c ON c.customer_id=o.customer_id JOIN employees e ON e.employee_id=c.employee_id JOIN branches b ON b.branch_id=e.branch_id WHERE o.status='completed' GROUP BY b.branch_name ORDER BY b.branch_name",
+        "result": {
+          "columns": [
+            "branch_name",
+            "revenue_usd"
+          ],
+          "rows": [
+            [
+              "Nashua",
+              "48672.00"
+            ],
+            [
+              "Scranton",
+              "13104.00"
+            ],
+            [
+              "Stamford",
+              "30888.00"
+            ]
+          ],
+          "row_count": 3,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT to_char(ordered_at,'YYYY-MM') AS month, SUM(net_usd) AS revenue_usd FROM orders WHERE status='completed' GROUP BY 1 ORDER BY 1",
+        "result": {
+          "columns": [
+            "month",
+            "revenue_usd"
+          ],
+          "rows": [
+            [
+              "2025-01",
+              "1188.00"
+            ],
+            [
+              "2025-02",
+              "2376.00"
+            ],
+            [
+              "2025-03",
+              "3564.00"
+            ],
+            [
+              "2025-04",
+              "4752.00"
+            ],
+            [
+              "2025-05",
+              "5940.00"
+            ],
+            [
+              "2025-06",
+              "7128.00"
+            ],
+            [
+              "2025-07",
+              "8316.00"
+            ],
+            [
+              "2025-08",
+              "9504.00"
+            ],
+            [
+              "2025-09",
+              "10692.00"
+            ],
+            [
+              "2025-10",
+              "11880.00"
+            ],
+            [
+              "2025-11",
+              "13068.00"
+            ],
+            [
+              "2025-12",
+              "14256.00"
+            ]
+          ],
+          "row_count": 12,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT e.employee_name, SUM(o.net_usd) AS revenue_usd FROM orders o JOIN customers c ON c.customer_id=o.customer_id JOIN employees e ON e.employee_id=c.employee_id WHERE o.status='completed' GROUP BY e.employee_name ORDER BY revenue_usd DESC, e.employee_name LIMIT 3",
+        "result": {
+          "columns": [
+            "employee_name",
+            "revenue_usd"
+          ],
+          "rows": [
+            [
+              "Danny Cordray",
+              "25272.00"
+            ],
+            [
+              "Holly Flax",
+              "23400.00"
+            ],
+            [
+              "Andy Bernard",
+              "16848.00"
+            ]
+          ],
+          "row_count": 3,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT SUM(net_usd - cost_usd) AS profit_usd, SUM(net_usd - cost_usd) / NULLIF(SUM(net_usd),0) AS gross_margin FROM orders WHERE status='completed'",
+        "result": {
+          "columns": [
+            "profit_usd",
+            "gross_margin"
+          ],
+          "rows": [
+            [
+              "37065.60",
+              "0.40000000000000000000"
+            ]
+          ],
+          "row_count": 1,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT status, COUNT(*) AS order_count, SUM(net_usd) AS net_usd FROM orders WHERE status <> 'completed' GROUP BY status ORDER BY status",
+        "result": {
+          "columns": [
+            "status",
+            "order_count",
+            "net_usd"
+          ],
+          "rows": [
+            [
+              "cancelled",
+              12,
+              "24000.00"
+            ],
+            [
+              "returned",
+              12,
+              "12000.00"
+            ]
+          ],
+          "row_count": 2,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT c.customer_name, SUM(o.net_usd) AS revenue_usd FROM orders o JOIN customers c ON c.customer_id=o.customer_id WHERE o.status='completed' GROUP BY c.customer_name ORDER BY revenue_usd DESC, c.customer_name LIMIT 3",
+        "result": {
+          "columns": [
+            "customer_name",
+            "revenue_usd"
+          ],
+          "rows": [
+            [
+              "Example Customer 12",
+              "13608.00"
+            ],
+            [
+              "Example Customer 10",
+              "12600.00"
+            ],
+            [
+              "Example Customer 11",
+              "11664.00"
+            ]
+          ],
+          "row_count": 3,
+          "truncated": false
+        }
+      },
+      {
+        "sql": "SELECT (SELECT COUNT(*) FROM history_accounts) AS accounts, (SELECT COUNT(*) FROM history_orders) AS orders, (SELECT COUNT(*) FROM history_products) AS products, (SELECT COUNT(*) FROM history_reviews) AS reviews, (SELECT COUNT(*) FROM history_shippings) AS shippings",
+        "result": {
+          "columns": [
+            "accounts",
+            "orders",
+            "products",
+            "reviews",
+            "shippings"
+          ],
+          "rows": [
+            [
+              181,
+              3503,
+              15,
+              1655,
+              2812
+            ]
+          ],
+          "row_count": 1,
+          "truncated": false
+        }
+      }
+    ],
+    "final_answers_verified": true,
+    "raw_transcript_sha256": "25490908836a97d253397bfd963903adde963996509f0a36f13ea9986d0da964"
+  },
+  "web_app": {
+    "status": "user-observed successful conversation",
+    "context_reads": true,
+    "query_calls": 3,
+    "branch_totals_verified": true,
+    "full_eight_question_matrix": false,
+    "screenshot_copied": false
+  },
+  "desktop_bridge": {
+    "status": "lead verified live SDK through mcp-remote0.16.7",
+    "actual_desktop_conversation_verified": false
+  },
+  "resources": {
+    "app_replicas": 1,
+    "each_service_cpu_limit": 0.5,
+    "each_service_memory_bytes_limit": 500000000,
+    "database_volume_mb": 5000,
+    "app_volume": false,
+    "region": "US West",
+    "plan_observed": "HOBBY",
+    "plan_upgrade": false,
+    "cost_snapshot": "not recorded; no final bill or forecast claimed"
+  },
+  "limitations": [
+    "Shared bearer, no individual revocation or identity",
+    "Synthetic TLS requires encryption but does not verify CA identity",
+    "No OAuth gateway, HA, production data or automatic teardown"
+  ]
+}

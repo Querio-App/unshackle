@@ -4,7 +4,6 @@ from __future__ import annotations
 from decimal import Decimal
 import argparse
 import importlib.util
-import json
 import os
 from pathlib import Path
 import secrets
@@ -12,7 +11,6 @@ import sys
 
 import duckdb
 from psycopg import sql
-import yaml
 from unshackle import build, scaffold
 from unshackle.imports import warehouse, dbt
 
@@ -89,8 +87,9 @@ def seed(output: Path, local=False):
     scaffold.init(repo)
     build.apply(warehouse.introspect(reader.render_as_string(hide_password=False)),repo)
     build.apply(dbt.parse(HERE/'dbt'),repo)
+    (repo/'knowledge').mkdir(exist_ok=True)
     (repo/'knowledge/team-demo.md').write_text((HERE/'business-context.md').read_text())
-    print('Seeded 11 fictional tables; context generated; reader grants verified; credentials private.')
+    print('Seeded 10 fictional tables; context generated; reader grants verified; credentials private.')
 
 
 def verify_reader(reader):
