@@ -40,7 +40,7 @@ independent arithmetic live in [questions.json](../../examples/dunder-mifflin-de
 Revenue arithmetic is independent of query output: month weights sum to 78, effective
 rep weights sum to 19.8 after discounts, and product prices sum to 60; 78 × 19.8 × 60
 = 92,664. Profit is 40% of this. The tests execute the SQL against freshly generated
-DuckDB data and, opt-in, actual PostgreSQL with grants disabled/enabled as appropriate.
+DuckDB data and, opt-in, actual PostgreSQL with transaction read-only disabled for privilege checks.
 
 ## Fresh deployment
 
@@ -234,6 +234,16 @@ railway variable set --service "$RW_SERVICE" --environment "$RW_ENVIRONMENT" \
 # Wait for the new deployment to be Online, then verify using the new token.
 export UNSHACKLE_MCP_TOKEN="$(cat "$STATE/fixture/mcp-token-next")"
 python examples/dunder-mifflin-demo/check.py
+python - <<'PYREVOKE'
+import os
+from pathlib import Path
+import httpx
+old=(Path(os.environ['STATE'])/'fixture/mcp-token').read_text().strip()
+response=httpx.post(os.environ['UNSHACKLE_MCP_URL'],
+                   headers={'Authorization':'Bearer '+old},json={},timeout=15)
+assert response.status_code==401, 'Previous token still works; wait for old deployment to drain'
+print('Previous token revoked')
+PYREVOKE
 mv "$STATE/fixture/mcp-token-next" "$STATE/fixture/mcp-token"
 ```
 
