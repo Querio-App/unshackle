@@ -116,7 +116,8 @@ declare -p AWS_PROFILE AWS_REGION PREFIX DOMAIN_NAME HOSTED_ZONE_ID CONTEXT_GITH
 ```
 
 The read-only preflight refuses existing stack/repository/cluster/optional-secret
-names and hostname records. Auth/API failures are errors, never evidence of absence.
+names, exact-family ECS revisions in ACTIVE/INACTIVE/DELETE_IN_PROGRESS, and
+hostname records. Prefix peers are excluded. Auth/API failures are errors, never evidence of absence.
 A local state directory alone does not prove cloud ownership. Use a new prefix if
 any check fails because a resource exists. Do not adopt an existing stack.
 
