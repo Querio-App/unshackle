@@ -75,9 +75,14 @@ def check(client, endpoint: str, token: str, *, deadline: float = 30):
     start = time.monotonic()
     timed = tool("run_query", {"sql": f"SELECT pg_sleep({deadline + 5})"})
     assert timed.get("isError"), "query deadline"
-    assert deadline * .8 <= time.monotonic() - start < deadline + 4, "deadline elapsed time"
+    elapsed = time.monotonic() - start
+    assert deadline * .8 <= elapsed < deadline + 4, "deadline elapsed time"
     assert tool("run_query", {"sql": "SELECT 1"})["structuredContent"]["rows"] == [[1]], "query after cancel"
-    print("PASS: auth, initialize, tools/resources, role, five answers, row cap, write rejection, deadline/recovery")
+    active = tool("run_query", {"sql": "SELECT count(*) FROM pg_stat_activity WHERE usename = current_user "
+                                       "AND pid <> pg_backend_pid() AND state = 'active' AND query LIKE '%pg_sleep%'"})
+    assert active["structuredContent"]["rows"] == [[0]], "no lingering sleep query"
+    print(f"PASS: auth, initialize, tools/resources, role, five answers, row cap, write rejection, "
+          f"deadline/recovery ({elapsed:.2f}s), no lingering sleep")
 
 
 def main():
