@@ -125,6 +125,40 @@ if sys.argv[-1] not in ({str(ROOT)!r}, {str(AWS)!r}):
 
 
 @pytest.mark.skipif(os.environ.get("UNSHACKLE_AWS_CONTAINER_TESTS") != "1", reason="explicit local Docker acceptance required")
+def test_fixture_seeds_after_private_build(tmp_path):
+    import shutil
+
+    for source, name in ((ROOT / "examples/mcp-demo/schema.sql", "schema.sql"),
+                         (AWS / "reader.sh", "reader.sh"), (AWS / "fixture.Dockerfile", "Dockerfile")):
+        shutil.copyfile(source, tmp_path / name)
+        (tmp_path / name).chmod(0o600)
+    image = "unshackle-aws-permissions-" + secrets.token_hex(5)
+    env = {**os.environ, "POSTGRES_PASSWORD": secrets.token_urlsafe(24),
+           "READER_PASSWORD": secrets.token_urlsafe(24)}
+    try:
+        subprocess.run(["docker", "build", "-t", image, str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(["docker", "run", "-d", "--name", image, "-e", "POSTGRES_PASSWORD",
+                        "-e", "READER_PASSWORD", "-e", "POSTGRES_DB=example", image],
+                       env=env, check=True, capture_output=True)
+        for _ in range(60):
+            ready = subprocess.run(["docker", "exec", image, "pg_isready", "-h", "127.0.0.1",
+                                    "-U", "postgres", "-d", "example"], capture_output=True)
+            if ready.returncode == 0:
+                break
+            running = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Running}}", image], text=True)
+            assert running.strip() == "true", "Fixture exited before seeding completed"
+            time.sleep(.5)
+        else:
+            pytest.fail("Fixture readiness timed out")
+        result = subprocess.check_output(["docker", "exec", image, "psql", "-U", "example_reader",
+                                          "-d", "example", "-Atc", "SELECT count(*) FROM orders"], text=True)
+        assert result.strip() == "6"
+    finally:
+        subprocess.run(["docker", "rm", "-fv", image], capture_output=True)
+        subprocess.run(["docker", "image", "rm", image], capture_output=True)
+
+
+@pytest.mark.skipif(os.environ.get("UNSHACKLE_AWS_CONTAINER_TESTS") != "1", reason="explicit local Docker acceptance required")
 def test_local_containers_real_reader_http_parity_and_cancellation(tmp_path):
     import psycopg
     import httpx

@@ -237,14 +237,17 @@ declare -p IMAGE_REPOSITORY IMAGE_TAG CONTEXT_REPO_URL CONTEXT_REPO_REF GIT_SECR
   CERTIFICATE_ARN >> "$STATE/config.sh"
 bash deploy/aws/build.sh "$IMAGE_REPOSITORY" "$IMAGE_TAG"
 # Dedicated private Docker auth file; never reuse or print a general config.
-export DOCKER_CONFIG="$STATE/docker"
-mkdir -p "$DOCKER_CONFIG"
-aws_cli ecr get-login-password | docker login --username AWS --password-stdin "${IMAGE_REPOSITORY%%/*}"
-docker push "$IMAGE_REPOSITORY:mcp-$IMAGE_TAG"
-docker push "$IMAGE_REPOSITORY:fixture-$IMAGE_TAG"
-docker logout "${IMAGE_REPOSITORY%%/*}"
-rm -rf "$DOCKER_CONFIG"
-unset DOCKER_CONFIG
+# Preserve the local engine endpoint before selecting an empty config directory.
+DOCKER_ENDPOINT=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
+mkdir -p "$STATE/docker"
+docker_private() { docker --config "$STATE/docker" --host "$DOCKER_ENDPOINT" "$@"; }
+aws_cli ecr get-login-password | docker_private login --username AWS --password-stdin "${IMAGE_REPOSITORY%%/*}"
+docker_private push "$IMAGE_REPOSITORY:mcp-$IMAGE_TAG"
+docker_private push "$IMAGE_REPOSITORY:fixture-$IMAGE_TAG"
+docker_private logout "${IMAGE_REPOSITORY%%/*}"
+rm -rf "$STATE/docker"
+unset -f docker_private
+unset DOCKER_ENDPOINT
 
 # No secret VALUES are CloudFormation parameters or outputs.
 aws_cli cloudformation deploy --stack-name "$PREFIX" --template-file deploy/aws/stack.yaml \
@@ -323,6 +326,19 @@ sidecar initialization, reader checks and 401 health matcher. TLS: verify zone
 nameserver delegation, hostname and certificate region. No task ingress should
 allow 5432 or public 8000. Default outbound access is needed for Git/ECR/secrets/logs.
 
+Before an update, save the running template and parameters in a new private
+directory. Keep its path and the previous immutable ECR image tags until rollback
+is no longer needed. The parameters contain secret ARNs, not secret values.
+
+```bash
+ROLLBACK="$STATE/rollback-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir "$ROLLBACK"
+aws_cli cloudformation get-template --stack-name "$PREFIX" --template-stage Original \
+  --query TemplateBody --output text > "$ROLLBACK/template.yaml"
+aws_cli cloudformation describe-stacks --stack-name "$PREFIX" \
+  --query 'Stacks[0].Parameters' --output json > "$ROLLBACK/parameters.json"
+```
+
 For a code update, commit first, set a new `IMAGE_TAG`, repeat build/push and the
 same `cloudformation deploy` command. For a changed Git SHA/ref, rerun deployment
 with the new ref. With `main`, context commits refresh automatically; verify the
@@ -335,6 +351,25 @@ aws_cli ecs update-service --cluster "$PREFIX" --service mcp --force-new-deploym
 aws_cli ecs wait services-stable --cluster "$PREFIX" --services mcp
 # Reload the current token privately if rotated, then repeat probe + client checks.
 ```
+
+To restore the saved image, Git ref and other stack parameters, use that exact
+snapshot after the current stack operation finishes:
+
+```bash
+aws_cli cloudformation update-stack --stack-name "$PREFIX" \
+  --template-body "file://$ROLLBACK/template.yaml" \
+  --parameters "file://$ROLLBACK/parameters.json" --capabilities CAPABILITY_IAM
+aws_cli cloudformation wait stack-update-complete --stack-name "$PREFIX"
+aws_cli ecs wait services-stable --cluster "$PREFIX" --services mcp
+python deploy/aws/probe.py
+# Repeat client checks and reconcile IMAGE_TAG/CONTEXT_REPO_REF with the restored parameters.
+```
+
+This restores deployment configuration, not data or rotated secret values. Task
+replacement reseeds the synthetic sidecar. A saved moving Git branch still resolves
+its current head; use a reviewed commit SHA as `ContextRepoRef` when context rollback
+must restore exact bytes. An unchanged stack returns `No updates are to be performed`;
+inspect its current parameters instead of waiting for a nonexistent update.
 
 For production, use the existing [ecs-task.json](../../deploy/ecs-task.json) with a
 separate read-only warehouse URL secret and no fixture sidecar or AWS fixture
