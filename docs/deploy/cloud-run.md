@@ -348,11 +348,25 @@ Do not dump environment variables, secrets, HTTP headers or raw driver exception
 
 For context updates, commit/push the generated context and wait at least 60 seconds;
 read the changed file over MCP. A pinned ref needs a deliberate `REPO_REF` change.
+Before a runtime update or bearer rotation, record the revision currently serving
+100% of traffic and keep its numeric secret versions enabled for rollback:
+
+```bash
+gcloud run services describe "$PREFIX-mcp" --project "$PROJECT" --region "$REGION" \
+  --format='table(status.traffic.revisionName,status.traffic.percent)'
+# Substitute the serving revision shown above, not an unserved latest revision.
+export PREVIOUS_REVISION=REPLACE_WITH_SERVING_REVISION
+export PREVIOUS_TOKEN_VERSION="$(cat "$GCP_STATE/token-version")"
+export PREVIOUS_WAREHOUSE_VERSION="$(cat "$GCP_STATE/warehouse-version")"
+gcloud run revisions describe "$PREVIOUS_REVISION" --project "$PROJECT" --region "$REGION" \
+  --format=json > "$GCP_STATE/previous-revision.json"
+```
+
+The private revision snapshot records the resolved image digest and secret references.
 For runtime updates, check out the reviewed source commit, set a new `IMAGE_TAG` and
 rerun `deploy.sh`, then the verifier and real clients. For bearer rotation:
 
 ```bash
-PREVIOUS_TOKEN_VERSION="$(cat "$GCP_STATE/token-version")"
 python - <<'PY'
 import os, secrets
 from pathlib import Path
@@ -369,12 +383,38 @@ export UNSHACKLE_MCP_TOKEN="$(cat "$GCP_STATE/token-next")"
 python deploy/gcp/verify.py
 ```
 
-Update client environments too. After success, disable the old secret version with
+Update client environments too. After validation and the rollback window, disable the old secret version with
 `gcloud secrets versions disable "$PREVIOUS_TOKEN_VERSION" --secret "$PREFIX-token" --project "$PROJECT"`.
 Existing old revisions may retain their loaded token; remove obsolete revisions once
 rollback is no longer required. Database credential rotation also requires changing
 the Postgres role password, adding a matching warehouse secret version and setting
 `WAREHOUSE_VERSION` before redeployment; changing Secret Manager alone is insufficient.
+
+### Roll back a runtime revision
+
+Route traffic to the saved revision; this restores its image, arguments and pinned
+secret references. It does not revert the database or a moving Git branch. To undo
+context changes, revert the context commit and push, then verify the refreshed file.
+Keep the previous warehouse password valid if relying on its saved secret version.
+
+```bash
+: "${PREVIOUS_REVISION:?}" "${PREVIOUS_TOKEN_VERSION:?}" "${PREVIOUS_WAREHOUSE_VERSION:?}"
+gcloud run services update-traffic "$PREFIX-mcp" --project "$PROJECT" --region "$REGION" \
+  --to-revisions="$PREVIOUS_REVISION=100"
+printf '%s\n' "$PREVIOUS_TOKEN_VERSION" > "$GCP_STATE/token-version"
+printf '%s\n' "$PREVIOUS_WAREHOUSE_VERSION" > "$GCP_STATE/warehouse-version"
+export TOKEN_VERSION="$PREVIOUS_TOKEN_VERSION" WAREHOUSE_VERSION="$PREVIOUS_WAREHOUSE_VERSION"
+export UNSHACKLE_MCP_TOKEN="$(gcloud secrets versions access "$TOKEN_VERSION" \
+  --secret "$PREFIX-token" --project "$PROJECT")"
+python deploy/gcp/verify.py
+```
+
+Update client environments to the restored bearer and rerun their queries. After
+validating the rollback, remove the failed revision if no longer needed. The next
+intentional deployment must route traffic to its new revision with
+`gcloud run services update-traffic "$PREFIX-mcp" --project "$PROJECT" --region "$REGION" --to-latest`
+because Cloud Run preserves explicit revision traffic assignments across deploys.
+See [Cloud Run rollback and traffic](https://docs.cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration).
 
 ## Scoped teardown — destructive
 
