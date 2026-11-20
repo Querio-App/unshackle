@@ -10,7 +10,7 @@ import yaml
 
 from unshackle import build
 from unshackle.http import Client
-from unshackle.ir import Bundle, Dashboard, Tile
+from unshackle.ir import Bundle, Dashboard, DashboardFilter, Schedule, Tile
 from unshackle.raw import RawStore
 from unshackle.sources.metabase import MetabaseSource, _filter_binds, _parameter_names
 
@@ -32,11 +32,14 @@ def test_pulses_keep_independent_channels_and_card_flags(tmp_path):
         ("email", True, "hourly"), ("email", False, "weekly"), ("slack", True, "monthly")]
     assert weekly.channels[0].cadence["hour"] == 0
     assert weekly.channels[0].details["emails"] == ["external@example.com"]
+    assert weekly.channels[0].details["recipient_emails"] == ["external@example.com", "analyst@example.com"]
     assert weekly.channels[0].details["attachment_only"] is True
     assert weekly.channels[1].details["include_pdf"] is True
+    assert weekly.channels[1].details["recipient_emails"] == ["weekly@example.com"]
     assert weekly.channels[2].cadence["frame"] == "last"
     assert weekly.cards == store.get_json("pulses/42.json")["cards"]
-    assert all(c.timezone is None and "timezone" in c.todo for c in weekly.channels)
+    assert all("timezone" in c.todo for c in weekly.channels)
+    assert all(c.timezone is None for c in weekly.channels)
     assert limited.cards is None and limited.channels[0].recipients is None
     assert "recipients" in limited.channels[0].todo and "completeness" in limited.todo
     assert archived.archived is True and archived.cards == [] and archived.channels[0].recipients == []
@@ -73,9 +76,12 @@ def test_schedule_writer_uses_layout_and_preserves_hand_edits(tmp_path):
     dry = build.apply(bundle, tmp_path, dry_run=True)
     path = tmp_path / "delivery/metabase-pulse-42.yml"
     assert "delivery/metabase-pulse-42.yml" in dry.writes.written and not path.exists()
+    assert not (tmp_path / "migration/schedule_paths/metabase.json").exists()
     build.apply(bundle, tmp_path)
     doc = yaml.safe_load(path.read_text())
     assert doc["notebook"] == "reports/renamed-report.ipynb"
+    assert doc["dashboard_name"] == "Client reporting"
+    assert doc["dashboard_url"] == ""
     assert doc["source"] == "metabase:pulse/42" and doc["channels"][1]["enabled"] is False
     assert "TODO(unshackle)" in path.read_text()
     assert doc["source_config"]["completeness"] == "unknown"
@@ -162,7 +168,7 @@ def test_secret_projection_and_malformed_metadata_survive_offline_build(tmp_path
     assert first.cards is None and first.channels[0].recipients is None
     assert first.source_config["_unsupported"]["cards"] == [10]
     assert first.channels[1].source_config["unsupported_details"] == "unexpected shape"
-    assert first.channels[2].timezone is None and first.channels[2].source_config["timezone"] == "Europe/Bucharest"
+    assert first.channels[2].timezone == "Europe/Bucharest" and first.channels[2].source_config["timezone"] == "Europe/Bucharest"
     assert "example-secret" not in bundle.to_json()
     build.apply(bundle, tmp_path)
     output = (tmp_path / "schedules/metabase-pulse-42.yml").read_text()
@@ -260,6 +266,15 @@ def test_schedule_comments_are_single_line_even_with_source_newlines(tmp_path):
     assert doc["channels"][0]["source_ref"] == "channel\ninvalid: ["
 
 
+def test_report_includes_subscription_readiness_summary(tmp_path):
+    _, bundle = parse(tmp_path)
+    build.apply(bundle, tmp_path)
+    report = (tmp_path / "migration/report.md").read_text()
+    assert "## Subscription readiness (3)" in report
+    assert "| metabase | Client weekly report | Client reporting | 3 | 2 | 3 | 0 | 1 |" in report
+    assert "| metabase | Limited visibility example | Client reporting | 1 | 1 | 0 | 1 | 2 |" in report
+
+
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     store, _ = parse(tmp_path)
@@ -273,8 +288,13 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     bundle.dashboards[0].tiles = [Tile("result", kind="table", sql="SELECT :engine AS region")]
     build.apply(bundle, tmp_path)
     notebook = tmp_path / "notebooks/client-reporting.ipynb"
+    assert "| metabase | Client weekly report | Client reporting | 3 | 2 | 3 | 0 | 0 |" in (
+        tmp_path / "migration/report.md"
+    ).read_text()
     manual = notebook.read_text().replace("tile_engine", "manual_engine")
     notebook.write_text(manual)
+    paths_file = tmp_path / "migration/schedule_paths/metabase.json"
+    paths_before = paths_file.read_text()
     pulse["parameters"][0]["value"] = ["East"]
     store.put_json("pulses/42.json", pulse)
     bundle = MetabaseSource().parse(store)
@@ -283,6 +303,7 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     assert "notebooks/client-reporting.ipynb" in result.writes.kept_hand_edits
     assert notebook.read_text() == manual
     if dry_run:
+        assert paths_file.read_text() == paths_before
         from unshackle.build import render_all
         from unshackle.target.writer import Target
 
@@ -295,6 +316,147 @@ def test_kept_notebook_marks_schedule_bindings_unresolved(tmp_path, dry_run):
     assert binding["status"] == "unresolved" and binding["notebook_names"] == []
     assert binding["value"] == ["East"] and binding["filter_names"] == ["engine"]
     assert "kept notebook" in doc["todo"] and "reconcile" in binding["todo"]
+    assert bundle.schedules[0].parameter_bindings[0]["status"] == "translated"
+    if not dry_run:
+        expected = "| metabase | Client weekly report | Client reporting | 3 | 2 | 3 | 0 | 1 |"
+        assert expected in result.report_path.read_text()
+        assert expected in build.write_report(tmp_path).read_text()
+        stored = build.load_bundles(tmp_path)[0]
+        assert stored.schedules[0].parameter_bindings[0]["status"] == "translated"
+
+
+def test_report_reads_preserved_delivery_with_layout_and_collisions(tmp_path):
+    (tmp_path / "unshackle.toml").write_text('[paths]\nschedules = "delivery"\nnotebooks = "reports"\n')
+    other = Bundle(tool="other", schedules=[Schedule(
+        "Other", "shared:subscription", parameter_bindings=[
+            {"filter_names": [], "status": "unresolved"}, {"filter_names": [], "status": "unresolved"},
+        ],
+    )])
+    build.apply(other, tmp_path)
+    bundle = Bundle(tool="metabase", dashboards=[Dashboard(
+        "Example", "example", source_ref="dashboard", filters=[DashboardFilter("region")],
+    )], schedules=[
+        Schedule("Translated", "shared:subscription", "dashboard", parameters={"region": "West"},
+                 parameter_bindings=[{"filter_names": ["region"], "status": "translated", "value": "West"}]),
+        Schedule("Unresolved", "shared/subscription", "dashboard", parameter_bindings=[
+            {"filter_names": [], "status": "unresolved", "todo": "source mapping unavailable"},
+        ]),
+        Schedule("No bindings", "shared:empty", "dashboard"),
+    ])
+    source_ir = bundle.to_json()
+    result = build.apply(bundle, tmp_path)
+    assert result.writes.renamed["delivery/shared-subscription.yml"] == "delivery/shared-subscription.metabase.yml"
+    notebook = tmp_path / "reports/example.ipynb"
+    manual = notebook.read_text().replace('"nbformat_minor": 5', '"nbformat_minor": 4')
+    assert manual != notebook.read_text()
+    notebook.write_text(manual)
+    delivery = tmp_path / "delivery/shared-subscription.metabase.yml"
+    doc = yaml.safe_load(delivery.read_text())
+    doc["parameter_bindings"][0]["status"] = "default"
+    protected = yaml.safe_dump(doc) + "# hand edit\n"
+    delivery.write_text(protected)
+
+    result = build.apply(bundle, tmp_path)
+    assert notebook.read_text() == manual and delivery.read_text() == protected
+    assert "delivery/shared-subscription.metabase.yml" in result.writes.kept_hand_edits
+    unresolved = yaml.safe_load((tmp_path / "delivery/shared-subscription-2.yml").read_text())
+    assert unresolved["source"] == "shared/subscription"
+    assert unresolved["parameter_bindings"][0]["status"] == "unresolved"
+    assert "source mapping unavailable" in unresolved["parameter_bindings"][0]["todo"]
+    assert "kept notebook" in unresolved["todo"]
+    assert yaml.safe_load((tmp_path / "delivery/shared-empty.yml").read_text())["parameter_bindings"] == []
+    assert yaml.safe_load((tmp_path / "delivery/shared-subscription.yml").read_text())["name"] == "Other"
+    for report in (result.report_path.read_text(), build.write_report(tmp_path).read_text()):
+        assert "| metabase | Translated | Example | 0 | 0 | 0 | 0 | 0 |" in report
+        assert "| metabase | Unresolved | Example | 0 | 0 | 0 | 0 | 1 |" in report
+        assert "| metabase | No bindings | Example | 0 | 0 | 0 | 0 | 0 |" in report
+        assert "| other | Other | (unknown) | 0 | 0 | 0 | 0 | 2 |" in report
+    assert bundle.to_json() == source_ir
+    assert next(b for b in build.load_bundles(tmp_path) if b.tool == "metabase").to_json() == source_ir
+
+
+@pytest.mark.parametrize("contents", [None, "invalid: [", "{}", "parameter_bindings: []\nsource: another",
+                                      "source: shared\nparameter_bindings: [{}]",
+                                      "source: shared\nparameter_bindings: [{status: []}]"])
+def test_report_marks_unreadable_delivery_bindings_unknown(tmp_path, contents):
+    bundle = Bundle(tool="metabase", schedules=[Schedule("Example", "shared")])
+    build.apply(bundle, tmp_path)
+    delivery = tmp_path / "schedules/shared.yml"
+    if contents is None:
+        delivery.unlink()
+    else:
+        delivery.write_text(contents)
+    assert "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | unknown |" in build.write_report(tmp_path).read_text()
+
+
+def test_report_reads_identical_delivery_shared_by_tools(tmp_path):
+    schedule = Schedule("Example", "shared", parameter_bindings=[{"filter_names": [], "status": "unresolved"}])
+    build.apply(Bundle(tool="other", schedules=[schedule]), tmp_path)
+    result = build.apply(Bundle(tool="metabase", schedules=[schedule]), tmp_path)
+    assert "schedules/shared.yml" in result.writes.unchanged
+    assert not result.writes.renamed
+    assert not (tmp_path / "schedules/shared.metabase.yml").exists()
+    report = build.write_report(tmp_path).read_text()
+    for tool in ("metabase", "other"):
+        assert f"| {tool} | Example | (unknown) | 0 | 0 | 0 | 0 | 1 |" in report
+
+
+def test_report_uses_active_shared_delivery_instead_of_stale_suffix(tmp_path):
+    shared = Schedule("Example", "shared", parameter_bindings=[{"filter_names": [], "status": "unresolved"}])
+    other = Bundle(tool="other", schedules=[shared])
+    build.apply(other, tmp_path)
+    build.apply(Bundle(tool="metabase", schedules=[Schedule(
+        "Different", "shared", parameter_bindings=[{"filter_names": [], "status": "translated"}],
+    )]), tmp_path)
+    stale = tmp_path / "schedules/shared.metabase.yml"
+    manual = stale.read_text() + "# retained hand edit\n"
+    stale.write_text(manual)
+    bundle = Bundle(tool="metabase", schedules=[shared])
+    source_ir = bundle.to_json()
+    result = build.apply(bundle, tmp_path)
+    assert "schedules/shared.yml" in result.writes.unchanged
+    assert "schedules/shared.metabase.yml" in result.writes.kept_stale
+    assert stale.read_text() == manual
+    assert yaml.safe_load((tmp_path / "schedules/shared.yml").read_text())["parameter_bindings"][0]["status"] == "unresolved"
+    expected = "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | 1 |"
+    assert expected in result.report_path.read_text()
+    assert expected in build.write_report(tmp_path).read_text()
+    build.apply(other, tmp_path)
+    assert expected in build.write_report(tmp_path).read_text()
+    assert bundle.to_json() == source_ir
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_report_without_path_metadata_is_conservative(tmp_path, ambiguous):
+    schedule = Schedule("Example", "shared", parameter_bindings=[{"filter_names": [], "status": "unresolved"}])
+    if ambiguous:
+        build.apply(Bundle(tool="other", schedules=[Schedule("Other", "shared")]), tmp_path)
+    build.apply(Bundle(tool="metabase", schedules=[schedule]), tmp_path)
+    (tmp_path / "migration/schedule_paths/metabase.json").unlink()
+    count = "unknown" if ambiguous else "1"
+    assert f"| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | {count} |" in build.write_report(tmp_path).read_text()
+
+
+def test_report_does_not_read_delivery_path_outside_repo(tmp_path):
+    repo = tmp_path / "repo"
+    bundle = Bundle(tool="metabase", schedules=[Schedule("Example", "shared")])
+    build.apply(bundle, repo)
+    (tmp_path / "outside.yml").write_text("source: shared\nparameter_bindings: []\n")
+    (repo / "migration/schedule_paths/metabase.json").write_text(json.dumps({"schedules/shared.yml": "../outside.yml"}))
+    assert "| metabase | Example | (unknown) | 0 | 0 | 0 | 0 | unknown |" in build.write_report(repo).read_text()
+
+
+def test_schedule_path_metadata_is_limited_to_schedule_builds(tmp_path):
+    bundle = Bundle(tool="metabase")
+    paths_file = tmp_path / "migration/schedule_paths/metabase.json"
+    build.apply(bundle, tmp_path)
+    assert not paths_file.exists()
+    bundle.schedules = [Schedule("Example", "shared")]
+    build.apply(bundle, tmp_path)
+    assert json.loads(paths_file.read_text()) == {"schedules/shared.yml": "schedules/shared.yml"}
+    bundle.schedules = []
+    build.apply(bundle, tmp_path)
+    assert json.loads(paths_file.read_text()) == {}
 
 
 @pytest.mark.parametrize("value", [7, {}, "region-a", False])
