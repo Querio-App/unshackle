@@ -27,7 +27,7 @@ AGENTS_MD = """\
 # {name}
 
 This repo holds the company's analytics as code: metrics, schema, knowledge,
-verified queries, notebooks and permissions. If you use a coding agent
+reference queries, notebooks and permissions. If you use a coding agent
 to finish the migration, have it read this file first.
 
 ## Where things live
@@ -39,7 +39,7 @@ Folders appear when unshackle (or you) first write to them.
 | `{semantic}/` | Metrics and the semantic layer | Apache Ossie YAML (`*.ossie.yaml`); MetricFlow YAML too in dbt projects |
 | `{catalog}/<datasource>/<schema>/<table>.yml` | Tables, columns, descriptions | YAML, one file per table |
 | `{knowledge}/` | Glossary, business rules, AI context | Markdown with frontmatter |
-| `{queries}/` | Verified queries | SQL or Python with a comment header |
+| `{queries}/` | Reference queries; check parity before reuse | SQL or Python with a comment header |
 | `{notebooks}/` | Dashboards as notebooks | Jupyter `.ipynb` (SQL + Altair) |
 | `{policies}/` | Who can see or query what | Cedar + `row_filters.*.yml` |
 | `{evals}/` | Question -> expected answer, written by `unshackle verify` for passing parity cases | YAML |
@@ -54,12 +54,34 @@ TODOs written as `TODO(unshackle)` point at skills like `skills/translate-metric
 those live under `migration/skills/`, and the structure is documented in
 `migration/spec/layout.md`. `unshackle todo` lists what's left and
 `migration/report.md` has the full picture. After upgrading unshackle, refresh the
-skills with `unshackle init --update-skills`.
+skills with `unshackle init --update-skills`. Existing `AGENTS.md` is preserved;
+review its guidance separately.
+
+## Other tasks
+
+- Import context: `unshackle import warehouse`, `unshackle import dbt <project>` or
+  `unshackle import sql <inputs>...`, with `--repo` for this destination. Use dedicated
+  input paths, a separate destination for dbt, and all SQL roots again on refresh.
+  Imports do not prove numerical parity or execute imported Python.
+- Query locally: install `unshackle[mcp]` and the database driver, set
+  `UNSHACKLE_WAREHOUSE_URL` in env or ignored `.env`, then register
+  `unshackle mcp --repo /absolute/path` in the client. Inspect overview/search/read
+  before run_query; overview does not test connectivity.
+- Refresh BI content: follow the migrate skill’s re-run section, then verify.
+  For configured warehouse/dbt/SQL refresh, use `python -m unshackle.drift --help`;
+  export the warehouse URL explicitly (that module does not load `.env`) and write
+  its report outside the repo. Static drift is not parity.
+- Hosting, auth, updates and shutdown: follow
+  https://github.com/Querio-App/unshackle/blob/main/docs/deploy/README.md.
+  One read-only warehouse role serves all token holders; policy files are not enforced.
+
+Stop on missing access, unresolved meaning or a datasource mismatch. Preserve hand
+edits, source expressions and TODOs; request only the missing scoped permission.
 
 ## Rules for agents
 
 1. Prefer a metric in `{semantic}/` over writing new aggregation SQL.
-2. Prefer a verified query in `{queries}/` over writing a new one for the same question.
+2. Reuse a query in `{queries}/` only after checking its meaning, TODOs and matching passing parity case in `{evals}/`. Imported SQL is reference material, not automatically verified.
 3. Treat knowledge files with `context: always` as standing guidance when working in this repo.
 4. Review `{policies}/` before running queries. These files describe intended access rules; this repo does not enforce them by itself.
 5. Charts are Altair (Vega-Lite). Keep notebooks saved without outputs (they can contain data).

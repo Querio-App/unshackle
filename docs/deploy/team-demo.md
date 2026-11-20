@@ -3,13 +3,9 @@
 This recipe leaves a bearer-authenticated Railway service running for a team.
 It contains only fictional data. [Connect Claude](claude-team-demo.md) covers the
 remote app's request-header beta, Desktop bridge, Claude Code and shared access.
-The current owner's endpoint, credential paths and exact resource inventory are
-in a private handoff, never in this repository.
-
-This deployment supersedes the old Railway rehearsal's context-repository deletion
-instruction: the repository is intentionally retained under new user authorization,
-with a dedicated branch preserving its original main/history. Missing GitHub
-`delete_repo` scope is not a blocker and repository deletion is not part of shutdown.
+Keep the endpoint, credentials and resource inventory in private deployment state.
+For an existing retained demo, obtain that state from its owner and use only the
+update/onboarding sections. Fresh setup is for a separate, explicitly chosen demo.
 
 The [interactive query table](../mcp-result-table.md) lets an Apps-capable client
 sort, search and export returned rows directly. After an app update, start a new
@@ -31,7 +27,7 @@ joins, grain, exclusions and unknown values.
 Ask these questions in Claude; all amounts are USD. Full SQL, expected rows and
 independent arithmetic live in [questions.json](../../examples/dunder-mifflin-demo/questions.json).
 
-| Question | Verified result |
+| Question | Expected fixture result |
 |---|---|
 | Total recognized scenario revenue in 2025? | 92,664 |
 | Recognized scenario revenue by branch? | Nashua 48,672; Scranton 13,104; Stamford 30,888 |
@@ -49,7 +45,7 @@ DuckDB data and, opt-in, actual PostgreSQL with transaction read-only disabled f
 
 ## Fresh deployment
 
-Requires Git, Python 3.11+, uv, jq, authenticated `gh` and Railway CLI (tested 5.75.0).
+Requires Git, Python 3.11+, uv, jq, authenticated `gh` and Railway CLI.
 Use Bash, disable tracing, and keep this shell for subsequent sections. Authenticate
 with the providers' normal login flow if needed; never put credentials in arguments.
 Inspect `railway whoami --json`, `railway list --json`, and `gh api user` privately
@@ -60,7 +56,7 @@ resources; no plan purchase/upgrade is part of the recipe.
 set -euo pipefail
 set +x
 umask 077
-git clone --branch feat/193-dunder-mifflin-team-demo https://github.com/Querio-App/unshackle.git
+git clone https://github.com/Querio-App/unshackle.git
 cd unshackle
 uv venv
 source .venv/bin/activate
@@ -70,7 +66,7 @@ export RW_WORKSPACE='REPLACE_WITH_VERIFIED_WORKSPACE_ID'
 export RW_ENVIRONMENT=production
 export RW_SERVICE=dunder-mifflin-mcp
 export CONTEXT_REPO='REPLACE_OWNER/REPLACE_SYNTHETIC_CONTEXT_REPO'
-export CONTEXT_BRANCH=feat/218-persistent-team-demo
+export CONTEXT_BRANCH=demo/dunder-mifflin
 export STATE="$HOME/.local/state/unshackle/dunder-mifflin-team-demo"
 mkdir -p "$STATE"
 chmod 700 "$STATE"
@@ -94,12 +90,10 @@ printf '%s\n' "$CONTEXT_REPO" > "$STATE/context-repository"
 printf '%s\n' "$CONTEXT_BRANCH" > "$STATE/context-branch"
 ```
 
-Review the exact new project's services/volume before continuing. The observed
-personal account was already Hobby; no upgrade was performed. Configure both services
-with 0.5 vCPU / 0.5 GB caps; one app replica, no app volume, no additional database
-replicas/backups. Actual deployment used US West for both services and the database
-volume. New projects follow your account's region preference; select the same region
-for app and database before seeding. The example scale command assumes US West.
+Review the exact new project's services/volume before continuing. Configure both
+services with deliberate CPU/memory caps; this example uses 0.5 vCPU / 0.5 GB,
+one app replica and no app volume. Choose the same region for app and database
+before seeding. The scale command below assumes US West.
 
 ```bash
 railway api describe ServiceInstanceLimitsUpdateInput
@@ -131,21 +125,18 @@ attempt UPDATE/DELETE/CREATE/TEMP with transaction read-only disabled. URLs requ
 Admin credentials are injected by Railway and are not saved. Three private 0600 files
 hold the reader URLs and shared token. Never copy the parent directory into Git.
 
-Reuse an authorized synthetic repository on a new dedicated branch, preserving its
-history. Review the staged generated content before publishing. The following removes
-tracked files only on that new branch; it does not delete the repository or old branches.
+Create a fresh synthetic context repository for this new demo. Do not replace the
+contents or branches of an existing retained context repository. Review generated files
+before publishing; only `context/` belongs in Git.
 
 ```bash
-git clone "https://github.com/$CONTEXT_REPO.git" "$STATE/context-repo"
-git -C "$STATE/context-repo" switch -c "$CONTEXT_BRANCH"
-git -C "$STATE/context-repo" rm -r .
-cp -R "$STATE/fixture/context/." "$STATE/context-repo/"
+cp -R "$STATE/fixture/context" "$STATE/context-repo"
+git -C "$STATE/context-repo" init --initial-branch="$CONTEXT_BRANCH"
 git -C "$STATE/context-repo" add .
 git -C "$STATE/context-repo" diff --cached --stat
-# Review locally for credentials, unrelated content and non-fictional information.
 git -C "$STATE/context-repo" diff --cached
-git -C "$STATE/context-repo" commit -s -m 'Add fictional persistent team demo context'
-git -C "$STATE/context-repo" push -u origin "$CONTEXT_BRANCH"
+git -C "$STATE/context-repo" commit -s -m 'Add fictional team demo context'
+gh repo create "$CONTEXT_REPO" --public --source "$STATE/context-repo" --remote origin --push
 git -C "$STATE/context-repo" rev-parse HEAD > "$STATE/context-sha"
 railway tcp-proxy delete 5432 --service Postgres --environment "$RW_ENVIRONMENT" --yes
 rm "$STATE/fixture/reader-public-url"
@@ -256,15 +247,10 @@ After rotation, regenerate private bridge/header files and update each connector
 Confirm the previous token returns 401 before considering revocation complete. During
 redeployment allow for old instances draining; revocation is not instantaneous.
 
-Both observed service limits are 0.5 CPU / 500,000,000 memory bytes, with one app replica.
-The database has the template's 5,000 MB volume; no app volume is needed. Limits bound
-resource use, not total spend. Idle memory, storage and egress cost money. The observed
-plan was Hobby: its $5 monthly minimum includes $5 of resource usage, **not a spending
-cap**, per [official pricing](https://docs.railway.com/pricing/plans). Free/trial restrictions
-can affect persistence; see [Free plan](https://docs.railway.com/pricing/free-plan).
-Do not upgrade without an owner decision. Any usage snapshot is only observed usage,
-not a final bill or monthly forecast. Workspace hard spending limits affect unrelated
-projects too; this recipe does not change them. Services remain running until shutdown.
+CPU/memory limits bound resource use, not total spend. Idle memory, database storage
+and egress cost money. Check [current plans](https://docs.railway.com/pricing/plans)
+and spending controls for your workspace. Services remain running until shutdown;
+workspace-wide limits can affect unrelated projects.
 
 ## Shutdown only this deployment
 
@@ -296,32 +282,15 @@ PY
 
 Verify the endpoint no longer serves MCP and the project's services/volume are gone.
 This stops cloud resources; removing local credentials or connectors alone does not.
-Retain the ownership record. After verifying no service uses it, optionally delete only
-the demo's dedicated context branch (preserve the repository and original history):
-
-```bash
-export CONTEXT_BRANCH="$(cat "$STATE/context-branch")"
-test "$CONTEXT_BRANCH" = feat/218-persistent-team-demo
-git -C "$STATE/context-repo" push origin --delete "$CONTEXT_BRANCH"
-```
+Retain the private ownership record and the context repository with its branches.
 
 Remove only this demo's connector entries and private credentials/header copies after
 cloud shutdown. Preserve unrelated Desktop entries and any reusable bridge installation.
 Do not delete the context repository without a separate explicit owner decision.
 
-## Recorded acceptance and limits
+## Limits
 
-2026-11-19: actual hosted SDK passed all eight questions, bearer 401 checks, four tools,
-resources/context, cap/deadline/recovery and no lingering query. Actual Claude Code
-2.1.308 completed eleven SQL calls: three discovery queries and eight answer queries;
-all final answers reconcile to successful MCP rows. Direct database role denial passed
-with read-only transaction defaults disabled. Resource limits were read back from Railway.
-The owner reported a successful Claude **web app** conversation with context reads and
-three SQL calls; the displayed branch totals match the fixture. This is user-observed
-app acceptance, not an eight-question web matrix. Desktop-compatible bridge acceptance
-was checked separately; no actual Desktop app conversation is claimed.
-
-Source/runtime/image hashes and sanitized evidence are in the
-[example evidence](../../examples/dunder-mifflin-demo/evidence.json). No OAuth gateway,
-per-user access, production data, HA, custom domain or plan upgrade was implemented.
-Local reproduction: `UNSHACKLE_TEAM_DEMO_LOCAL_TEST=1 pytest -q tests/test_team_demo.py`.
+This demo has no OAuth gateway, per-user access or enforced policy files. It contains
+fictional data and is not a production availability topology. For local fixture checks,
+use `UNSHACKLE_TEAM_DEMO_LOCAL_TEST=1 pytest -q tests/test_team_demo.py` from the source
+checkout with Docker available. Keep generated state and client transcripts outside Git.

@@ -1,6 +1,7 @@
 # Import a plain dbt project
 
 ```sh
+unshackle init --repo ./context-repo
 unshackle import dbt ./dbt-project --repo ./context-repo
 ```
 
@@ -46,3 +47,7 @@ plain dbt import does not interpret Lightdash `meta` blocks.
 The supported legacy form and newer embedded form are described in the
 [dbt semantic model documentation](https://docs.getdbt.com/docs/build/semantic-models)
 and [spec migration guide](https://docs.getdbt.com/docs/build/latest-metrics-spec).
+
+Inspect the generated files and run `unshackle todo --repo ./context-repo` before
+querying. Then `cd ./context-repo` to [connect locally](mcp.md) or
+[refresh context](maintain.md).

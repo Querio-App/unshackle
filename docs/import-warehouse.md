@@ -3,6 +3,7 @@
 Set `UNSHACKLE_WAREHOUSE_URL` in your environment or ignored `.env`, then run:
 
 ```sh
+unshackle init --repo .
 unshackle import warehouse --repo .
 ```
 
@@ -40,8 +41,10 @@ publishing. Do not point the same catalog at a different warehouse and treat tha
 as a refresh. Missing the snapshot makes the first refresh conservative: existing
 catalog content is retained. Other imports keep their existing merge behavior.
 
-Tested adapters include SQLite and PostgreSQL with psycopg. In the acceptance
-machine's installed DuckDB/SQLAlchemy driver combination, reflection fails while
-querying missing `pg_collation` metadata. Import correctly aborts without partial
-output. DuckDB query execution is separately tested; DuckDB warehouse introspection
-is not currently validated. Use Postgres for the synthetic live acceptance fixture.
+PostgreSQL with psycopg and SQLite support this import route. DuckDB SQLAlchemy
+reflection can fail on unsupported catalog metadata; do not assume MCP query support
+implies reflection support. On reflection failure, stop and check the driver instead
+of treating an empty catalog as a successful import.
+
+Review the generated catalog and `migration/warehouse-schema.json`, then run
+`unshackle todo`. Next: [connect locally](mcp.md) or [refresh context](maintain.md).

@@ -17,34 +17,35 @@ unshackle moves your metrics, dashboards and permissions out of a BI tool and in
 What unshackle can't translate faithfully is marked `TODO(unshackle)`, with the
 original formula next to it. It doesn't guess.
 
-## How it works
+## Start with your task
 
-1. **Extract:** reads definitions through your tool's API, or from files you download.
-2. **Translate:** writes the files above. Nothing changes in your BI tool.
-3. **Report:** `migration/report.md` shows, per dashboard, what was translated and what blocks the rest.
-4. **Check:** compares the migrated queries with your tool's own numbers.
+| You want to… | Start here |
+| --- | --- |
+| Move an existing BI tool and check what transferred | [Migrate, finish TODOs and verify](docs/migrate.md) |
+| Build context from warehouse metadata, dbt or SQL | [Choose your inputs](docs/index.md#start-without-a-bi-export) |
+| Ask Claude a question about your own data locally | [Local MCP setup and first question](docs/mcp.md) |
+| Share the context and warehouse access with a team | [Host and connect clients](docs/deploy/README.md) |
+| Refresh context, investigate drift or undo an update | [Maintain your context](docs/maintain.md) |
 
-## Get started
-
-You need Python 3.11+ and access to your BI tool or warehouse. Use `pip` inside a virtual environment (system Python
-often refuses it outside one), or `uv tool install unshackle` for a global command.
-
-```bash
-pip install unshackle                 # or: uv tool install unshackle
-cd your-analytics-repo
-unshackle check <tool> --prompt       # asks for credentials, saves them to .env (git-ignored)
-unshackle migrate <tool>
-```
-
-Then:
+For a BI migration, install in a Python 3.11+ virtual environment, then run from
+an analytics Git repository on a new branch:
 
 ```bash
-unshackle run       # run the notebooks; see which tiles return data
-unshackle verify    # compare migrated numbers with your tool's
-unshackle todo      # list what's left to finish
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install unshackle
+unshackle check <tool> --prompt
+unshackle inventory <tool>
+# Review visible content and choose scope before migrating.
+unshackle migrate <tool> --only <id>
+unshackle todo
 ```
 
-`unshackle tools <tool>` says where to find each credential.
+Replace `<tool>` and `<id>` using the tool guide and inventory. `--only` is repeatable;
+omit it only when the whole visible source is in scope. Credentials stay in the
+ignored `.env`. Read `migration/report.md` for transferred files, warnings and gaps.
+Migration writes definitions; resolving TODOs and [checking parity](skills/verify/SKILL.md)
+are separate steps. Nothing changes in the source BI tool.
 
 ## Supported tools
 
@@ -70,94 +71,19 @@ open-source projects people built. *Saved exports*: tested on exports over a fic
 
 Each tool's page covers connecting, what you get, what's left to finish and how to check the numbers.
 
-## API or files
-
-**API** gets the most: definitions, dashboards people built in the tool, usage,
-sharing, and for most tools the SQL the tool itself runs.
-
-**Files** work when you can't get API credentials. They carry less (usually no usage
-or sharing, and for Looker and Omni no user-built dashboards); the report lists
-what's missing.
-
-```bash
-unshackle import <tool> <files or folder>
-unshackle build <tool>
-```
-
-## Start from warehouse, dbt or SQL
-
-Without a BI export, import the sources you have. Each command writes usable
-context immediately; dbt and SQL imports are offline.
-
-```bash
-# Set UNSHACKLE_WAREHOUSE_URL for warehouse access.
-unshackle import warehouse
-unshackle import dbt ./inputs/dbt-project
-unshackle import sql ./inputs/queries ./inputs/analysis.py
-```
-
-[Warehouse metadata](docs/import-warehouse.md) becomes catalog entries;
-[plain dbt projects](docs/import-dbt.md) contribute documentation, reference SQL
-and supported metrics; [SQL and Python SQL literals](docs/import-sql.md) become
-notebooks. Unresolved expressions retain their source and TODOs. Use the
-[scheduled drift template](docs/drift.md) to propose schema and context updates
-in a pull request.
-
-## Data that lives only in your BI tool
-
-Tableau extracts, Excel and CSV files have no warehouse behind them. `migrate` asks
-whether to copy that data to `data/` (git-ignored) so the notebooks can run on it
-locally. Copying `.hyper` extracts needs Tableau's Hyper API, a large download:
-`pip install "unshackle[hyper]"`.
-
-## Check the numbers
-
-`unshackle verify` runs the cases in `migration/parity/` against your warehouse and
-compares them with the source tool's numbers. For Tableau, `unshackle verify --init tableau`
-writes the cases from Tableau's own view data. For other tools, write them by hand:
-see the [verify guide](skills/verify/SKILL.md).
-
-## How it's tested
-
-- **Against numbers, not snapshots.** Most tests build a migration from a saved export, run the
-  generated SQL in DuckDB on a fictional dataset, and compare the result with the same numbers
-  computed independently, following the source tool's own rules.
-- Fixture, import and MCP protocol tests run offline: `uv pip install -e ".[dev]" && pytest`.
-- `unshackle verify` does the same on your data: migrated SQL against your tool's own numbers.
-
-unshackle is built with [Claude Code](https://claude.com/claude-code); every change goes through
-those tests.
-
 ## With a coding agent
 
-unshackle runs fine on its own. If you use a coding agent (Claude Code, Codex,
-Cursor), point it at the repo: `AGENTS.md` explains the layout, and the guides in
-`migration/skills/` walk it through finishing each kind of TODO.
+Point your agent at the initialized context repository's `AGENTS.md`. Migration
+skills live under `migration/skills/`; the source checkout keeps them under
+[`skills/`](skills/migrate/SKILL.md). Use the source-specific skill, the relevant
+translation skill, then the verify skill. Preserve original expressions and unresolved
+`TODO(unshackle)` markers. Reference SQL is not verified merely because it imported.
 
-To expose the repo through MCP, install the extra and start the local server:
-
-```bash
-pip install "unshackle[mcp]"
-unshackle mcp --repo .
-```
-
-The BI flow is `migrate` → `verify` → `mcp`; the non-BI flow is `import` → `mcp`.
-The server provides `overview`, `search`, `read` and bounded `run_query` tools,
-plus file resources. It reuses `UNSHACKLE_WAREHOUSE_URL`. See the
-[Claude Code, Cursor and Codex configurations](docs/mcp.md),
-[hosting setup](docs/deploy/README.md), and deployment guides for
-[Railway](docs/deploy/railway.md), [AWS](docs/deploy/aws.md) and
-[Cloud Run](docs/deploy/cloud-run.md).
-
-Use one read-only warehouse role per server, preferably against a production
-read replica. Anyone holding the hosted bearer token can query that role's data.
-Policies are agent context and are not enforced by `run_query`; the token provides
-deployment access rather than per-user authorization. Files from other connections
-need that connection, and git-ignored local data is unavailable to Git-pulled hosts.
-
-The [synthetic MCP example and acceptance record](docs/mcp-acceptance.md) distinguish
-offline checks, real client runs and hosted results. Deployment guides alone do not
-establish Railway acceptance.
+For agent access to context and bounded SQL, follow [MCP setup](docs/mcp.md).
+One server uses one warehouse role. Everyone holding a hosted bearer token can query
+that role's visible data; Cedar and row filters are context, not enforced authorization.
+Use a read-only role, preferably against a production read replica. Git-hosted servers
+do not receive ignored local data or credentials.
 
 ## Try it without a BI tool
 
@@ -172,6 +98,7 @@ numbers against Tableau's.
 
 ## More
 
+- [Documentation by task](docs/index.md)
 - [Repo layout](spec/layout.md): every folder and file unshackle writes
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md)
 - [The name](docs/name.md): why a BI migration tool is named after Shackleton

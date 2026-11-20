@@ -1,7 +1,8 @@
 # Import SQL and embedded Python queries
 
 ```sh
-unshackle import sql ./queries ./analysis --repo .
+unshackle init --repo .
+unshackle import sql ./inputs/queries ./inputs/analysis --repo .
 ```
 
 Each `.sql` or `.py` source becomes a Jupyter notebook when it contains SQL or an
@@ -41,3 +42,6 @@ Output follows `[paths].notebooks` in `unshackle.toml`. Repeating the same impor
 stable. The normal writer preserves manually edited notebooks and other imports'
 files. Resolve TODOs and inspect the recovered SQL before running notebooks with a
 read-only warehouse role. Parsing is not a database permission boundary.
+
+Inspect the generated files and `unshackle todo` before querying. Next:
+[connect locally](mcp.md) or [refresh context](maintain.md).

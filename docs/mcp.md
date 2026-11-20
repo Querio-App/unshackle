@@ -1,48 +1,87 @@
-# Connect an agent to your repository
+# Ask a question about your data locally
 
-Install `uv pip install 'unshackle[mcp]'`. Migrate and verify a BI export, or import
-warehouse/dbt/SQL context, then run `unshackle mcp --repo /absolute/path/to/repo`.
-The default stdio transport keeps stdout exclusively for MCP protocol messages.
-Set `UNSHACKLE_WAREHOUSE_URL` in the process environment or the repo's ignored `.env`.
-For PostgreSQL use `postgresql+psycopg://...`; DuckDB and SQLite also support bounded
-queries. Other drivers are rejected for MCP queries until they implement cancellation.
+Use local stdio when your context repository and warehouse are accessible from your
+machine. Claude Code launches the server; no hosting account, remote server or proxy
+is needed. You need Python 3.11+, an installed/authenticated Claude Code client, and a
+[migrated](migrate.md) or [imported context repository](index.md#start-without-a-bi-export).
 
-Use stdio for local files and local warehouse access. Use authenticated Streamable
-HTTP for a shared deployment with its own warehouse role and Git checkout. Hosted
-setup is covered by the deployment guides; the MCP endpoint is `/mcp`.
+## Install and connect Claude Code
 
-## Clients
-
-The following configurations are setup examples, not evidence of live client acceptance.
-Use absolute executable and repository paths if your client does not inherit PATH.
-
-Claude Code:
+Run from your context repository. Use an existing virtual environment if you have one:
 
 ```sh
-claude mcp add --transport stdio unshackle -- unshackle mcp --repo /absolute/path/to/repo
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install 'unshackle[mcp]'
+unshackle init
 ```
+
+`init` preserves existing files and supplies agent guidance, copied skills and ignore
+rules if your context came from a non-BI import. Set `UNSHACKLE_WAREHOUSE_URL` in the process environment or this repository's ignored
+`.env`. Use a read-only warehouse role. PostgreSQL uses
+`postgresql+psycopg://.../database?connect_timeout=10`; psycopg is included in the MCP
+extra. SQLite and DuckDB queries are also supported. Other MCP query drivers are
+rejected until they support native cancellation. This is narrower than the set of
+SQLAlchemy drivers usable for imports or parity checks.
+
+Register using absolute paths, from the project where you will use Claude:
+
+```sh
+claude mcp add --transport stdio unshackle -- \
+  /absolute/path/to/context-repo/.venv/bin/unshackle mcp \
+  --repo /absolute/path/to/context-repo
+claude
+```
+
+Replace both paths with yours. Use another server name if `unshackle` is already
+registered. In Claude, run `/mcp` and confirm the server connects with `overview`,
+`search`, `read` and `run_query`. The stdio process reserves stdout for MCP messages;
+a quiet terminal by itself is not a failure. See [Claude's MCP setup](https://code.claude.com/docs/en/mcp).
+
+## Ask your first real question
+
+Pick one actual table or business metric in your context. For example:
+
+> Use unshackle to inspect the revenue definition and its source tables. What was
+> recognized revenue last calendar month, grouped by region? Show the period and
+> exclusions, flag unresolved TODOs, and base the answer on run_query results.
+
+Expect `overview` to describe available files, `search`/`read` to locate the metric,
+grains and joins, then a bounded `run_query` against the configured warehouse. The
+answer should state the SQL-backed result and assumptions. If you only imported
+metadata, first ask for a row count from a named catalog table; business meaning
+may still need to be supplied. `overview` does not connect to the database, so a
+successful query is the first SQL-access check. Missing credentials, unsupported
+drivers or unresolved definitions should stop the answer instead of producing a
+plausible number. Use [parity checks](../skills/verify/SKILL.md) for agreement with BI.
+
+Want a disposable example first? Use the [local synthetic fixture](../examples/mcp-demo/README.md).
+Its paid revenue question should return 350 USD after excluding refunds/cancellations.
+For failures, follow [troubleshooting](maintain.md#troubleshoot-before-retrying).
+
+## Other clients and shared HTTP
+
+Replace both absolute executable and repository paths below with yours, as in the
+Claude registration. Keep secrets in the environment or ignored `.env`, never in
+tracked client configuration.
 
 Cursor, in `.cursor/mcp.json` (no secrets in this tracked configuration):
 
 ```json
-{"mcpServers":{"unshackle":{"command":"unshackle","args":["mcp","--repo","/absolute/path/to/repo"]}}}
+{"mcpServers":{"unshackle":{"command":"/absolute/path/to/context-repo/.venv/bin/unshackle","args":["mcp","--repo","/absolute/path/to/context-repo"]}}}
 ```
 
 Codex, in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.unshackle]
-command = "unshackle"
-args = ["mcp", "--repo", "/absolute/path/to/repo"]
+command = "/absolute/path/to/context-repo/.venv/bin/unshackle"
+args = ["mcp", "--repo", "/absolute/path/to/context-repo"]
 ```
 
-For HTTP, configure your client with the deployment URL and bearer header. Keep
-secrets in user-local configuration/environment, never a tracked project file.
-
-```sh
-claude mcp add --transport http unshackle https://mcp.example.com/mcp \
-  --header "Authorization: Bearer ${UNSHACKLE_MCP_TOKEN}"
-```
+For HTTP, use the [hosted client instructions](deploy/README.md#connect-clients).
+The endpoint ends in `/mcp` and requires a bearer header. Keep credentials in private
+configuration or environment variables.
 
 Cursor supports `url` and `headers` in its user MCP settings:
 

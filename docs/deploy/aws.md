@@ -1,14 +1,14 @@
-# AWS ECS Fargate: disposable acceptance deployment
+# Optional synthetic demo on AWS ECS Fargate
 
-**Preparation only. AWS login, deployment, update and teardown commands below are
-UNTESTED against AWS.** Local evidence does not establish cloud readiness. See the
-[shared validation status](validation.md). Run from this source checkout in Bash.
+For your own context and warehouse, start with [HTTP/container hosting](README.md).
+This example creates an isolated fixture, not a production database. Run from the
+unshackle source checkout in Bash; review its billable resources and teardown first.
 
 This recipe creates an ECR repository, a dedicated VPC/two public subnets, HTTPS
 Application Load Balancer, one Fargate task, CloudWatch log group, scoped execution
 role and three generated Secrets Manager secrets. The task contains MCP and a
 synthetic PostgreSQL 16 database. **Every task replacement reseeds the database;
-this is disposable acceptance data, not a production warehouse.** DesiredCount is
+this is disposable fictional data, not a production warehouse.** DesiredCount is
 restricted to 0 or 1. Updates intentionally interrupt service instead of running
 multiple independent fixtures. No database port is exposed through the task's
 security group. MCP port 8000 accepts traffic only from the ALB.
@@ -75,9 +75,8 @@ contents nor database query parity.
 
    Official [browser login](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sign-in.html)
    and [SSO configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html).
-   This checkout's live-access policy requires the existing MFA session profile
-   for agent AWS work; no live-access identity, account ID or MFA device belongs
-   in tracked examples.
+   Follow your organization’s MFA/SSO policy; keep account identifiers and credentials
+   out of tracked examples.
 
 ## Configure names, region and costs
 
@@ -142,7 +141,7 @@ python examples/mcp-demo/local.py --output "$CONTEXT_DIR"
 rm "$CONTEXT_DIR/.env" "$CONTEXT_DIR/local-container.json"
 git -C "$CONTEXT_DIR" init -b main
 git -C "$CONTEXT_DIR" add .
-git -C "$CONTEXT_DIR" commit -s -m 'Add synthetic MCP acceptance context'
+git -C "$CONTEXT_DIR" commit -s -m 'Add synthetic MCP context'
 gh repo create "$CONTEXT_GITHUB_REPO" --public --source "$CONTEXT_DIR" --remote origin --push
 export CONTEXT_REPO_URL="https://github.com/$CONTEXT_GITHUB_REPO.git"
 # Isolated environment: the hosted Git refresh cannot use your local HTTPS helper.
@@ -195,8 +194,7 @@ and [GitHub metadata](https://docs.github.com/en/rest/meta/meta#get-github-meta-
 
 ## Create owned HTTPS certificate and DNS validation
 
-All commands in this section and later cloud sections are **UNTESTED / execute only
-in the later authorized deployment phase**. A dedicated new hostname prevents
+A dedicated new hostname prevents
 sharing ACM validation records with another certificate. `CREATE`, not `UPSERT`,
 fails if the record already exists. If it fails, stop; do not claim ownership or
 continue to the deletion commands until the conflict is resolved.
@@ -299,13 +297,10 @@ top customer Acme Paper `150`; January `230`, February `120`; average paid order
 SQL are in `examples/mcp-demo/questions.json`.
 
 Use the shared [exact Claude/Codex/Cursor HTTP configurations](README.md#connect-clients)
-with `UNSHACKLE_MCP_URL` ending `/mcp` and `UNSHACKLE_MCP_TOKEN` loaded above, then
-[record hosted acceptance](README.md#record-hosted-acceptance) with the existing
-`examples/mcp-demo/client_matrix.py` harness. Model/client authentication and usage
-are separate from AWS access and may incur client charges. A probe success is not
-proof that all three clients succeeded. Record source SHA, image digest, region,
-endpoint, CLI/client versions and sanitized evidence; never save bearer values or
-raw secret-bearing transcripts in Git.
+with `UNSHACKLE_MCP_URL` ending `/mcp` and `UNSHACKLE_MCP_TOKEN` loaded above.
+Ask your chosen client the paid-revenue question and inspect the query result.
+The optional [example harness](../../examples/mcp-demo/README.md) consumes client
+usage; keep its outputs private and outside Git.
 
 ## Logs, failures and updates
 
@@ -345,7 +340,7 @@ For production, use the existing [ecs-task.json](../../deploy/ecs-task.json) wit
 separate read-only warehouse URL secret and no fixture sidecar or AWS fixture
 entrypoint. Supply private networking and database TLS as appropriate, verified
 native PostgreSQL cancellation, real database grants, backup/availability policy
-and sizing. That path requires its own reviewed infrastructure and live evidence;
+and sizing. That path requires its own reviewed infrastructure;
 this disposable recipe is not a production topology.
 
 ## Scoped teardown (also after partial failure)
